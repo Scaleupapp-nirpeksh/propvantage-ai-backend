@@ -7,7 +7,9 @@
     "scripts": {
         "start": "node server.js",
         "server": "nodemon server.js",
-        "test": "jest"
+        "test": "jest",
+    "data:import": "node data/seeder.js",
+    "data:destroy": "node data/seeder.js -d"
     },
     "author": "Gemini Developer",
     "license": "ISC",

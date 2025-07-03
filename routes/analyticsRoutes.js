@@ -1,10 +1,15 @@
 // File: routes/analyticsRoutes.js
-// Description: Defines the API routes for dashboard and analytics data.
+// Description: Defines API routes for advanced analytics and dashboard functionality
 
 import express from 'express';
-import { getSalesSummary, getLeadFunnel } from '../controllers/analyticsController.js';
+import {
+  getSalesSummary,
+  getLeadFunnel,
+  getDashboardAnalytics,
+  getSalesReport
+} from '../controllers/analyticsController.js';
 
-// Import the security middleware
+// Import security middleware
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -12,39 +17,70 @@ const router = express.Router();
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
 
-// Define roles that can view high-level sales and financial data
-const financeAndManagementAccess = [
+// Define roles that have access to basic analytics (broader access)
+const basicAnalyticsAccess = [
   'Business Head',
   'Sales Head',
   'Finance Head',
   'Project Director',
   'Finance Manager',
+  'Sales Manager'
 ];
 
-// Define roles that can view lead and pipeline data
-const salesManagementAccess = [
+// Define roles that have access to advanced analytics (management and finance roles)
+const advancedAnalyticsAccess = [
   'Business Head',
   'Sales Head',
+  'Finance Head',
   'Project Director',
-  'Sales Manager',
+  'Finance Manager',
+  'Sales Manager'
 ];
 
+// Define roles with access to detailed reports (senior management)
+const detailedReportsAccess = [
+  'Business Head',
+  'Sales Head',
+  'Finance Head',
+  'Project Director'
+];
+
+// EXISTING ENDPOINTS - Maintained for backward compatibility
 // @route   GET /api/analytics/sales-summary
-// @desc    Get a high-level sales summary
-// @access  Private
+// @desc    Get high-level sales summary
+// @access  Private (Management/Finance roles)
 router.get(
   '/sales-summary',
-  authorize(...financeAndManagementAccess),
+  authorize(...basicAnalyticsAccess),
   getSalesSummary
 );
 
 // @route   GET /api/analytics/lead-funnel
-// @desc    Get a lead funnel analysis
-// @access  Private
+// @desc    Get lead funnel analysis
+// @access  Private (Management/Sales roles)
 router.get(
   '/lead-funnel',
-  authorize(...salesManagementAccess),
+  authorize(...basicAnalyticsAccess),
   getLeadFunnel
+);
+
+// NEW ADVANCED ENDPOINTS
+// @route   GET /api/analytics/dashboard
+// @desc    Get comprehensive dashboard analytics
+// @access  Private (Management roles)
+router.get(
+  '/dashboard',
+  authorize(...advancedAnalyticsAccess),
+  getDashboardAnalytics
+);
+
+// @route   GET /api/analytics/sales-report
+// @desc    Get detailed sales analytics report
+// @access  Private (Senior Management roles)
+router.get(
+  '/sales-report',
+  authorize(...detailedReportsAccess),
+  getSalesReport
 );
 
 export default router;
