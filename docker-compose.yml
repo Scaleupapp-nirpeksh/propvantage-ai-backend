@@ -1,0 +1,39 @@
+# File: docker-compose.yml
+# Description: Defines the multi-container Docker application for local development.
+
+version: '3.8'
+
+services:
+  # The Node.js application service
+  propvantage-api:
+    build: . # Build the image from the Dockerfile in the current directory
+    container_name: propvantage-api-container
+    ports:
+      - '3000:3000' # Map port 3000 on the host to port 3000 in the container
+    env_file:
+      - .env # Load environment variables from the .env file
+    environment:
+      # Override the MONGO_URI to point to our dockerized MongoDB service
+      - MONGO_URI=mongodb://propvantage-db:27017/propvantage
+    depends_on:
+      - propvantage-db # This service depends on the database service
+    volumes:
+      # Mount the local source code into the container for live reloading
+      # Any changes you make locally will be reflected in the container
+      - .:/app
+      - /app/node_modules # Do not mount the local node_modules folder
+    command: npm run server # Use nodemon for development
+
+  # The MongoDB database service
+  propvantage-db:
+    image: mongo:latest # Use the official MongoDB image
+    container_name: propvantage-db-container
+    ports:
+      - '27017:27017' # Map the default MongoDB port
+    volumes:
+      - mongo-data:/data/db # Persist database data on the host machine
+
+# Define a named volume for persisting MongoDB data
+volumes:
+  mongo-data:
+
