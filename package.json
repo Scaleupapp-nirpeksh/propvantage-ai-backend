@@ -8,8 +8,8 @@
         "start": "node server.js",
         "server": "nodemon server.js",
         "test": "jest",
-    "data:import": "node data/seeder.js",
-    "data:destroy": "node data/seeder.js -d"
+        "data:import": "node data/seeder.js",
+        "data:destroy": "node data/seeder.js -d"
     },
     "author": "Gemini Developer",
     "license": "ISC",
@@ -23,6 +23,7 @@
         "jsonwebtoken": "^9.0.2",
         "mongoose": "^8.0.2",
         "multer": "^2.0.1",
+        "node-cron": "^4.2.0",
         "openai": "^4.20.1"
     },
     "devDependencies": {

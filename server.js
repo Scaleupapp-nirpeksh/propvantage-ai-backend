@@ -1,5 +1,5 @@
 // File: server.js
-// Description: Main server file with payment system routes
+// Description: Main server file with enhanced document management system
 
 import express from 'express';
 import dotenv from 'dotenv';
@@ -13,6 +13,7 @@ import userRoutes from './routes/userRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import unitRoutes from './routes/unitRoutes.js';
 import leadRoutes from './routes/leadRoutes.js';
+import leadScoringRoutes from './routes/leadScoringRoutes.js';
 import salesRoutes from './routes/salesRoutes.js';
 import pricingRoutes from './routes/pricingRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
@@ -20,7 +21,10 @@ import fileRoutes from './routes/fileRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import projectPaymentRoutes from './routes/projectPaymentRoutes.js';
-import commissionRoutes from './routes/commissionRoutes.js'; // New commission routes
+import commissionRoutes from './routes/commissionRoutes.js';
+// New document management routes
+import documentRoutes from './routes/documentRoutes.js';
+import documentApprovalRoutes from './routes/documentApprovalRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -39,28 +43,32 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/projects', projectRoutes);
-app.use('/api/projects', projectPaymentRoutes); // Project payment configuration routes
+app.use('/api/projects', projectPaymentRoutes);
 app.use('/api/units', unitRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/leads', leadScoringRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/payments', paymentRoutes); // Payment system routes
-app.use('/api/commissions', commissionRoutes); // Commission system routes
+app.use('/api/payments', paymentRoutes);
+app.use('/api/commissions', commissionRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/documents', documentApprovalRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.3.0',
+    version: '1.5.0', // Updated version
     features: [
       'Authentication',
       'User Management',
       'Project Management',
       'Lead Management',
+      'Advanced Lead Scoring',
       'Sales Management',
       'Pricing Engine',
       'AI Insights',
@@ -69,7 +77,11 @@ app.get('/api/health', (req, res) => {
       'Payment System',
       'Installment Management',
       'Financial Tracking',
-      'Commission Management' // New feature
+      'Commission Management',
+      'Document Management', // New feature
+      'Document Approval Workflows', // New feature
+      'Version Control', // New feature
+      'Document Templates' // New feature
     ]
   });
 });
@@ -88,4 +100,9 @@ app.listen(PORT, () => {
   console.log(`🏗️ Project Payment Config: http://localhost:${PORT}/api/projects/:id/payment-config`);
   console.log(`💰 Commission System: http://localhost:${PORT}/api/commissions`);
   console.log(`🤝 Partner Management: http://localhost:${PORT}/api/commissions/partners`);
+  console.log(`🎯 Lead Scoring: http://localhost:${PORT}/api/leads/high-priority`);
+  console.log(`📋 Lead Analytics: http://localhost:${PORT}/api/leads/score-analytics`);
+  console.log(`📄 Document Management: http://localhost:${PORT}/api/documents`);
+  console.log(`✅ Document Approvals: http://localhost:${PORT}/api/documents/approvals/pending`);
+  console.log(`📁 Document Categories: http://localhost:${PORT}/api/documents/categories`);
 });
