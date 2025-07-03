@@ -1,5 +1,5 @@
 // File: server.js
-// Description: Main server file with enhanced document management system
+// Description: Main server file with complete construction and project management system
 
 import express from 'express';
 import dotenv from 'dotenv';
@@ -22,9 +22,11 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import projectPaymentRoutes from './routes/projectPaymentRoutes.js';
 import commissionRoutes from './routes/commissionRoutes.js';
-// New document management routes
 import documentRoutes from './routes/documentRoutes.js';
 import documentApprovalRoutes from './routes/documentApprovalRoutes.js';
+// New construction management routes
+import constructionRoutes from './routes/constructionRoutes.js';
+import contractorRoutes from './routes/contractorRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -56,13 +58,16 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/commissions', commissionRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/documents', documentApprovalRoutes);
+// Construction management routes
+app.use('/api/construction', constructionRoutes);
+app.use('/api/contractors', contractorRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.5.0', // Updated version
+    version: '1.6.0', // Updated version
     features: [
       'Authentication',
       'User Management',
@@ -78,10 +83,46 @@ app.get('/api/health', (req, res) => {
       'Installment Management',
       'Financial Tracking',
       'Commission Management',
-      'Document Management', // New feature
-      'Document Approval Workflows', // New feature
-      'Version Control', // New feature
-      'Document Templates' // New feature
+      'Document Management',
+      'Document Approval Workflows',
+      'Version Control',
+      'Document Templates',
+      'Construction Management', // New feature
+      'Milestone Tracking', // New feature
+      'Contractor Management', // New feature
+      'Progress Documentation', // New feature
+      'Quality Control', // New feature
+      'Issue Tracking' // New feature
+    ]
+  });
+});
+
+// API documentation endpoint
+app.get('/api/docs', (req, res) => {
+  res.json({
+    title: 'PropVantage AI - Real Estate CRM API',
+    version: '1.6.0',
+    description: 'Comprehensive real estate CRM with construction management',
+    endpoints: {
+      authentication: '/api/auth',
+      users: '/api/users',
+      projects: '/api/projects',
+      leads: '/api/leads',
+      sales: '/api/sales',
+      payments: '/api/payments',
+      commissions: '/api/commissions',
+      documents: '/api/documents',
+      construction: '/api/construction',
+      contractors: '/api/contractors',
+      analytics: '/api/analytics'
+    },
+    newFeatures: [
+      'Construction milestone tracking',
+      'Progress photo documentation',
+      'Quality control workflows',
+      'Contractor management and ratings',
+      'Issue tracking and resolution',
+      'Project timeline visualization'
     ]
   });
 });
@@ -94,15 +135,23 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`🚀 PropVantage AI Server running on port ${PORT}`);
-  console.log(`📊 Analytics Dashboard: http://localhost:${PORT}/api/analytics/dashboard`);
-  console.log(`📈 Sales Reports: http://localhost:${PORT}/api/analytics/sales-report`);
-  console.log(`💳 Payment System: http://localhost:${PORT}/api/payments`);
-  console.log(`🏗️ Project Payment Config: http://localhost:${PORT}/api/projects/:id/payment-config`);
-  console.log(`💰 Commission System: http://localhost:${PORT}/api/commissions`);
-  console.log(`🤝 Partner Management: http://localhost:${PORT}/api/commissions/partners`);
-  console.log(`🎯 Lead Scoring: http://localhost:${PORT}/api/leads/high-priority`);
-  console.log(`📋 Lead Analytics: http://localhost:${PORT}/api/leads/score-analytics`);
-  console.log(`📄 Document Management: http://localhost:${PORT}/api/documents`);
-  console.log(`✅ Document Approvals: http://localhost:${PORT}/api/documents/approvals/pending`);
-  console.log(`📁 Document Categories: http://localhost:${PORT}/api/documents/categories`);
+  console.log(`\n📊 Core Features:`);
+  console.log(`   Analytics Dashboard: http://localhost:${PORT}/api/analytics/dashboard`);
+  console.log(`   Sales Reports: http://localhost:${PORT}/api/analytics/sales-report`);
+  console.log(`   Lead Scoring: http://localhost:${PORT}/api/leads/high-priority`);
+  console.log(`\n💰 Financial Management:`);
+  console.log(`   Payment System: http://localhost:${PORT}/api/payments`);
+  console.log(`   Project Payment Config: http://localhost:${PORT}/api/projects/:id/payment-config`);
+  console.log(`   Commission System: http://localhost:${PORT}/api/commissions`);
+  console.log(`\n📄 Document Management:`);
+  console.log(`   Document Management: http://localhost:${PORT}/api/documents`);
+  console.log(`   Document Approvals: http://localhost:${PORT}/api/documents/approvals/pending`);
+  console.log(`   Document Categories: http://localhost:${PORT}/api/documents/categories`);
+  console.log(`\n🏗️ Construction Management:`);
+  console.log(`   Construction Milestones: http://localhost:${PORT}/api/construction/milestones`);
+  console.log(`   Project Timeline: http://localhost:${PORT}/api/construction/projects/:id/timeline`);
+  console.log(`   Contractor Management: http://localhost:${PORT}/api/contractors`);
+  console.log(`   Overdue Milestones: http://localhost:${PORT}/api/construction/milestones/overdue`);
+  console.log(`\n📖 Documentation: http://localhost:${PORT}/api/docs`);
+  console.log(`\n✨ PropVantage AI v1.6.0 - Complete Real Estate CRM with Construction Management`);
 });
