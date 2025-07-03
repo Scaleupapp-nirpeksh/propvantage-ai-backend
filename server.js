@@ -4,7 +4,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import  connectDB  from './config/db.js';
+import connectDB from './config/db.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 // Import route files
@@ -18,8 +18,9 @@ import pricingRoutes from './routes/pricingRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import fileRoutes from './routes/fileRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
-import paymentRoutes from './routes/paymentRoutes.js'; // New payment routes
-import projectPaymentRoutes from './routes/projectPaymentRoutes.js'; // New project payment routes
+import paymentRoutes from './routes/paymentRoutes.js';
+import projectPaymentRoutes from './routes/projectPaymentRoutes.js';
+import commissionRoutes from './routes/commissionRoutes.js'; // New commission routes
 
 // Load environment variables
 dotenv.config();
@@ -47,13 +48,14 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentRoutes); // Payment system routes
+app.use('/api/commissions', commissionRoutes); // Commission system routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.2.0',
+    version: '1.3.0',
     features: [
       'Authentication',
       'User Management',
@@ -64,9 +66,10 @@ app.get('/api/health', (req, res) => {
       'AI Insights',
       'File Management',
       'Advanced Analytics',
-      'Payment System', // New feature
-      'Installment Management', // New feature
-      'Financial Tracking' // New feature
+      'Payment System',
+      'Installment Management',
+      'Financial Tracking',
+      'Commission Management' // New feature
     ]
   });
 });
@@ -83,4 +86,6 @@ app.listen(PORT, () => {
   console.log(`📈 Sales Reports: http://localhost:${PORT}/api/analytics/sales-report`);
   console.log(`💳 Payment System: http://localhost:${PORT}/api/payments`);
   console.log(`🏗️ Project Payment Config: http://localhost:${PORT}/api/projects/:id/payment-config`);
+  console.log(`💰 Commission System: http://localhost:${PORT}/api/commissions`);
+  console.log(`🤝 Partner Management: http://localhost:${PORT}/api/commissions/partners`);
 });
