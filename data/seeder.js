@@ -1,6 +1,6 @@
 // File: data/seeder.js
-// Description: Enhanced robust seeder with comprehensive test data for AI scoring system
-// Version: 2.0 - Complete data seeding with realistic scenarios
+// Description: Enhanced robust seeder with comprehensive test data for AI scoring system + AI Conversation
+// Version: 2.1 - Complete data seeding with realistic scenarios + AI conversation content
 // Location: data/seeder.js
 
 import mongoose from 'mongoose';
@@ -217,6 +217,130 @@ const sampleData = {
   leads: [],
   interactions: [],
   sales: []
+};
+
+// --- AI CONVERSATION TEMPLATES ---
+
+// Realistic conversation templates for different interaction types
+const conversationTemplates = {
+  initial_call: [
+    "Hello {firstName}, this is {salesPerson} from {projectName}. I understand you're interested in our property. What specific requirements are you looking for?",
+    "Customer: Hi, yes I saw your advertisement. I'm looking for a {unitType} within my budget of {budget}.",
+    "That's great! Our {projectName} has excellent {unitType} options. The location offers great connectivity and premium amenities. When would be a good time for you to visit our site?",
+    "Customer: I'm quite busy this week, but maybe next weekend would work. What's the price range we're talking about?",
+    "For {unitType} units, we're looking at {priceRange}. This includes all premium amenities and we have flexible payment plans. Would you like me to send you the detailed brochure?",
+    "Customer: Yes, please send me the details. I'll discuss with my family and get back to you."
+  ],
+  
+  follow_up_call: [
+    "Hi {firstName}, I had sent you the brochure for {projectName} last week. Were you able to review it?",
+    "Customer: Yes, I looked at it. The project looks nice but the price is a bit higher than I expected.",
+    "I understand your concern about pricing. Let me explain the value proposition - we have {amenities} and the location will see significant appreciation. Also, if you decide this month, I can offer you a special discount.",
+    "Customer: What kind of discount are we talking about? And what about the loan arrangements?",
+    "We can offer up to 2-3% discount on the base price, and we have tie-ups with major banks for easy loan approval. Our loan officer can help you with pre-approval. When can you visit our site?",
+    "Customer: Let me check with my wife and get back to you in a couple of days."
+  ],
+  
+  site_visit: [
+    "Welcome to {projectName}, {firstName}! I'm excited to show you around. Which unit configuration were you most interested in?",
+    "Customer: We're looking at the {unitType}. The layout looks good in the brochure, but I want to see the actual space and check the view.",
+    "Perfect! Let me show you our sample flat first, and then we can visit the actual units available on different floors. You'll love the {facing} facing units.",
+    "Customer: This is quite spacious! What about the amenities? When will the gym and swimming pool be ready?",
+    "All amenities will be completed 6 months before possession. The gym will be fully equipped and the swimming pool is going to be our highlight feature. What do you think about the overall space?",
+    "Customer: It's good. We like it. What are the next steps if we decide to book?"
+  ],
+  
+  negotiation: [
+    "Hi {firstName}, I understand you're interested in booking the {unitType} unit we showed you. Have you made a decision?",
+    "Customer: We really like the property, but we need to discuss the pricing. The total cost is coming to {totalPrice} which is stretching our budget.",
+    "I appreciate your honesty. Let me see what I can do. Since you've been seriously considering this for a while, I can speak to my manager about additional discount options.",
+    "Customer: We were hoping to get it closer to {targetPrice}. Is that possible?",
+    "That's quite a stretch, but let me make some calls. I can possibly offer you {discount}% additional discount and also waive some charges. This would bring it down significantly.",
+    "Customer: That sounds better. Can you give me the revised quotation? Also, what about the payment schedule?"
+  ],
+  
+  objection_handling: [
+    "Hi {firstName}, I noticed you haven't gotten back to me since our site visit. Is there anything specific you'd like to discuss?",
+    "Customer: Well, we're concerned about the construction timeline. What if there are delays?",
+    "That's a very valid concern. We have a track record of timely delivery - our last 3 projects were completed on schedule. Plus, we provide delay compensation if we miss the promised date.",
+    "Customer: What about the resale value? The area is still developing.",
+    "Actually, that's the best part! You're getting in early before the area fully develops. The metro connectivity coming up will increase property values by at least 20-30% in 2 years.",
+    "Customer: Hmm, that sounds promising. But the EMI along with rent is going to be tough for us.",
+    "I understand. Have you considered our subvention scheme? The builder pays your EMI for the first 12 months. This way you don't pay both rent and EMI.",
+    "Customer: That's interesting. Can you send me more details about this scheme?"
+  ],
+  
+  closing_attempt: [
+    "Hi {firstName}, I have some great news! The {unitType} unit you liked is still available, but we have only 2 units left in that configuration.",
+    "Customer: Oh, I was planning to decide by next month. Are you sure it won't be available?",
+    "We've had a lot of inquiries this week. To secure the unit, we'd need at least the booking amount. I can also offer you our festive discount if you book today.",
+    "Customer: What's the booking amount and what's this festive discount?",
+    "Booking amount is just {bookingAmount}, fully adjustable against the total price. The festive discount is {discount}% off, which saves you around {savings}.",
+    "Customer: That's a substantial saving. What if we change our mind?",
+    "You have a 30-day cooling period where you can cancel and get a full refund if you're not satisfied. But I'm confident you'll love being part of our community.",
+    "Customer: Alright, let's go ahead with the booking. What documents do I need?"
+  ]
+};
+
+// Function to generate realistic conversation content
+const generateConversationContent = (template, leadData, projectData, interactionType) => {
+  const salesPersonNames = ['Rahul Kumar', 'Priya Singh', 'Amit Sharma', 'Kavita Patel'];
+  const salesPerson = salesPersonNames[Math.floor(Math.random() * salesPersonNames.length)];
+  
+  // Calculate price ranges based on project
+  let priceRange, bookingAmount, discount, savings;
+  const budget = leadData.budget ? `₹${(leadData.budget.min / 10000000).toFixed(1)}-${(leadData.budget.max / 10000000).toFixed(1)} Cr` : '₹50-80 Lakhs';
+  
+  switch (projectData.name) {
+    case 'Skyline Towers Premium':
+      priceRange = '₹2.5-4 Cr';
+      bookingAmount = '₹5 Lakhs';
+      discount = '3';
+      savings = '₹9 Lakhs';
+      break;
+    case 'Green Valley Villas':
+      priceRange = '₹6-9 Cr';
+      bookingAmount = '₹10 Lakhs';
+      discount = '2';
+      savings = '₹12 Lakhs';
+      break;
+    case 'Affordable Heights':
+      priceRange = '₹35-55 Lakhs';
+      bookingAmount = '₹2 Lakhs';
+      discount = '4';
+      savings = '₹1.8 Lakhs';
+      break;
+    default:
+      priceRange = '₹1-3 Cr';
+      bookingAmount = '₹3 Lakhs';
+      discount = '2.5';
+      savings = '₹5 Lakhs';
+  }
+  
+  const replacements = {
+    '{firstName}': leadData.firstName,
+    '{salesPerson}': salesPerson,
+    '{projectName}': projectData.name,
+    '{unitType}': leadData.requirements?.unitType || '3BHK',
+    '{budget}': budget,
+    '{priceRange}': priceRange,
+    '{amenities}': projectData.configuration?.gym ? 'gym, swimming pool, and clubhouse' : 'basic amenities',
+    '{facing}': leadData.requirements?.facing || 'East',
+    '{totalPrice}': priceRange,
+    '{targetPrice}': budget,
+    '{discount}': discount,
+    '{bookingAmount}': bookingAmount,
+    '{savings}': savings
+  };
+  
+  let conversation = template.join('\n\n');
+  
+  // Replace placeholders
+  Object.keys(replacements).forEach(placeholder => {
+    conversation = conversation.replace(new RegExp(placeholder, 'g'), replacements[placeholder]);
+  });
+  
+  return conversation;
 };
 
 // --- GENERATE COMPREHENSIVE UNIT DATA ---
@@ -519,62 +643,189 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
   }
 });
 
-// --- GENERATE REALISTIC INTERACTION DATA ---
+// --- ENHANCED INTERACTION DATA WITH CONVERSATION CONTENT ---
 
-// Generate interactions for existing leads (focusing on non-new leads)
-const generateInteractions = (leadIndex, leadData) => {
-  const interactionTypes = ['Call', 'Email', 'SMS', 'Meeting', 'Site Visit', 'WhatsApp'];
-  const callOutcomes = ['Interested', 'Not available', 'Call back later', 'Very interested', 'Not interested', 'Busy'];
-  const emailTypes = ['Follow-up', 'Brochure sent', 'Price details', 'Site visit invitation'];
+// Enhanced interaction generation with conversation content
+const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
+  const interactionTypes = [
+    { type: 'Call', weight: 0.4, hasConversation: true },
+    { type: 'Email', weight: 0.25, hasConversation: false },
+    { type: 'WhatsApp', weight: 0.15, hasConversation: true },
+    { type: 'Meeting', weight: 0.15, hasConversation: true },
+    { type: 'Site Visit', weight: 0.05, hasConversation: true }
+  ];
   
-  // Generate 0-8 interactions per lead based on status
+  const callOutcomes = ['connected', 'not_answered', 'busy', 'callback_requested'];
+  const callSentiments = ['positive', 'neutral', 'negative'];
+  
+  // Generate interaction count based on lead status and scenario
   let interactionCount;
+  const leadScenario = leadData.notes?.includes('hot') ? 'hot' : 
+                      leadData.notes?.includes('warm') ? 'warm' : 
+                      leadData.notes?.includes('cold') ? 'cold' : 'poor';
+  
   switch (leadData.status) {
-    case 'New': interactionCount = Math.random() > 0.7 ? 1 : 0; break;
-    case 'Contacted': interactionCount = Math.floor(Math.random() * 3) + 1; break;
-    case 'Qualified': interactionCount = Math.floor(Math.random() * 4) + 2; break;
-    case 'Site Visit Scheduled': interactionCount = Math.floor(Math.random() * 5) + 3; break;
-    case 'Site Visit Completed': interactionCount = Math.floor(Math.random() * 6) + 4; break;
-    case 'Negotiating': interactionCount = Math.floor(Math.random() * 8) + 5; break;
-    default: interactionCount = 0;
+    case 'New': 
+      interactionCount = leadScenario === 'poor' ? 0 : Math.floor(Math.random() * 2); 
+      break;
+    case 'Contacted': 
+      interactionCount = Math.floor(Math.random() * 3) + 1; 
+      break;
+    case 'Qualified': 
+      interactionCount = Math.floor(Math.random() * 4) + 2; 
+      break;
+    case 'Site Visit Scheduled': 
+      interactionCount = Math.floor(Math.random() * 5) + 3; 
+      break;
+    case 'Site Visit Completed': 
+      interactionCount = Math.floor(Math.random() * 6) + 4; 
+      break;
+    case 'Negotiating': 
+      interactionCount = Math.floor(Math.random() * 8) + 5; 
+      break;
+    default: 
+      interactionCount = 0;
   }
+  
+  const interactions = [];
   
   for (let i = 0; i < interactionCount; i++) {
     const interactionDate = new Date(leadData.createdAt);
-    interactionDate.setDate(interactionDate.getDate() + Math.floor(Math.random() * 
-      Math.max(1, (new Date() - leadData.createdAt) / (24 * 60 * 60 * 1000))));
+    const dayOffset = Math.floor((i + 1) * (Math.max(1, (new Date() - leadData.createdAt) / (24 * 60 * 60 * 1000)) / interactionCount));
+    interactionDate.setDate(interactionDate.getDate() + dayOffset);
     
-    const type = interactionTypes[Math.floor(Math.random() * interactionTypes.length)];
+    // Select interaction type based on weights and progression
+    let selectedType;
+    if (i === 0) {
+      selectedType = 'Call'; // First interaction is usually a call
+    } else if (leadData.status === 'Site Visit Scheduled' || leadData.status === 'Site Visit Completed') {
+      selectedType = Math.random() > 0.3 ? 'Call' : 'Site Visit';
+    } else if (leadData.status === 'Negotiating') {
+      selectedType = Math.random() > 0.2 ? 'Call' : 'Meeting';
+    } else {
+      const rand = Math.random();
+      if (rand < 0.5) selectedType = 'Call';
+      else if (rand < 0.7) selectedType = 'Email';
+      else if (rand < 0.85) selectedType = 'WhatsApp';
+      else selectedType = 'Meeting';
+    }
+    
+    // Determine conversation template based on interaction progression
+    let conversationTemplate;
+    if (i === 0) {
+      conversationTemplate = 'initial_call';
+    } else if (leadData.status === 'Negotiating') {
+      conversationTemplate = Math.random() > 0.5 ? 'negotiation' : 'closing_attempt';
+    } else if (leadData.status === 'Site Visit Completed' || leadData.status === 'Site Visit Scheduled') {
+      conversationTemplate = selectedType === 'Site Visit' ? 'site_visit' : 'follow_up_call';
+    } else if (Math.random() > 0.7) {
+      conversationTemplate = 'objection_handling';
+    } else {
+      conversationTemplate = 'follow_up_call';
+    }
+    
+    // Generate conversation content
+    let conversationContent = '';
+    let summary = '';
+    let outcome = 'completed';
+    let sentiment = 'neutral';
+    let duration = null;
+    
+    if (selectedType === 'Call') {
+      outcome = callOutcomes[Math.floor(Math.random() * callOutcomes.length)];
+      duration = outcome === 'connected' ? Math.floor(Math.random() * 25) + 5 : 0; // 5-30 minutes
+      sentiment = outcome === 'connected' ? 
+        (leadScenario === 'hot' ? 'positive' : 
+         leadScenario === 'warm' ? (Math.random() > 0.3 ? 'positive' : 'neutral') :
+         callSentiments[Math.floor(Math.random() * callSentiments.length)]) : 'neutral';
+      
+      if (outcome === 'connected') {
+        conversationContent = generateConversationContent(
+          conversationTemplates[conversationTemplate], 
+          leadData, 
+          projectData, 
+          selectedType
+        );
+        summary = `${duration}-minute call discussing ${leadData.requirements?.unitType || '3BHK'} requirements. Customer showed ${sentiment} interest.`;
+      } else {
+        summary = `Call attempt - ${outcome.replace('_', ' ')}`;
+      }
+    } else if (selectedType === 'WhatsApp') {
+      conversationContent = `Sales: Hi ${leadData.firstName}, this is regarding ${projectData.name}. Are you still interested in ${leadData.requirements?.unitType || '3BHK'} units?\n\nCustomer: Yes, but I have some questions about pricing and payment plans.\n\nSales: I'd be happy to help! Can we schedule a call to discuss in detail?\n\nCustomer: Sure, let's talk tomorrow evening.`;
+      summary = 'WhatsApp conversation about pricing and payment plans';
+      sentiment = 'positive';
+    } else if (selectedType === 'Email') {
+      summary = i === 0 ? 'Initial welcome email with project brochure' :
+                i === 1 ? 'Follow-up email with floor plans and pricing' :
+                Math.random() > 0.5 ? 'Payment plan and loan assistance details' : 'Site visit invitation';
+      sentiment = 'neutral';
+    } else if (selectedType === 'Meeting' || selectedType === 'Site Visit') {
+      conversationContent = generateConversationContent(
+        conversationTemplates[selectedType === 'Site Visit' ? 'site_visit' : conversationTemplate], 
+        leadData, 
+        projectData, 
+        selectedType
+      );
+      summary = selectedType === 'Site Visit' ? 
+        `Site visit completed. Customer liked the ${leadData.requirements?.unitType || '3BHK'} unit.` :
+        'Office meeting to discuss project details and address concerns';
+      sentiment = leadScenario === 'hot' ? 'positive' : 
+                 leadScenario === 'warm' ? 'positive' : 
+                 Math.random() > 0.4 ? 'positive' : 'neutral';
+      duration = selectedType === 'Site Visit' ? Math.floor(Math.random() * 60) + 30 : Math.floor(Math.random() * 45) + 15;
+    }
     
     const interaction = {
-      leadIndex, // We'll replace with actual lead ID later
-      type,
-      direction: type === 'Email' ? (Math.random() > 0.7 ? 'Inbound' : 'Outbound') : 'Outbound',
-      content: type === 'Call' ? `Call regarding ${leadData.requirements.unitType} requirement` :
-               type === 'Email' ? emailTypes[Math.floor(Math.random() * emailTypes.length)] :
-               type === 'Site Visit' ? `Site visit for ${sampleData.projects.find(p => p._id.equals(leadData.project)).name}` :
-               `${type} interaction with ${leadData.firstName}`,
-      outcome: type === 'Call' ? callOutcomes[Math.floor(Math.random() * callOutcomes.length)] :
-               type === 'Site Visit' ? 'Completed successfully' : 'Positive response',
-      nextAction: i === interactionCount - 1 ? 'Schedule follow-up call' : null,
+      leadIndex,
+      type: selectedType,
+      direction: 'Outbound',
+      content: conversationContent || summary, // Use content instead of notes
+      outcome: outcome,
+      nextAction: i === interactionCount - 1 ? 
+        (leadData.status === 'Negotiating' ? 'Send revised quotation' : 
+         leadData.status === 'Site Visit Scheduled' ? 'Confirm site visit timing' :
+         'Schedule follow-up call in 3 days') : null,
+      
+      // Additional fields that may be useful but not in the schema
+      summary: summary,
+      duration: duration,
+      sentiment: sentiment,
+      followUpRequired: i === interactionCount - 1 && leadData.status !== 'Booked',
+      
+      // AI-relevant metadata
+      aiMetadata: {
+        keyTopics: selectedType === 'Call' && outcome === 'connected' ? 
+          ['pricing', 'amenities', 'location', 'timeline'] : [],
+        buyingSignals: sentiment === 'positive' ? 
+          ['asked about pricing', 'interested in site visit', 'discussed timeline'] : [],
+        objections: sentiment === 'negative' ? 
+          ['price too high', 'location concerns', 'timeline issues'] : [],
+        nextStepSuggested: i === interactionCount - 1,
+        conversationQuality: outcome === 'connected' ? 'high' : 'low'
+      },
+      
       createdAt: interactionDate,
       updatedAt: interactionDate
     };
     
-    sampleData.interactions.push(interaction);
+    interactions.push(interaction);
   }
+  
+  return interactions;
 };
 
-// Generate interactions for each lead
+// Generate enhanced interactions for each lead
 sampleData.leads.forEach((lead, index) => {
-  generateInteractions(index, lead);
+  const projectData = sampleData.projects.find(p => p._id.equals(lead.project));
+  const enhancedInteractions = generateEnhancedInteractions(index, lead, projectData);
+  sampleData.interactions.push(...enhancedInteractions);
 });
 
 // --- DATABASE OPERATIONS WITH ENHANCED ERROR HANDLING ---
 
 const importData = async () => {
   try {
-    console.log('🚀 Starting enhanced data import...');
+    console.log('🚀 Starting enhanced data import with AI conversation content...');
     
     // Clear existing data with confirmation
     console.log('🧹 Clearing existing data...');
@@ -639,23 +890,29 @@ const importData = async () => {
     const createdLeads = await Lead.insertMany(leadsWithOrg);
     console.log(`✅ ${createdLeads.length} leads created and assigned`);
 
-    // Create Interactions
-    console.log('💬 Creating interactions...');
+    // Create Enhanced Interactions with Conversation Content
+    console.log('💬 Creating interactions with AI conversation content...');
     const interactionsWithData = sampleData.interactions.map(interaction => {
       const lead = createdLeads[interaction.leadIndex];
       const assignedUser = lead.assignedTo || createdUsers[0]._id;
       
+      // Remove the leadIndex property and add proper references
+      const { leadIndex, summary, duration, sentiment, followUpRequired, aiMetadata, ...interactionData } = interaction;
+      
       return {
-        ...interaction,
+        ...interactionData,
         lead: lead._id,
-        user: assignedUser,
+        user: assignedUser, // Use 'user' instead of 'createdBy'
         organization: createdOrg._id
       };
     });
     
-    delete interactionsWithData.forEach(i => delete i.leadIndex); // Remove temp field
     const createdInteractions = await Interaction.insertMany(interactionsWithData);
-    console.log(`✅ ${createdInteractions.length} interactions created`);
+    console.log(`✅ ${createdInteractions.length} interactions with conversation content created`);
+
+    // Add summary of conversation content
+    const conversationInteractions = createdInteractions.filter(i => i.content && i.content.length > 100);
+    console.log(`📝 ${conversationInteractions.length} interactions contain detailed conversation content for AI analysis`);
 
     // Create realistic sales data
     console.log('💰 Creating sample sales...');
@@ -743,10 +1000,29 @@ const importData = async () => {
     console.log(`   Interactions: ${createdInteractions.length}`);
     console.log(`   Sales: ${await Sale.countDocuments()}`);
     
+    // Enhanced AI-specific summary
+    console.log('\n🤖 AI Conversation Features Ready:');
+    console.log(`   Interactions with conversation content: ${conversationInteractions.length}`);
+    console.log(`   Average conversation length: ${Math.round(conversationInteractions.reduce((sum, i) => sum + i.content.length, 0) / conversationInteractions.length)} characters`);
+    console.log(`   Call interactions: ${createdInteractions.filter(i => i.type === 'Call').length}`);
+    console.log(`   Connected calls with conversations: ${createdInteractions.filter(i => i.type === 'Call' && i.outcome === 'connected').length}`);
+    console.log(`   Site visit interactions: ${createdInteractions.filter(i => i.type === 'Site Visit').length}`);
+    console.log(`   WhatsApp conversations: ${createdInteractions.filter(i => i.type === 'WhatsApp').length}`);
+    console.log(`   Email interactions: ${createdInteractions.filter(i => i.type === 'Email').length}`);
+    
     console.log('\n🔑 Login Credentials:');
     console.log(`   Business Head: ${createdUsers[0]?.email} / SecurePass123!`);
     console.log(`   Sales Executive 1: ${createdUsers[3]?.email} / SecurePass123!`);
     console.log(`   Sales Executive 2: ${createdUsers[4]?.email} / SecurePass123!`);
+
+    console.log('\n🚀 AI Testing Ready:');
+    console.log('   • Conversation Analysis: Real conversation content available');
+    console.log('   • Sentiment Detection: Positive/Neutral/Negative sentiments included');
+    console.log('   • Buying Signals: Embedded in conversation templates');
+    console.log('   • Objection Handling: Common real estate objections included');
+    console.log('   • Follow-up Recommendations: Next actions suggested');
+    console.log('   • Interaction Patterns: Multi-touch customer journeys');
+    console.log('\n🧪 Test the AI features: node tests/aiConversationTest.js');
 
     process.exit(0);
   } catch (error) {
