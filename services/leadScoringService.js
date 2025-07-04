@@ -1,162 +1,331 @@
 // File: services/leadScoringService.js
-// Description: Core service for calculating and managing lead scores using multiple criteria
+// Description: FIXED Lead Scoring Service - Compatible with current Lead model
+// Version: 1.6 - Debugging and compatibility fixes
+// Location: services/leadScoringService.js
 
-import Lead from '../models/leadModel.js';
-import Interaction from '../models/interactionModel.js';
-import Sale from '../models/salesModel.js';
 import mongoose from 'mongoose';
 
-/**
- * Default scoring configuration
- * Each criterion has a weight and scoring rules
- */
-const DEFAULT_SCORING_CONFIG = {
-  // Budget alignment (30% weight)
-  budgetAlignment: {
-    weight: 0.30,
-    rules: {
-      exactMatch: 100,      // Budget exactly matches unit price
-      within10Percent: 85,  // Budget within 10% of unit price
-      within20Percent: 70,  // Budget within 20% of unit price
-      within30Percent: 50,  // Budget within 30% of unit price
-      below30Percent: 20,   // Budget more than 30% below unit price
-      noBudget: 40          // No budget specified
-    }
-  },
-  
-  // Engagement level (25% weight)
-  engagementLevel: {
-    weight: 0.25,
-    rules: {
-      highEngagement: 100,    // 5+ interactions in last 30 days
-      mediumEngagement: 75,   // 3-4 interactions in last 30 days
-      lowEngagement: 50,      // 1-2 interactions in last 30 days
-      noEngagement: 10        // No interactions in last 30 days
-    }
-  },
-  
-  // Timeline urgency (20% weight)
-  timelineUrgency: {
-    weight: 0.20,
-    rules: {
-      immediate: 100,         // Immediate purchase intent
-      within3Months: 85,      // 1-3 months timeline
-      within6Months: 65,      // 3-6 months timeline
-      within12Months: 45,     // 6-12 months timeline
-      longTerm: 25,           // 12+ months timeline
-      noTimeline: 35          // No timeline specified
-    }
-  },
-  
-  // Lead source quality (15% weight)
-  sourceQuality: {
-    weight: 0.15,
-    rules: {
-      referral: 100,          // Referred by existing customer
-      walkIn: 90,            // Walk-in lead
-      website: 75,           // Website inquiry
-      propertyPortal: 70,    // Property portal lead
-      socialMedia: 60,       // Social media lead
-      advertisement: 50,     // Advertisement response
-      coldCall: 30,          // Cold call lead
-      other: 40              // Other sources
-    }
-  },
-  
-  // Recency factor (10% weight)
-  recencyFactor: {
-    weight: 0.10,
-    rules: {
-      within24Hours: 100,     // Created within 24 hours
-      within7Days: 85,        // Created within 7 days
-      within30Days: 70,       // Created within 30 days
-      within90Days: 50,       // Created within 90 days
-      older: 25               // Older than 90 days
+// FIXED: Use dynamic imports to avoid circular dependency issues
+let Lead, Interaction, Sale, Unit, Project;
+
+const initializeModels = async () => {
+  if (!Lead) {
+    try {
+      const { default: LeadModel } = await import('../models/leadModel.js');
+      const { default: InteractionModel } = await import('../models/interactionModel.js');
+      const { default: UnitModel } = await import('../models/unitModel.js');
+      
+      Lead = LeadModel;
+      Interaction = InteractionModel;
+      Unit = UnitModel;
+      
+      console.log('✅ Models initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize models:', error.message);
+      throw error;
     }
   }
 };
 
 /**
- * Calculates lead score based on multiple criteria
- * @param {Object} lead - Lead object with populated fields
- * @param {Object} config - Optional custom scoring configuration
+ * SIMPLIFIED: Default scoring configuration - keeping it simple for debugging
+ */
+const DEFAULT_SCORING_CONFIG = {
+  budgetAlignment: {
+    weight: 0.30,
+    rules: {
+      exactMatch: 100,
+      within10Percent: 85,
+      within20Percent: 70,
+      within30Percent: 50,
+      below30Percent: 20,
+      noBudget: 40
+    }
+  },
+  
+  engagementLevel: {
+    weight: 0.25,
+    rules: {
+      highEngagement: 100,
+      mediumEngagement: 75,
+      lowEngagement: 50,
+      noEngagement: 10
+    }
+  },
+  
+  timelineUrgency: {
+    weight: 0.20,
+    rules: {
+      immediate: 100,
+      within3Months: 85,
+      within6Months: 65,
+      within12Months: 45,
+      longTerm: 25,
+      noTimeline: 35
+    }
+  },
+  
+  sourceQuality: {
+    weight: 0.15,
+    rules: {
+      referral: 100,
+      walkIn: 90,
+      website: 75,
+      propertyPortal: 70,
+      socialMedia: 60,
+      advertisement: 50,
+      coldCall: 30,
+      other: 40
+    }
+  },
+  
+  recencyFactor: {
+    weight: 0.10,
+    rules: {
+      within24Hours: 100,
+      within7Days: 85,
+      within30Days: 70,
+      within90Days: 50,
+      older: 25
+    }
+  }
+};
+
+/**
+ * FIXED: Main scoring function with comprehensive error handling
+ * @param {Object} lead - Lead object
+ * @param {Object} config - Scoring configuration
  * @returns {Object} Score calculation result
  */
 const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
   try {
-    const scoreBreakdown = {};
+    console.log(`🔄 Calculating score for lead: ${lead.firstName} ${lead.lastName || ''} (ID: ${lead._id})`);
+    
+    // CRITICAL FIX: Ensure config is never null/undefined
+    if (!config || typeof config !== 'object') {
+      console.log('⚠️ Config is null/undefined, using DEFAULT_SCORING_CONFIG');
+      config = DEFAULT_SCORING_CONFIG;
+    }
+    
+    // Ensure all config sections exist
+    if (!config.budgetAlignment) config.budgetAlignment = DEFAULT_SCORING_CONFIG.budgetAlignment;
+    if (!config.engagementLevel) config.engagementLevel = DEFAULT_SCORING_CONFIG.engagementLevel;
+    if (!config.timelineUrgency) config.timelineUrgency = DEFAULT_SCORING_CONFIG.timelineUrgency;
+    if (!config.sourceQuality) config.sourceQuality = DEFAULT_SCORING_CONFIG.sourceQuality;
+    if (!config.recencyFactor) config.recencyFactor = DEFAULT_SCORING_CONFIG.recencyFactor;
+    
+    console.log('🔧 Using config:', {
+      hasBudgetAlignment: !!config.budgetAlignment,
+      hasEngagementLevel: !!config.engagementLevel,
+      hasTimelineUrgency: !!config.timelineUrgency,
+      hasSourceQuality: !!config.sourceQuality,
+      hasRecencyFactor: !!config.recencyFactor
+    });
+    
+    // DEBUGGING: Log lead structure
+    console.log('📋 Lead data structure:', {
+      id: lead._id,
+      budget: lead.budget,
+      requirements: lead.requirements,
+      source: lead.source,
+      createdAt: lead.createdAt,
+      hasProject: !!lead.project
+    });
+
+    await initializeModels();
+    
+    // Initialize scoreBreakdown properly
+    const scoreBreakdown = {
+      budgetAlignment: null,
+      engagementLevel: null,
+      timelineUrgency: null,
+      sourceQuality: null,
+      recencyFactor: null
+    };
+    
     let totalScore = 0;
     
-    // 1. Budget Alignment Score
-    const budgetScore = await calculateBudgetAlignmentScore(lead, config.budgetAlignment);
-    scoreBreakdown.budgetAlignment = budgetScore;
-    totalScore += budgetScore.weightedScore;
+    // 1. Budget Alignment Score with error handling
+    try {
+      console.log('💰 Calculating budget alignment...');
+      const budgetScore = await calculateBudgetAlignmentScore(lead, config.budgetAlignment);
+      console.log('💰 Budget score result:', budgetScore);
+      scoreBreakdown.budgetAlignment = budgetScore;
+      totalScore += budgetScore.weightedScore || 0;
+    } catch (budgetError) {
+      console.error('❌ Budget calculation error:', budgetError.message);
+      scoreBreakdown.budgetAlignment = {
+        rawScore: config.budgetAlignment.rules.noBudget,
+        weightedScore: config.budgetAlignment.rules.noBudget * config.budgetAlignment.weight,
+        reasoning: 'Error calculating budget alignment',
+        error: budgetError.message
+      };
+      totalScore += scoreBreakdown.budgetAlignment.weightedScore;
+    }
     
-    // 2. Engagement Level Score
-    const engagementScore = await calculateEngagementScore(lead, config.engagementLevel);
-    scoreBreakdown.engagementLevel = engagementScore;
-    totalScore += engagementScore.weightedScore;
+    // 2. Engagement Level Score with error handling
+    try {
+      console.log('📞 Calculating engagement level...');
+      const engagementScore = await calculateEngagementScore(lead, config.engagementLevel);
+      console.log('📞 Engagement score result:', engagementScore);
+      scoreBreakdown.engagementLevel = engagementScore;
+      totalScore += engagementScore.weightedScore || 0;
+    } catch (engagementError) {
+      console.error('❌ Engagement calculation error:', engagementError.message);
+      scoreBreakdown.engagementLevel = {
+        rawScore: config.engagementLevel.rules.noEngagement,
+        weightedScore: config.engagementLevel.rules.noEngagement * config.engagementLevel.weight,
+        reasoning: 'Error calculating engagement',
+        error: engagementError.message
+      };
+      totalScore += scoreBreakdown.engagementLevel.weightedScore;
+    }
     
-    // 3. Timeline Urgency Score
-    const timelineScore = calculateTimelineScore(lead, config.timelineUrgency);
-    scoreBreakdown.timelineUrgency = timelineScore;
-    totalScore += timelineScore.weightedScore;
+    // 3. Timeline Urgency Score with error handling
+    try {
+      console.log('⏰ Calculating timeline urgency...');
+      const timelineScore = calculateTimelineScore(lead, config.timelineUrgency);
+      console.log('⏰ Timeline score result:', timelineScore);
+      scoreBreakdown.timelineUrgency = timelineScore;
+      totalScore += timelineScore.weightedScore || 0;
+    } catch (timelineError) {
+      console.error('❌ Timeline calculation error:', timelineError.message);
+      scoreBreakdown.timelineUrgency = {
+        rawScore: config.timelineUrgency.rules.noTimeline,
+        weightedScore: config.timelineUrgency.rules.noTimeline * config.timelineUrgency.weight,
+        reasoning: 'Error calculating timeline',
+        error: timelineError.message
+      };
+      totalScore += scoreBreakdown.timelineUrgency.weightedScore;
+    }
     
-    // 4. Source Quality Score
-    const sourceScore = calculateSourceScore(lead, config.sourceQuality);
-    scoreBreakdown.sourceQuality = sourceScore;
-    totalScore += sourceScore.weightedScore;
+    // 4. Source Quality Score with error handling
+    try {
+      console.log('📍 Calculating source quality...');
+      const sourceScore = calculateSourceScore(lead, config.sourceQuality);
+      console.log('📍 Source score result:', sourceScore);
+      scoreBreakdown.sourceQuality = sourceScore;
+      totalScore += sourceScore.weightedScore || 0;
+    } catch (sourceError) {
+      console.error('❌ Source calculation error:', sourceError.message);
+      scoreBreakdown.sourceQuality = {
+        rawScore: config.sourceQuality.rules.other,
+        weightedScore: config.sourceQuality.rules.other * config.sourceQuality.weight,
+        reasoning: 'Error calculating source quality',
+        error: sourceError.message
+      };
+      totalScore += scoreBreakdown.sourceQuality.weightedScore;
+    }
     
-    // 5. Recency Factor Score
-    const recencyScore = calculateRecencyScore(lead, config.recencyFactor);
-    scoreBreakdown.recencyFactor = recencyScore;
-    totalScore += recencyScore.weightedScore;
+    // 5. Recency Factor Score with error handling
+    try {
+      console.log('📅 Calculating recency factor...');
+      const recencyScore = calculateRecencyScore(lead, config.recencyFactor);
+      console.log('📅 Recency score result:', recencyScore);
+      scoreBreakdown.recencyFactor = recencyScore;
+      totalScore += recencyScore.weightedScore || 0;
+    } catch (recencyError) {
+      console.error('❌ Recency calculation error:', recencyError.message);
+      scoreBreakdown.recencyFactor = {
+        rawScore: config.recencyFactor.rules.older,
+        weightedScore: config.recencyFactor.rules.older * config.recencyFactor.weight,
+        reasoning: 'Error calculating recency',
+        error: recencyError.message
+      };
+      totalScore += scoreBreakdown.recencyFactor.weightedScore;
+    }
     
-    // Round to 2 decimal places
-    totalScore = Math.round(totalScore * 100) / 100;
+    // Ensure score is valid
+    totalScore = Math.max(0, Math.min(100, Math.round(totalScore * 100) / 100));
     
-    return {
+    const result = {
       totalScore,
       breakdown: scoreBreakdown,
       grade: getScoreGrade(totalScore),
+      priority: getLeadPriority(totalScore),
+      confidence: 75, // Fixed confidence for now
       calculatedAt: new Date()
     };
     
+    console.log(`✅ Score calculated successfully: ${totalScore} (Grade: ${result.grade})`);
+    return result;
+    
   } catch (error) {
-    throw new Error(`Failed to calculate lead score: ${error.message}`);
+    console.error(`❌ Score calculation failed for lead ${lead._id}:`, error);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Return fallback score
+    return {
+      totalScore: 25,
+      breakdown: {
+        budgetAlignment: { rawScore: 25, weightedScore: 7.5, reasoning: 'Calculation failed', error: error.message },
+        engagementLevel: { rawScore: 25, weightedScore: 6.25, reasoning: 'Calculation failed', error: error.message },
+        timelineUrgency: { rawScore: 25, weightedScore: 5, reasoning: 'Calculation failed', error: error.message },
+        sourceQuality: { rawScore: 25, weightedScore: 3.75, reasoning: 'Calculation failed', error: error.message },
+        recencyFactor: { rawScore: 25, weightedScore: 2.5, reasoning: 'Calculation failed', error: error.message }
+      },
+      grade: 'D',
+      priority: 'Very Low',
+      confidence: 30,
+      calculatedAt: new Date(),
+      error: error.message
+    };
   }
 };
 
 /**
- * Calculate budget alignment score
- * @param {Object} lead - Lead object
- * @param {Object} config - Budget alignment configuration
- * @returns {Object} Budget score details
+ * SIMPLIFIED: Budget alignment calculation
  */
 const calculateBudgetAlignmentScore = async (lead, config) => {
   try {
-    if (!lead.budget || (!lead.budget.min && !lead.budget.max)) {
+    console.log('💰 Budget data:', lead.budget);
+    
+    // Check if budget exists and has valid data
+    if (!lead.budget || (typeof lead.budget !== 'object')) {
+      console.log('💰 No budget object found');
       return {
         rawScore: config.rules.noBudget,
         weightedScore: config.rules.noBudget * config.weight,
-        reasoning: 'No budget specified'
+        reasoning: 'No budget specified',
+        budgetRange: 'Not specified'
       };
     }
     
-    // Get average unit price for the project (simplified - in real implementation, 
-    // you might want to get specific unit prices based on requirements)
+    const { min, max } = lead.budget;
+    
+    if (!min && !max) {
+      console.log('💰 No budget min/max values');
+      return {
+        rawScore: config.rules.noBudget,
+        weightedScore: config.rules.noBudget * config.weight,
+        reasoning: 'No budget amounts specified',
+        budgetRange: 'Not specified'
+      };
+    }
+    
+    // Get average unit price for comparison
     const avgUnitPrice = await getAverageUnitPrice(lead.project);
+    console.log('💰 Average unit price:', avgUnitPrice);
     
-    const budgetMax = lead.budget.max || lead.budget.min;
-    const budgetMin = lead.budget.min || lead.budget.max;
+    if (!avgUnitPrice) {
+      return {
+        rawScore: config.rules.noBudget,
+        weightedScore: config.rules.noBudget * config.weight,
+        reasoning: 'Project unit prices not available',
+        budgetRange: formatBudgetRange(min, max)
+      };
+    }
     
-    // Calculate budget alignment percentage
+    const budgetMax = max || min;
+    const budgetMin = min || max;
+    
     let alignmentScore;
     let reasoning;
     
+    // Simple alignment check
     if (budgetMin <= avgUnitPrice && avgUnitPrice <= budgetMax) {
       alignmentScore = config.rules.exactMatch;
-      reasoning = 'Budget perfectly aligns with unit price';
+      reasoning = 'Budget range includes unit price';
     } else {
       const deviation = Math.abs(avgUnitPrice - budgetMax) / avgUnitPrice;
       
@@ -171,7 +340,7 @@ const calculateBudgetAlignmentScore = async (lead, config) => {
         reasoning = 'Budget within 30% of unit price';
       } else {
         alignmentScore = config.rules.below30Percent;
-        reasoning = 'Budget significantly below unit price';
+        reasoning = 'Budget significantly different from unit price';
       }
     }
     
@@ -179,47 +348,44 @@ const calculateBudgetAlignmentScore = async (lead, config) => {
       rawScore: alignmentScore,
       weightedScore: alignmentScore * config.weight,
       reasoning,
-      budgetRange: `₹${budgetMin?.toLocaleString()} - ₹${budgetMax?.toLocaleString()}`,
-      avgUnitPrice: `₹${avgUnitPrice?.toLocaleString()}`
+      budgetRange: formatBudgetRange(budgetMin, budgetMax),
+      avgUnitPrice: `₹${(avgUnitPrice / 10000000).toFixed(2)} Cr`
     };
     
   } catch (error) {
-    return {
-      rawScore: config.rules.noBudget,
-      weightedScore: config.rules.noBudget * config.weight,
-      reasoning: 'Error calculating budget alignment'
-    };
+    console.error('💰 Budget calculation error:', error);
+    throw error;
   }
 };
 
 /**
- * Calculate engagement score based on interactions
- * @param {Object} lead - Lead object
- * @param {Object} config - Engagement configuration
- * @returns {Object} Engagement score details
+ * SIMPLIFIED: Engagement calculation
  */
 const calculateEngagementScore = async (lead, config) => {
   try {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
+    // Count interactions in last 30 days
     const interactionCount = await Interaction.countDocuments({
       lead: lead._id,
       createdAt: { $gte: thirtyDaysAgo }
     });
+    
+    console.log('📞 Interaction count:', interactionCount);
     
     let engagementScore;
     let reasoning;
     
     if (interactionCount >= 5) {
       engagementScore = config.rules.highEngagement;
-      reasoning = `High engagement: ${interactionCount} interactions in last 30 days`;
+      reasoning = `High engagement: ${interactionCount} interactions`;
     } else if (interactionCount >= 3) {
       engagementScore = config.rules.mediumEngagement;
-      reasoning = `Medium engagement: ${interactionCount} interactions in last 30 days`;
+      reasoning = `Medium engagement: ${interactionCount} interactions`;
     } else if (interactionCount >= 1) {
       engagementScore = config.rules.lowEngagement;
-      reasoning = `Low engagement: ${interactionCount} interactions in last 30 days`;
+      reasoning = `Low engagement: ${interactionCount} interactions`;
     } else {
       engagementScore = config.rules.noEngagement;
       reasoning = 'No recent interactions';
@@ -233,142 +399,189 @@ const calculateEngagementScore = async (lead, config) => {
     };
     
   } catch (error) {
-    return {
-      rawScore: config.rules.noEngagement,
-      weightedScore: config.rules.noEngagement * config.weight,
-      reasoning: 'Error calculating engagement score'
-    };
+    console.error('📞 Engagement calculation error:', error);
+    throw error;
   }
 };
 
 /**
- * Calculate timeline urgency score
- * @param {Object} lead - Lead object
- * @param {Object} config - Timeline configuration
- * @returns {Object} Timeline score details
+ * SIMPLIFIED: Timeline calculation
  */
 const calculateTimelineScore = (lead, config) => {
-  const timeline = lead.requirements?.timeline;
-  
-  if (!timeline) {
-    return {
-      rawScore: config.rules.noTimeline,
-      weightedScore: config.rules.noTimeline * config.weight,
-      reasoning: 'No timeline specified'
-    };
-  }
-  
-  let timelineScore;
-  let reasoning;
-  
-  switch (timeline.toLowerCase()) {
-    case 'immediate':
+  try {
+    // Check different possible timeline fields
+    const timeline = lead.requirements?.timeline || lead.timeline || lead.purchaseTimeline;
+    
+    console.log('⏰ Timeline data:', timeline);
+    
+    if (!timeline) {
+      return {
+        rawScore: config.rules.noTimeline,
+        weightedScore: config.rules.noTimeline * config.weight,
+        reasoning: 'No timeline specified',
+        timeline: 'Not specified'
+      };
+    }
+    
+    let timelineScore;
+    let reasoning;
+    
+    const timelineLower = timeline.toLowerCase();
+    
+    if (timelineLower.includes('immediate') || timeline === 'immediate') {
       timelineScore = config.rules.immediate;
       reasoning = 'Immediate purchase intent';
-      break;
-    case '1-3_months':
+    } else if (timelineLower.includes('1-3') || timeline === '1-3_months') {
       timelineScore = config.rules.within3Months;
       reasoning = 'Short-term timeline (1-3 months)';
-      break;
-    case '3-6_months':
+    } else if (timelineLower.includes('3-6') || timeline === '3-6_months') {
       timelineScore = config.rules.within6Months;
       reasoning = 'Medium-term timeline (3-6 months)';
-      break;
-    case '6-12_months':
+    } else if (timelineLower.includes('6-12') || timeline === '6-12_months') {
       timelineScore = config.rules.within12Months;
       reasoning = 'Long-term timeline (6-12 months)';
-      break;
-    case '12+_months':
+    } else {
       timelineScore = config.rules.longTerm;
-      reasoning = 'Very long-term timeline (12+ months)';
-      break;
-    default:
-      timelineScore = config.rules.noTimeline;
-      reasoning = 'Timeline not specified';
+      reasoning = 'Very long-term timeline';
+    }
+    
+    return {
+      rawScore: timelineScore,
+      weightedScore: timelineScore * config.weight,
+      reasoning,
+      timeline
+    };
+    
+  } catch (error) {
+    console.error('⏰ Timeline calculation error:', error);
+    throw error;
   }
-  
-  return {
-    rawScore: timelineScore,
-    weightedScore: timelineScore * config.weight,
-    reasoning,
-    timeline
-  };
 };
 
 /**
- * Calculate source quality score
- * @param {Object} lead - Lead object
- * @param {Object} config - Source quality configuration
- * @returns {Object} Source score details
+ * SIMPLIFIED: Source calculation
  */
 const calculateSourceScore = (lead, config) => {
-  const source = lead.source?.toLowerCase() || 'other';
-  
-  const sourceMapping = {
-    'referral': config.rules.referral,
-    'walk-in': config.rules.walkIn,
-    'website': config.rules.website,
-    'property portal': config.rules.propertyPortal,
-    'social media': config.rules.socialMedia,
-    'advertisement': config.rules.advertisement,
-    'cold call': config.rules.coldCall,
-    'other': config.rules.other
-  };
-  
-  const sourceScore = sourceMapping[source] || config.rules.other;
-  
-  return {
-    rawScore: sourceScore,
-    weightedScore: sourceScore * config.weight,
-    reasoning: `Source: ${lead.source || 'Other'}`,
-    source: lead.source
-  };
+  try {
+    const source = lead.source || 'Other';
+    console.log('📍 Source data:', source);
+    
+    const sourceLower = source.toLowerCase().replace(/[-\s]/g, '');
+    
+    let sourceScore;
+    if (sourceLower.includes('referral')) {
+      sourceScore = config.rules.referral;
+    } else if (sourceLower.includes('walkin')) {
+      sourceScore = config.rules.walkIn;
+    } else if (sourceLower.includes('website')) {
+      sourceScore = config.rules.website;
+    } else if (sourceLower.includes('portal') || sourceLower.includes('property')) {
+      sourceScore = config.rules.propertyPortal;
+    } else if (sourceLower.includes('social')) {
+      sourceScore = config.rules.socialMedia;
+    } else if (sourceLower.includes('advertisement') || sourceLower.includes('ad')) {
+      sourceScore = config.rules.advertisement;
+    } else if (sourceLower.includes('cold') || sourceLower.includes('call')) {
+      sourceScore = config.rules.coldCall;
+    } else {
+      sourceScore = config.rules.other;
+    }
+    
+    return {
+      rawScore: sourceScore,
+      weightedScore: sourceScore * config.weight,
+      reasoning: `Source: ${source}`,
+      source
+    };
+    
+  } catch (error) {
+    console.error('📍 Source calculation error:', error);
+    throw error;
+  }
 };
 
 /**
- * Calculate recency factor score
- * @param {Object} lead - Lead object
- * @param {Object} config - Recency configuration
- * @returns {Object} Recency score details
+ * SIMPLIFIED: Recency calculation
  */
 const calculateRecencyScore = (lead, config) => {
-  const now = new Date();
-  const leadAge = now - lead.createdAt;
-  const hoursAge = leadAge / (1000 * 60 * 60);
-  const daysAge = hoursAge / 24;
-  
-  let recencyScore;
-  let reasoning;
-  
-  if (hoursAge <= 24) {
-    recencyScore = config.rules.within24Hours;
-    reasoning = 'Very recent lead (within 24 hours)';
-  } else if (daysAge <= 7) {
-    recencyScore = config.rules.within7Days;
-    reasoning = 'Recent lead (within 7 days)';
-  } else if (daysAge <= 30) {
-    recencyScore = config.rules.within30Days;
-    reasoning = 'Moderately recent lead (within 30 days)';
-  } else if (daysAge <= 90) {
-    recencyScore = config.rules.within90Days;
-    reasoning = 'Older lead (within 90 days)';
-  } else {
-    recencyScore = config.rules.older;
-    reasoning = 'Old lead (90+ days)';
+  try {
+    const now = new Date();
+    const createdAt = lead.createdAt || new Date();
+    const ageInDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
+    
+    console.log('📅 Lead age in days:', ageInDays);
+    
+    let recencyScore;
+    let reasoning;
+    
+    if (ageInDays <= 1) {
+      recencyScore = config.rules.within24Hours;
+      reasoning = 'Very fresh lead (within 24 hours)';
+    } else if (ageInDays <= 7) {
+      recencyScore = config.rules.within7Days;
+      reasoning = 'Recent lead (within 7 days)';
+    } else if (ageInDays <= 30) {
+      recencyScore = config.rules.within30Days;
+      reasoning = 'Moderately recent lead (within 30 days)';
+    } else if (ageInDays <= 90) {
+      recencyScore = config.rules.within90Days;
+      reasoning = 'Older lead (within 90 days)';
+    } else {
+      recencyScore = config.rules.older;
+      reasoning = 'Old lead (90+ days)';
+    }
+    
+    return {
+      rawScore: recencyScore,
+      weightedScore: recencyScore * config.weight,
+      reasoning,
+      ageInDays
+    };
+    
+  } catch (error) {
+    console.error('📅 Recency calculation error:', error);
+    throw error;
   }
-  
-  return {
-    rawScore: recencyScore,
-    weightedScore: recencyScore * config.weight,
-    reasoning,
-    ageInDays: Math.round(daysAge)
-  };
 };
 
 /**
- * Get score grade based on total score
- * @param {number} score - Total calculated score
- * @returns {string} Grade (A+, A, B+, B, C+, C, D)
+ * HELPER: Get average unit price
+ */
+const getAverageUnitPrice = async (projectId) => {
+  try {
+    if (!projectId) {
+      console.log('💰 No project ID provided');
+      return 5000000; // Default fallback
+    }
+    
+    await initializeModels();
+    
+    const result = await Unit.aggregate([
+      { $match: { project: new mongoose.Types.ObjectId(projectId) } },
+      { $group: { _id: null, avgPrice: { $avg: '$basePrice' } } }
+    ]);
+    
+    const avgPrice = result[0]?.avgPrice || 5000000;
+    console.log('💰 Calculated average price:', avgPrice);
+    return avgPrice;
+    
+  } catch (error) {
+    console.error('💰 Error calculating average price:', error);
+    return 5000000; // Default fallback
+  }
+};
+
+/**
+ * HELPER: Format budget range
+ */
+const formatBudgetRange = (min, max) => {
+  if (!min && !max) return 'Not specified';
+  if (min && max) return `₹${(min/10000000).toFixed(2)} - ${(max/10000000).toFixed(2)} Cr`;
+  return `₹${((min || max)/10000000).toFixed(2)} Cr`;
+};
+
+/**
+ * HELPER: Get score grade
  */
 const getScoreGrade = (score) => {
   if (score >= 90) return 'A+';
@@ -381,93 +594,91 @@ const getScoreGrade = (score) => {
 };
 
 /**
- * Helper function to get average unit price for a project
- * @param {string} projectId - Project ID
- * @returns {number} Average unit price
+ * HELPER: Get lead priority
  */
-const getAverageUnitPrice = async (projectId) => {
-  try {
-    const pipeline = [
-      { $match: { project: new mongoose.Types.ObjectId(projectId) } },
-      {
-        $group: {
-          _id: null,
-          avgPrice: { $avg: '$basePrice' }
-        }
-      }
-    ];
-    
-    const result = await mongoose.model('Unit').aggregate(pipeline);
-    return result[0]?.avgPrice || 5000000; // Default fallback price
-  } catch (error) {
-    return 5000000; // Default fallback price
-  }
+const getLeadPriority = (score) => {
+  if (score >= 85) return 'Critical';
+  if (score >= 75) return 'High';
+  if (score >= 60) return 'Medium';
+  if (score >= 40) return 'Low';
+  return 'Very Low';
 };
 
 /**
- * Update lead score and save to database
- * @param {string} leadId - Lead ID
- * @param {Object} config - Optional custom scoring configuration
- * @returns {Object} Updated lead with new score
+ * MAIN: Update lead score function
  */
 const updateLeadScore = async (leadId, config = null) => {
   try {
+    await initializeModels();
+    
     const lead = await Lead.findById(leadId);
     if (!lead) {
       throw new Error('Lead not found');
     }
     
-    const scoreResult = await calculateLeadScore(lead, config);
+    console.log(`🎯 Starting score update for lead: ${lead.firstName} ${lead.lastName || ''}`);
     
-    // Update the lead with new score
+    // CRITICAL FIX: Ensure we never pass null config
+    const scoringConfig = config || DEFAULT_SCORING_CONFIG;
+    console.log('🔧 Using scoring config:', !!scoringConfig);
+    
+    const scoreResult = await calculateLeadScore(lead, scoringConfig);
+    
+    // Update lead with new score
+    const previousScore = lead.score || 0;
+    
+    // Ensure scoreBreakdown field exists
+    if (!lead.scoreBreakdown) {
+      lead.scoreBreakdown = {};
+    }
+    
     lead.score = scoreResult.totalScore;
     lead.scoreBreakdown = scoreResult.breakdown;
     lead.scoreGrade = scoreResult.grade;
     lead.lastScoreUpdate = new Date();
     
+    // Add new fields if they exist in the model
+    if (lead.schema.paths.priority) lead.priority = scoreResult.priority;
+    if (lead.schema.paths.confidence) lead.confidence = scoreResult.confidence;
+    
     await lead.save();
+    
+    console.log(`✅ Score updated: ${previousScore} → ${scoreResult.totalScore} (${scoreResult.grade})`);
     
     return {
       leadId,
-      previousScore: lead.score,
+      previousScore,
       newScore: scoreResult.totalScore,
       grade: scoreResult.grade,
+      priority: scoreResult.priority,
+      confidence: scoreResult.confidence,
       breakdown: scoreResult.breakdown,
       updatedAt: new Date()
     };
     
   } catch (error) {
-    throw new Error(`Failed to update lead score: ${error.message}`);
+    console.error(`❌ Failed to update lead score for ${leadId}:`, error.message);
+    throw error;
   }
 };
 
 /**
- * Bulk update scores for multiple leads
- * @param {Array} leadIds - Array of lead IDs
- * @param {Object} config - Optional custom scoring configuration
- * @returns {Object} Bulk update results
+ * SIMPLE: Bulk update function
  */
 const bulkUpdateLeadScores = async (leadIds, config = null) => {
   const results = {
     successful: [],
     failed: [],
-    summary: {
-      total: leadIds.length,
-      successful: 0,
-      failed: 0
-    }
+    summary: { total: leadIds.length, successful: 0, failed: 0 }
   };
   
   for (const leadId of leadIds) {
     try {
-      const updateResult = await updateLeadScore(leadId, config);
-      results.successful.push(updateResult);
+      const result = await updateLeadScore(leadId, config);
+      results.successful.push(result);
       results.summary.successful++;
     } catch (error) {
-      results.failed.push({
-        leadId,
-        error: error.message
-      });
+      results.failed.push({ leadId, error: error.message });
       results.summary.failed++;
     }
   }
@@ -475,10 +686,12 @@ const bulkUpdateLeadScores = async (leadIds, config = null) => {
   return results;
 };
 
+// Export functions
 export {
   calculateLeadScore,
   updateLeadScore,
   bulkUpdateLeadScores,
   DEFAULT_SCORING_CONFIG,
-  getScoreGrade
+  getScoreGrade,
+  getLeadPriority
 };
