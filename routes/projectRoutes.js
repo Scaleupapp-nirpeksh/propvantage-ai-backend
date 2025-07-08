@@ -6,6 +6,8 @@ import {
   createProject,
   getProjects,
   getProjectById,
+  updateProject,
+  deleteProject,
 } from '../controllers/projectController.js';
 
 // Import the security middleware
@@ -35,6 +37,20 @@ const canViewProjectsAccess = [
   'Sales Executive',
 ];
 
+// Define roles that can update projects
+const canUpdateProjectAccess = [
+  'Business Head',
+  'Project Director',
+  'Sales Head',
+  'Marketing Head',
+];
+
+// Define roles that can delete projects (most restrictive)
+const canDeleteProjectAccess = [
+  'Business Head',
+  'Project Director',
+];
+
 // @route   /api/projects
 router.route('/')
   .post(authorize(...canCreateProjectAccess), createProject)
@@ -42,6 +58,8 @@ router.route('/')
 
 // @route   /api/projects/:id
 router.route('/:id')
-  .get(authorize(...canViewProjectsAccess), getProjectById);
+  .get(authorize(...canViewProjectsAccess), getProjectById)
+  .put(authorize(...canUpdateProjectAccess), updateProject)
+  .delete(authorize(...canDeleteProjectAccess), deleteProject);
 
 export default router;
