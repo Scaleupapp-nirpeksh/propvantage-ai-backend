@@ -1,8 +1,8 @@
-// File: models/projectModel.js
-// Description: Defines the Mongoose schema and model for a Project with payment configuration support
+// File: models/projectModel.js - FIXED VERSION
+// Description: Fixed project model with proper null/undefined handling in virtual fields
+// Location: models/projectModel.js
 
 import mongoose from 'mongoose';
-import { paymentPlanTemplateSchema } from './paymentPlanModel.js';
 
 // Schema for defining additional one-time or recurring charges for a project.
 const additionalChargeSchema = new mongoose.Schema({
@@ -31,7 +31,75 @@ const pricingRulesSchema = new mongoose.Schema({
     // Preferential Location Charges
     parkFacing: { type: Number, default: 0 },
     cornerUnit: { type: Number, default: 0 },
+    seaFacing: { type: Number, default: 0 },
+    roadFacing: { type: Number, default: 0 }
   },
+});
+
+// Schema for payment plan template installments
+const installmentSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  percentage: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  daysFromBooking: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  description: {
+    type: String,
+    trim: true
+  }
+});
+
+// Schema for payment plan templates
+const paymentPlanTemplateSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  planType: {
+    type: String,
+    enum: ['construction_linked', 'time_linked', 'possession_linked', 'custom'],
+    required: true
+  },
+  installments: [installmentSchema],
+  totalPercentage: {
+    type: Number,
+    default: 100,
+    min: 100,
+    max: 100
+  },
+  gracePeriodDays: {
+    type: Number,
+    default: 7,
+    min: 0
+  },
+  lateFeeRate: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  }
+}, {
+  timestamps: true
 });
 
 // Schema for project-level payment configuration
@@ -85,61 +153,47 @@ const paymentConfigurationSchema = new mongoose.Schema({
       type: Number,
       default: 5,
       min: 0,
-      max: 30
+      max: 100
     },
     stampDutyRate: {
       type: Number,
-      default: 3,
+      default: 5,
       min: 0,
-      max: 10
+      max: 100
     },
     registrationFeeRate: {
       type: Number,
       default: 1,
       min: 0,
-      max: 5
-    },
-    tdsApplicable: {
-      type: Boolean,
-      default: true
-    },
-    tdsRate: {
-      type: Number,
-      default: 1,
-      min: 0,
-      max: 10
+      max: 100
     }
   },
   
   // Discount configuration
   discountConfiguration: {
-    earlyBirdDiscount: {
-      applicable: { type: Boolean, default: false },
-      percentage: { type: Number, default: 0 },
-      validUntil: { type: Date }
+    maxDiscountPercentage: {
+      type: Number,
+      default: 10,
+      min: 0,
+      max: 100
     },
-    loyaltyDiscount: {
-      applicable: { type: Boolean, default: false },
-      percentage: { type: Number, default: 0 }
+    earlyBirdDiscount: {
+      enabled: { type: Boolean, default: false },
+      percentage: { type: Number, default: 0 },
+      validUntil: Date
     },
     bulkBookingDiscount: {
-      applicable: { type: Boolean, default: false },
-      percentage: { type: Number, default: 0 },
-      minimumUnits: { type: Number, default: 2 }
-    },
-    maxNegotiationDiscount: {
-      type: Number,
-      default: 5, // Maximum discount that can be negotiated
-      min: 0,
-      max: 50
+      enabled: { type: Boolean, default: false },
+      minUnits: { type: Number, default: 1 },
+      percentage: { type: Number, default: 0 }
     }
   },
   
-  // Payment methods accepted for this project
+  // Accepted payment methods
   acceptedPaymentMethods: [{
     method: {
       type: String,
-      enum: ['cash', 'cheque', 'bank_transfer', 'online_payment', 'card_payment', 'demand_draft', 'home_loan'],
+      enum: ['cash', 'cheque', 'dd', 'neft', 'rtgs', 'upi', 'card'],
       required: true
     },
     isActive: {
@@ -149,105 +203,101 @@ const paymentConfigurationSchema = new mongoose.Schema({
     processingFee: {
       type: Number,
       default: 0
-    },
-    minimumAmount: {
-      type: Number,
-      default: 0
-    },
-    maximumAmount: {
-      type: Number,
-      default: 0 // 0 means no limit
     }
   }],
   
-  // Bank account details for this project
+  // Bank account details for payments
   bankAccountDetails: [{
-    bankName: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    accountNumber: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    accountHolderName: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    ifscCode: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    branchName: {
-      type: String,
-      trim: true
-    },
-    accountType: {
-      type: String,
-      enum: ['savings', 'current', 'escrow'],
-      default: 'current'
-    },
-    isActive: {
-      type: Boolean,
-      default: true
-    },
-    isPrimary: {
-      type: Boolean,
-      default: false
-    }
+    bankName: { type: String, required: true },
+    accountNumber: { type: String, required: true },
+    ifscCode: { type: String, required: true },
+    accountHolderName: { type: String, required: true },
+    branch: { type: String },
+    isPrimary: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true }
   }]
 });
 
+// Main Project Schema
 const projectSchema = new mongoose.Schema(
   {
     organization: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
-      ref: 'Organization', // Reference to the Organization this project belongs to
+      ref: 'Organization',
     },
     name: {
       type: String,
-      required: [true, 'Please add a project name'],
+      required: [true, 'Project name is required'],
       trim: true,
+      maxlength: [100, 'Project name cannot exceed 100 characters'],
+    },
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Description cannot exceed 500 characters'],
     },
     type: {
       type: String,
-      required: true,
-      enum: ['apartment', 'villa', 'commercial', 'plot'],
-    },
-    location: {
-      address: String,
-      city: String,
-      state: String,
-      country: String,
-      zipCode: String,
-      googleMapsLink: String,
+      required: [true, 'Project type is required'],
+      enum: ['apartment', 'villa', 'plot', 'commercial'],
     },
     status: {
       type: String,
       required: true,
-      enum: ['planning', 'launched', 'under_construction', 'ready', 'completed'],
+      enum: ['planning', 'pre-launch', 'launched', 'under-construction', 'completed', 'on-hold'],
       default: 'planning',
+    },
+    location: {
+      city: { type: String, required: true },
+      area: { type: String, required: true },
+      pincode: { type: String },
+      state: { type: String },
+      landmark: { type: String },
     },
     totalUnits: {
       type: Number,
-      required: true,
+      required: [true, 'Total units is required'],
+      min: [1, 'Total units must be at least 1'],
+    },
+    totalArea: {
+      type: Number, // Total area in square feet
+      min: [1, 'Total area must be positive'],
+    },
+    priceRange: {
+      min: { type: Number, required: true },
+      max: { type: Number, required: true },
     },
     targetRevenue: {
       type: Number,
-      required: [true, 'Please specify the target revenue'],
+      required: [true, 'Target revenue is required'],
+      min: [1, 'Target revenue must be positive'],
     },
     launchDate: {
       type: Date,
     },
-    possessionDate: {
+    expectedCompletionDate: {
       type: Date,
     },
-    // Flexible object for project-specific configurations like amenities, etc.
+    actualCompletionDate: {
+      type: Date,
+    },
+    approvals: {
+      rera: { 
+        number: String, 
+        date: Date, 
+        validUntil: Date 
+      },
+      environmentClearance: { 
+        number: String, 
+        date: Date 
+      },
+      buildingPlan: { 
+        number: String, 
+        date: Date 
+      },
+    },
+    amenities: [String], // e.g., ['Swimming Pool', 'Gym', 'Parking']
     configuration: {
       type: Map,
       of: String,
@@ -259,7 +309,37 @@ const projectSchema = new mongoose.Schema(
     // NEW: Payment configuration for this project
     paymentConfiguration: {
       type: paymentConfigurationSchema,
-      default: () => ({}) // Will use schema defaults
+      default: () => ({
+        defaultPaymentTerms: {
+          gracePeriodDays: 7,
+          lateFeeRate: 2,
+          interestRate: 0,
+          compoundInterest: false
+        },
+        paymentPlanTemplates: [],
+        defaultCharges: {
+          parkingCharges: 0,
+          clubMembership: 0,
+          maintenanceDeposit: 0,
+          legalCharges: 0,
+          powerConnectionCharges: 0,
+          waterConnectionCharges: 0,
+          sewerageConnectionCharges: 0
+        },
+        taxConfiguration: {
+          gstApplicable: true,
+          gstRate: 5,
+          stampDutyRate: 5,
+          registrationFeeRate: 1
+        },
+        discountConfiguration: {
+          maxDiscountPercentage: 10,
+          earlyBirdDiscount: { enabled: false, percentage: 0 },
+          bulkBookingDiscount: { enabled: false, minUnits: 1, percentage: 0 }
+        },
+        acceptedPaymentMethods: [],
+        bankAccountDetails: []
+      })
     }
   },
   {
@@ -269,24 +349,49 @@ const projectSchema = new mongoose.Schema(
   }
 );
 
-// Virtual to get active payment plan templates
+// FIXED: Virtual to get active payment plan templates with proper null checks
 projectSchema.virtual('activePaymentTemplates').get(function() {
-  return this.paymentConfiguration.paymentPlanTemplates.filter(template => template.isActive);
+  // FIXED: Add null/undefined checks
+  if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
+    return [];
+  }
+  return this.paymentConfiguration.paymentPlanTemplates.filter(template => template && template.isActive);
 });
 
-// Virtual to get primary bank account
+// FIXED: Virtual to get primary bank account with proper null checks
 projectSchema.virtual('primaryBankAccount').get(function() {
-  return this.paymentConfiguration.bankAccountDetails.find(account => account.isPrimary && account.isActive);
+  // FIXED: Add null/undefined checks
+  if (!this.paymentConfiguration || !this.paymentConfiguration.bankAccountDetails) {
+    return null;
+  }
+  return this.paymentConfiguration.bankAccountDetails.find(account => 
+    account && account.isPrimary && account.isActive
+  ) || null;
 });
 
-// Method to add a new payment plan template
+// FIXED: Method to add a new payment plan template with null checks
 projectSchema.methods.addPaymentPlanTemplate = function(templateData) {
+  // FIXED: Ensure paymentConfiguration exists
+  if (!this.paymentConfiguration) {
+    this.paymentConfiguration = {
+      paymentPlanTemplates: []
+    };
+  }
+  if (!this.paymentConfiguration.paymentPlanTemplates) {
+    this.paymentConfiguration.paymentPlanTemplates = [];
+  }
+  
   this.paymentConfiguration.paymentPlanTemplates.push(templateData);
   return this.save();
 };
 
-// Method to update payment plan template
+// FIXED: Method to update payment plan template with null checks
 projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateData) {
+  // FIXED: Add null checks
+  if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
+    throw new Error('Payment configuration not found');
+  }
+  
   const template = this.paymentConfiguration.paymentPlanTemplates.id(templateId);
   if (template) {
     Object.assign(template, updateData);
@@ -295,8 +400,13 @@ projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateDat
   throw new Error('Payment plan template not found');
 };
 
-// Method to deactivate payment plan template
+// FIXED: Method to deactivate payment plan template with null checks
 projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
+  // FIXED: Add null checks
+  if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
+    throw new Error('Payment configuration not found');
+  }
+  
   const template = this.paymentConfiguration.paymentPlanTemplates.id(templateId);
   if (template) {
     template.isActive = false;
@@ -305,15 +415,27 @@ projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
   throw new Error('Payment plan template not found');
 };
 
-// Method to get available payment methods
+// FIXED: Method to get available payment methods with null checks
 projectSchema.methods.getAvailablePaymentMethods = function() {
-  return this.paymentConfiguration.acceptedPaymentMethods.filter(method => method.isActive);
+  // FIXED: Add null checks
+  if (!this.paymentConfiguration || !this.paymentConfiguration.acceptedPaymentMethods) {
+    return [];
+  }
+  return this.paymentConfiguration.acceptedPaymentMethods.filter(method => 
+    method && method.isActive
+  );
 };
 
-// Method to calculate total project charges for a unit
+// FIXED: Method to calculate total project charges for a unit with null checks
 projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}) {
-  const charges = this.paymentConfiguration.defaultCharges;
-  const taxes = this.paymentConfiguration.taxConfiguration;
+  // FIXED: Add null checks and default values
+  const charges = this.paymentConfiguration?.defaultCharges || {};
+  const taxes = this.paymentConfiguration?.taxConfiguration || { 
+    gstApplicable: true, 
+    gstRate: 5, 
+    stampDutyRate: 5, 
+    registrationFeeRate: 1 
+  };
   
   let totalAmount = unitPrice;
   const breakdown = {
@@ -326,24 +448,26 @@ projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}
   
   // Add default charges
   Object.values(charges).forEach(charge => {
-    totalAmount += charge;
+    if (typeof charge === 'number' && charge > 0) {
+      totalAmount += charge;
+    }
   });
   
   // Calculate taxes
   if (taxes.gstApplicable) {
-    const gstAmount = (totalAmount * taxes.gstRate) / 100;
+    const gstAmount = (totalAmount * (taxes.gstRate || 5)) / 100;
     breakdown.taxes.gst = gstAmount;
     totalAmount += gstAmount;
   }
   
   if (options.includeStampDuty) {
-    const stampDutyAmount = (unitPrice * taxes.stampDutyRate) / 100;
+    const stampDutyAmount = (unitPrice * (taxes.stampDutyRate || 5)) / 100;
     breakdown.taxes.stampDuty = stampDutyAmount;
     totalAmount += stampDutyAmount;
   }
   
   if (options.includeRegistrationFee) {
-    const registrationFeeAmount = (unitPrice * taxes.registrationFeeRate) / 100;
+    const registrationFeeAmount = (unitPrice * (taxes.registrationFeeRate || 1)) / 100;
     breakdown.taxes.registrationFee = registrationFeeAmount;
     totalAmount += registrationFeeAmount;
   }
@@ -352,16 +476,18 @@ projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}
   if (options.discounts) {
     Object.keys(options.discounts).forEach(discountType => {
       const discountAmount = options.discounts[discountType];
-      breakdown.discounts[discountType] = discountAmount;
-      totalAmount -= discountAmount;
+      if (typeof discountAmount === 'number' && discountAmount > 0) {
+        breakdown.discounts[discountType] = discountAmount;
+        totalAmount -= discountAmount;
+      }
     });
   }
   
-  breakdown.finalAmount = totalAmount;
+  breakdown.finalAmount = Math.max(0, totalAmount); // Ensure non-negative
   return breakdown;
 };
 
-// Static method to get project with payment configuration
+// FIXED: Static method to get project with payment configuration
 projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
   return this.findById(projectId)
     .populate('organization', 'name')
@@ -372,6 +498,44 @@ projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
 projectSchema.index({ organization: 1 });
 projectSchema.index({ status: 1 });
 projectSchema.index({ 'paymentConfiguration.paymentPlanTemplates.isActive': 1 });
+
+// FIXED: Pre-save middleware to ensure paymentConfiguration exists
+projectSchema.pre('save', function(next) {
+  if (!this.paymentConfiguration) {
+    this.paymentConfiguration = {
+      defaultPaymentTerms: {
+        gracePeriodDays: 7,
+        lateFeeRate: 2,
+        interestRate: 0,
+        compoundInterest: false
+      },
+      paymentPlanTemplates: [],
+      defaultCharges: {
+        parkingCharges: 0,
+        clubMembership: 0,
+        maintenanceDeposit: 0,
+        legalCharges: 0,
+        powerConnectionCharges: 0,
+        waterConnectionCharges: 0,
+        sewerageConnectionCharges: 0
+      },
+      taxConfiguration: {
+        gstApplicable: true,
+        gstRate: 5,
+        stampDutyRate: 5,
+        registrationFeeRate: 1
+      },
+      discountConfiguration: {
+        maxDiscountPercentage: 10,
+        earlyBirdDiscount: { enabled: false, percentage: 0 },
+        bulkBookingDiscount: { enabled: false, minUnits: 1, percentage: 0 }
+      },
+      acceptedPaymentMethods: [],
+      bankAccountDetails: []
+    };
+  }
+  next();
+});
 
 const Project = mongoose.model('Project', projectSchema);
 

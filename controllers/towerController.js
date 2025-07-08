@@ -1,6 +1,5 @@
-// ===================================================================
-// File: controllers/towerController.js
-// Description: Tower management controller with full CRUD operations
+// File: controllers/towerController.js - FIXED VERSION
+// Description: Fixed tower management controller addressing test failures
 // ===================================================================
 
 import asyncHandler from 'express-async-handler';
@@ -10,7 +9,158 @@ import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
 
 /**
- * @desc    Create a new tower
+ * @desc    Get all towers for a project - FIXED VERSION
+ * @route   GET /api/towers
+ * @access  Private
+ */
+const getTowers = asyncHandler(async (req, res) => {
+  const { projectId, status, includeInactive } = req.query;
+
+  let query = { organization: req.user.organization };
+
+  if (projectId) {
+    query.project = projectId;
+  }
+
+  if (status) {
+    query.status = status;
+  }
+
+  if (includeInactive !== 'true') {
+    query.isActive = true;
+  }
+
+  try {
+    // FIXED: Simplified population to avoid undefined reference errors
+    const towers = await Tower.find(query)
+      .populate('project', 'name type location')
+      .populate('createdBy', 'firstName lastName')
+      .sort({ towerCode: 1 });
+
+    // FIXED: Calculate unit counts manually to avoid virtual population issues
+    const enhancedTowers = await Promise.all(towers.map(async (tower) => {
+      const towerObj = tower.toObject();
+      
+      // Calculate unit counts
+      const totalUnitsFromDB = await Unit.countDocuments({ tower: tower._id });
+      const availableUnits = await Unit.countDocuments({ tower: tower._id, status: 'available' });
+      const soldUnits = await Unit.countDocuments({ tower: tower._id, status: 'sold' });
+      const bookedUnits = await Unit.countDocuments({ tower: tower._id, status: 'booked' });
+
+      towerObj.salesProgress = {
+        totalUnits: tower.totalUnits,
+        unitsFromDB: totalUnitsFromDB,
+        availableUnits,
+        soldUnits,
+        bookedUnits,
+        occupancyPercentage: tower.totalUnits > 0 ? 
+          Math.round(((soldUnits + bookedUnits) / tower.totalUnits) * 100) : 0
+      };
+      
+      return towerObj;
+    }));
+
+    res.json({
+      success: true,
+      count: enhancedTowers.length,
+      data: enhancedTowers,
+      towerSupport: true // Add indicator for backward compatibility
+    });
+  } catch (error) {
+    console.error('Tower fetch error:', error);
+    res.status(500);
+    throw new Error(`Failed to fetch towers: ${error.message}`);
+  }
+});
+
+/**
+ * @desc    Get single tower by ID - FIXED VERSION
+ * @route   GET /api/towers/:id
+ * @access  Private
+ */
+const getTowerById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { includeUnits, includeAnalytics } = req.query;
+
+  // FIXED: Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error('Invalid tower ID format');
+  }
+
+  const tower = await Tower.findOne({
+    _id: id,
+    organization: req.user.organization
+  })
+    .populate('project', 'name type location')
+    .populate('createdBy', 'firstName lastName')
+    .populate('updatedBy', 'firstName lastName');
+
+  if (!tower) {
+    res.status(404);
+    throw new Error('Tower not found');
+  }
+
+  const result = { tower };
+
+  // Include units if requested
+  if (includeUnits === 'true') {
+    const units = await Unit.find({ tower: tower._id })
+      .sort({ floor: 1, unitNumber: 1 });
+    
+    // Group units by floor
+    const unitsByFloor = units.reduce((acc, unit) => {
+      const floor = unit.floor;
+      if (!acc[floor]) acc[floor] = [];
+      acc[floor].push(unit);
+      return acc;
+    }, {});
+    
+    result.units = units;
+    result.unitsByFloor = unitsByFloor;
+    result.totalUnitsCreated = units.length;
+  }
+
+  // Include analytics if requested
+  if (includeAnalytics === 'true') {
+    try {
+      // FIXED: Manual analytics calculation instead of relying on model method
+      const units = await Unit.find({ tower: tower._id });
+      const analytics = {
+        unitAnalytics: units.map(unit => ({
+          unitId: unit._id,
+          unitNumber: unit.unitNumber,
+          type: unit.type,
+          floor: unit.floor,
+          status: unit.status,
+          price: unit.currentPrice
+        })),
+        salesAnalytics: {
+          totalUnits: units.length,
+          availableUnits: units.filter(u => u.status === 'available').length,
+          soldUnits: units.filter(u => u.status === 'sold').length,
+          bookedUnits: units.filter(u => u.status === 'booked').length,
+          totalRevenue: units
+            .filter(u => u.status === 'sold' || u.status === 'booked')
+            .reduce((sum, u) => sum + u.currentPrice, 0),
+          averagePrice: units.length > 0 ? 
+            units.reduce((sum, u) => sum + u.currentPrice, 0) / units.length : 0
+        }
+      };
+      result.analytics = analytics;
+    } catch (error) {
+      console.warn('Failed to fetch tower analytics:', error);
+    }
+  }
+
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
+/**
+ * @desc    Create a new tower - ENHANCED VERSION
  * @route   POST /api/towers
  * @access  Private (Management roles)
  */
@@ -85,135 +235,26 @@ const createTower = asyncHandler(async (req, res) => {
       message: 'Tower created successfully'
     });
   } catch (error) {
+    console.error('Tower creation error:', error);
     res.status(400);
     throw new Error(`Failed to create tower: ${error.message}`);
   }
 });
 
 /**
- * @desc    Get all towers for a project
- * @route   GET /api/towers
- * @access  Private
- */
-const getTowers = asyncHandler(async (req, res) => {
-  const { projectId, status, includeInactive } = req.query;
-
-  let query = { organization: req.user.organization };
-
-  if (projectId) {
-    query.project = projectId;
-  }
-
-  if (status) {
-    query.status = status;
-  }
-
-  if (includeInactive !== 'true') {
-    query.isActive = true;
-  }
-
-  try {
-    const towers = await Tower.find(query)
-      .populate('project', 'name type location')
-      .populate('createdBy', 'firstName lastName')
-      .populate('construction.contractor', 'name contactPerson phone')
-      .populate('unitsCount')
-      .populate('availableUnitsCount')
-      .populate('soldUnitsCount')
-      .sort({ towerCode: 1 });
-
-    // Add calculated fields
-    const enhancedTowers = towers.map(tower => {
-      const towerObj = tower.toObject();
-      towerObj.salesProgress = {
-        totalUnits: tower.totalUnits,
-        unitsCount: tower.unitsCount || 0,
-        availableUnits: tower.availableUnitsCount || 0,
-        soldUnits: tower.soldUnitsCount || 0,
-        bookedUnits: Math.max(0, (tower.unitsCount || 0) - (tower.availableUnitsCount || 0) - (tower.soldUnitsCount || 0)),
-        occupancyPercentage: tower.totalUnits > 0 ? Math.round(((tower.soldUnitsCount || 0) / tower.totalUnits) * 100) : 0
-      };
-      return towerObj;
-    });
-
-    res.json({
-      success: true,
-      count: enhancedTowers.length,
-      data: enhancedTowers
-    });
-  } catch (error) {
-    res.status(500);
-    throw new Error(`Failed to fetch towers: ${error.message}`);
-  }
-});
-
-/**
- * @desc    Get single tower by ID
- * @route   GET /api/towers/:id
- * @access  Private
- */
-const getTowerById = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { includeUnits, includeAnalytics } = req.query;
-
-  const tower = await Tower.findOne({
-    _id: id,
-    organization: req.user.organization
-  })
-    .populate('project', 'name type location')
-    .populate('createdBy', 'firstName lastName')
-    .populate('updatedBy', 'firstName lastName')
-    .populate('construction.contractor', 'name contactPerson phone');
-
-  if (!tower) {
-    res.status(404);
-    throw new Error('Tower not found');
-  }
-
-  const result = { tower };
-
-  // Include units if requested
-  if (includeUnits === 'true') {
-    const units = await Unit.find({ tower: tower._id })
-      .sort({ floor: 1, unitNumber: 1 });
-    
-    // Group units by floor
-    const unitsByFloor = units.reduce((acc, unit) => {
-      const floor = unit.floor;
-      if (!acc[floor]) acc[floor] = [];
-      acc[floor].push(unit);
-      return acc;
-    }, {});
-    
-    result.unitsByFloor = unitsByFloor;
-    result.totalUnitsCreated = units.length;
-  }
-
-  // Include analytics if requested
-  if (includeAnalytics === 'true') {
-    try {
-      const analytics = await Tower.getTowerAnalytics(tower._id);
-      result.analytics = analytics.unitAnalytics;
-      result.salesAnalytics = analytics.salesAnalytics;
-    } catch (error) {
-      console.warn('Failed to fetch tower analytics:', error);
-    }
-  }
-
-  res.json({
-    success: true,
-    data: result
-  });
-});
-
-/**
- * @desc    Update tower
+ * @desc    Update tower - FIXED VERSION
  * @route   PUT /api/towers/:id
  * @access  Private (Management roles)
  */
 const updateTower = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = { ...req.body };
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error('Invalid tower ID format');
+  }
 
   // Remove fields that shouldn't be updated directly
   delete updateData.organization;
@@ -260,18 +301,232 @@ const updateTower = asyncHandler(async (req, res) => {
       message: 'Tower updated successfully'
     });
   } catch (error) {
+    console.error('Tower update error:', error);
     res.status(400);
     throw new Error(`Failed to update tower: ${error.message}`);
   }
 });
 
 /**
- * @desc    Delete tower (soft delete)
+ * @desc    Get tower analytics - FIXED VERSION
+ * @route   GET /api/towers/:id/analytics
+ * @access  Private (Management roles)
+ */
+const getTowerAnalytics = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error('Invalid tower ID format');
+  }
+
+  const tower = await Tower.findOne({
+    _id: id,
+    organization: req.user.organization
+  }).populate('project', 'name type');
+
+  if (!tower) {
+    res.status(404);
+    throw new Error('Tower not found');
+  }
+
+  try {
+    // Manual analytics calculation
+    const units = await Unit.find({ tower: tower._id });
+    
+    const analytics = {
+      tower: {
+        _id: tower._id,
+        towerName: tower.towerName,
+        towerCode: tower.towerCode,
+        totalFloors: tower.totalFloors,
+        unitsPerFloor: tower.unitsPerFloor,
+        totalUnits: tower.totalUnits
+      },
+      unitAnalytics: units.map(unit => ({
+        unitId: unit._id,
+        unitNumber: unit.unitNumber,
+        type: unit.type,
+        floor: unit.floor,
+        status: unit.status,
+        price: unit.currentPrice,
+        areaSqft: unit.areaSqft
+      })),
+      salesAnalytics: {
+        totalUnits: units.length,
+        totalSales: units.filter(u => u.status === 'sold' || u.status === 'booked').length,
+        availableUnits: units.filter(u => u.status === 'available').length,
+        soldUnits: units.filter(u => u.status === 'sold').length,
+        bookedUnits: units.filter(u => u.status === 'booked').length,
+        totalRevenue: units
+          .filter(u => u.status === 'sold' || u.status === 'booked')
+          .reduce((sum, u) => sum + u.currentPrice, 0),
+        averagePrice: units.length > 0 ? 
+          units.reduce((sum, u) => sum + u.currentPrice, 0) / units.length : 0
+      },
+      floorDistribution: units.reduce((acc, unit) => {
+        const floor = unit.floor;
+        if (!acc[floor]) {
+          acc[floor] = { total: 0, available: 0, sold: 0, booked: 0 };
+        }
+        acc[floor].total++;
+        acc[floor][unit.status]++;
+        return acc;
+      }, {})
+    };
+
+    res.json({
+      success: true,
+      data: analytics
+    });
+  } catch (error) {
+    console.error('Tower analytics error:', error);
+    res.status(500);
+    throw new Error(`Failed to fetch tower analytics: ${error.message}`);
+  }
+});
+
+/**
+ * @desc    Bulk create units for a tower - ENHANCED VERSION
+ * @route   POST /api/towers/:id/units/bulk-create
+ * @access  Private (Management roles)
+ */
+const bulkCreateUnits = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { unitTypeMapping, startFromFloor = 1, endAtFloor = null } = req.body;
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error('Invalid tower ID format');
+  }
+
+  const tower = await Tower.findOne({
+    _id: id,
+    organization: req.user.organization
+  });
+
+  if (!tower) {
+    res.status(404);
+    throw new Error('Tower not found');
+  }
+
+  const project = await Project.findById(tower.project);
+  if (!project) {
+    res.status(404);
+    throw new Error('Project not found');
+  }
+
+  try {
+    const unitsToCreate = [];
+    const endFloor = endAtFloor || tower.totalFloors;
+
+    // Default unit type mapping if not provided
+    const defaultMapping = unitTypeMapping || {
+      1: '2BHK',
+      2: '2BHK',
+      3: '3BHK',
+      4: '3BHK',
+      5: '3BHK',
+      6: '3BHK',
+      7: '3BHK+Study',
+      8: '3BHK+Study'
+    };
+
+    for (let floor = startFromFloor; floor <= endFloor; floor++) {
+      for (let unitPos = 1; unitPos <= tower.unitsPerFloor; unitPos++) {
+        const unitNumber = `${tower.towerCode}-${floor}${String(unitPos).padStart(2, '0')}`;
+        const unitType = defaultMapping[unitPos] || '3BHK';
+        
+        // Skip if unit already exists
+        const existingUnit = await Unit.findOne({
+          project: tower.project,
+          unitNumber,
+          organization: req.user.organization
+        });
+
+        if (existingUnit) {
+          continue; // Skip existing units
+        }
+
+        // Calculate base price and area based on unit type
+        const unitConfig = {
+          '1BHK': { area: 550, basePrice: 3500000 },
+          '2BHK': { area: 750, basePrice: 4500000 },
+          '3BHK': { area: 1200, basePrice: 6000000 },
+          '3BHK+Study': { area: 1400, basePrice: 7000000 },
+          '4BHK': { area: 1800, basePrice: 9000000 }
+        };
+
+        const config = unitConfig[unitType] || unitConfig['3BHK'];
+        
+        unitsToCreate.push({
+          organization: req.user.organization,
+          project: tower.project,
+          tower: tower._id,
+          unitNumber,
+          type: unitType,
+          floor,
+          areaSqft: config.area,
+          basePrice: config.basePrice,
+          currentPrice: config.basePrice,
+          facing: ['North', 'South', 'East', 'West'][unitPos % 4],
+          features: {
+            isCornerUnit: unitPos === 1 || unitPos === tower.unitsPerFloor,
+            hasBalcony: true,
+            isParkFacing: Math.random() > 0.7
+          },
+          specifications: {
+            bedrooms: unitType.includes('4BHK') ? 4 : unitType.includes('3BHK') ? 3 : unitType.includes('2BHK') ? 2 : 1,
+            bathrooms: unitType.includes('4BHK') ? 3 : unitType.includes('3BHK') ? 2 : 2,
+            livingRooms: 1,
+            kitchen: 1,
+            balconies: unitType.includes('1BHK') ? 1 : 2
+          },
+          status: 'available'
+        });
+      }
+    }
+
+    let createdUnits = [];
+    if (unitsToCreate.length > 0) {
+      createdUnits = await Unit.insertMany(unitsToCreate);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        towerId: tower._id,
+        towerName: tower.towerName,
+        towerCode: tower.towerCode,
+        unitsCreated: createdUnits.length,
+        totalUnitsInTower: await Unit.countDocuments({ tower: tower._id }),
+        floorsProcessed: `${startFromFloor} to ${endFloor}`,
+        skippedExisting: unitsToCreate.length < ((endFloor - startFromFloor + 1) * tower.unitsPerFloor)
+      },
+      message: `Successfully created ${createdUnits.length} units for ${tower.towerName}`
+    });
+  } catch (error) {
+    console.error('Bulk unit creation error:', error);
+    res.status(400);
+    throw new Error(`Failed to create units: ${error.message}`);
+  }
+});
+
+/**
+ * @desc    Delete tower (soft delete) - ENHANCED VERSION
  * @route   DELETE /api/towers/:id
  * @access  Private (Management roles)
  */
 const deleteTower = asyncHandler(async (req, res) => {
   const { id } = req.params;
+
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400);
+    throw new Error('Invalid tower ID format');
+  }
 
   const tower = await Tower.findOne({
     _id: id,
@@ -300,177 +555,6 @@ const deleteTower = asyncHandler(async (req, res) => {
     message: 'Tower deleted successfully'
   });
 });
-
-/**
- * @desc    Get tower analytics and insights
- * @route   GET /api/towers/:id/analytics
- * @access  Private (Management roles)
- */
-const getTowerAnalytics = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const analytics = await Tower.getTowerAnalytics(id);
-    
-    if (!analytics.tower) {
-      res.status(404);
-      throw new Error('Tower not found');
-    }
-
-    // Check organization access
-    if (analytics.tower.organization.toString() !== req.user.organization.toString()) {
-      res.status(403);
-      throw new Error('Access denied');
-    }
-
-    res.json({
-      success: true,
-      data: analytics
-    });
-  } catch (error) {
-    res.status(500);
-    throw new Error(`Failed to fetch tower analytics: ${error.message}`);
-  }
-});
-
-/**
- * @desc    Bulk create units for a tower
- * @route   POST /api/towers/:id/units/bulk-create
- * @access  Private (Management roles)
- */
-const bulkCreateUnits = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { unitTypeMapping, startFromFloor = 1, endAtFloor = null } = req.body;
-
-  const tower = await Tower.findOne({
-    _id: id,
-    organization: req.user.organization
-  });
-
-  if (!tower) {
-    res.status(404);
-    throw new Error('Tower not found');
-  }
-
-  const project = await Project.findById(tower.project);
-  if (!project) {
-    res.status(404);
-    throw new Error('Project not found');
-  }
-
-  try {
-    const unitsToCreate = [];
-    const endFloor = endAtFloor || tower.totalFloors;
-
-    for (let floor = startFromFloor; floor <= endFloor; floor++) {
-      for (let unitPos = 1; unitPos <= tower.unitsPerFloor; unitPos++) {
-        const unitNumber = `${tower.towerCode}-${floor}${String(unitPos).padStart(2, '0')}`;
-        
-        // Check if unit already exists
-        const existingUnit = await Unit.findOne({
-          project: tower.project,
-          unitNumber
-        });
-
-        if (existingUnit) {
-          console.log(`Unit ${unitNumber} already exists, skipping...`);
-          continue;
-        }
-
-        // Determine unit type based on mapping or position
-        let unitType = '2BHK'; // default
-        if (unitTypeMapping && unitTypeMapping[unitPos]) {
-          unitType = unitTypeMapping[unitPos];
-        } else if (unitPos <= 3) {
-          unitType = '2BHK';
-        } else if (unitPos <= 7) {
-          unitType = '3BHK';
-        } else {
-          unitType = '3BHK+Study';
-        }
-
-        // Calculate base price using tower pricing configuration
-        const isCornerUnit = unitPos === 1 || unitPos === tower.unitsPerFloor;
-        const basePrice = tower.calculateUnitPrice(floor, isCornerUnit, 5000000); // 50L base
-
-        // Determine facing
-        const facings = ['North', 'South', 'East', 'West', 'North-East', 'South-West'];
-        const facing = facings[unitPos % facings.length];
-
-        const unitData = {
-          project: tower.project,
-          tower: tower._id,
-          organization: tower.organization,
-          unitNumber,
-          type: unitType,
-          floor,
-          areaSqft: this.getAreaByType(unitType),
-          basePrice,
-          currentPrice: basePrice,
-          facing,
-          features: {
-            isParkFacing: unitPos % 4 === 0,
-            isCornerUnit,
-            hasBalcony: unitType !== '1BHK',
-            hasServantRoom: unitType.includes('3BHK'),
-            hasStudyRoom: unitType.includes('Study')
-          },
-          specifications: this.getSpecificationsByType(unitType),
-          status: 'available'
-        };
-
-        unitsToCreate.push(unitData);
-      }
-    }
-
-    if (unitsToCreate.length === 0) {
-      res.status(400);
-      throw new Error('No new units to create');
-    }
-
-    const createdUnits = await Unit.insertMany(unitsToCreate);
-
-    res.status(201).json({
-      success: true,
-      data: {
-        towerId: tower._id,
-        towerName: tower.towerName,
-        unitsCreated: createdUnits.length,
-        totalUnitsInTower: await Unit.countDocuments({ tower: tower._id })
-      },
-      message: `Successfully created ${createdUnits.length} units for tower ${tower.towerName}`
-    });
-  } catch (error) {
-    res.status(400);
-    throw new Error(`Failed to bulk create units: ${error.message}`);
-  }
-});
-
-// Helper function to get area by unit type
-const getAreaByType = (unitType) => {
-  const areaMapping = {
-    '1BHK': 550,
-    '2BHK': 850,
-    '3BHK': 1200,
-    '3BHK+Study': 1400,
-    '4BHK': 1800,
-    'Penthouse': 2500
-  };
-  return areaMapping[unitType] || 1000;
-};
-
-// Helper function to get specifications by unit type
-const getSpecificationsByType = (unitType) => {
-  const specMapping = {
-    '1BHK': { bedrooms: 1, bathrooms: 1, livingRooms: 1, kitchen: 1, balconies: 1 },
-    '2BHK': { bedrooms: 2, bathrooms: 2, livingRooms: 1, kitchen: 1, balconies: 1 },
-    '3BHK': { bedrooms: 3, bathrooms: 2, livingRooms: 1, kitchen: 1, balconies: 2 },
-    '3BHK+Study': { bedrooms: 3, bathrooms: 3, livingRooms: 1, kitchen: 1, balconies: 2 },
-    '4BHK': { bedrooms: 4, bathrooms: 3, livingRooms: 1, kitchen: 1, balconies: 2 },
-    'Penthouse': { bedrooms: 4, bathrooms: 4, livingRooms: 2, kitchen: 1, balconies: 3 }
-  };
-  return specMapping[unitType] || { bedrooms: 2, bathrooms: 2, livingRooms: 1, kitchen: 1, balconies: 1 };
-};
 
 export {
   createTower,
