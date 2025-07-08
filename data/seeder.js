@@ -1,6 +1,6 @@
 // File: data/seeder.js
-// Description: Enhanced robust seeder with comprehensive test data for AI scoring system + AI Conversation
-// Version: 2.1 - Complete data seeding with realistic scenarios + AI conversation content
+// Description: Enhanced robust seeder with comprehensive test data for AI scoring system + AI Conversation + Tower Management
+// Version: 3.0 - Complete data seeding with realistic scenarios, AI conversation content, and tower management
 // Location: data/seeder.js
 
 import mongoose from 'mongoose';
@@ -11,6 +11,7 @@ import connectDB from '../config/db.js';
 import Organization from '../models/organizationModel.js';
 import User from '../models/userModel.js';
 import Project from '../models/projectModel.js';
+import Tower from '../models/towerModel.js';  // NEW: Tower model
 import Unit from '../models/unitModel.js';
 import Lead from '../models/leadModel.js';
 import Sale from '../models/salesModel.js';
@@ -19,7 +20,7 @@ import Interaction from '../models/interactionModel.js';
 dotenv.config();
 connectDB();
 
-// --- ENHANCED SAMPLE DATA WITH REALISTIC SCENARIOS ---
+// --- ENHANCED SAMPLE DATA WITH REALISTIC SCENARIOS + TOWERS ---
 
 const timestamp = Date.now();
 const orgName = `PropVantage Builders ${timestamp}`;
@@ -97,8 +98,8 @@ const sampleData = {
       _id: new mongoose.Types.ObjectId(),
       name: 'Skyline Towers Premium',
       type: 'apartment',
-      totalUnits: 400,
-      targetRevenue: 12000000000, // 12000 Cr - Premium segment
+      totalUnits: 480, // Updated for tower configuration (3 towers * 160 units each)
+      targetRevenue: 14400000000, // Updated target revenue
       location: { 
         city: 'Mumbai', 
         area: 'Bandra West',
@@ -132,8 +133,8 @@ const sampleData = {
       _id: new mongoose.Types.ObjectId(),
       name: 'Green Valley Villas',
       type: 'villa',
-      totalUnits: 75,
-      targetRevenue: 4500000000, // 4500 Cr - Luxury segment
+      totalUnits: 90, // Updated for tower/block configuration
+      targetRevenue: 5400000000, // Updated target revenue
       location: { 
         city: 'Goa', 
         area: 'Candolim',
@@ -164,8 +165,8 @@ const sampleData = {
       _id: new mongoose.Types.ObjectId(),
       name: 'Affordable Heights',
       type: 'apartment',
-      totalUnits: 200,
-      targetRevenue: 2000000000, // 2000 Cr - Affordable segment
+      totalUnits: 240, // Updated for tower configuration
+      targetRevenue: 2400000000, // Updated target revenue
       location: { 
         city: 'Pune', 
         area: 'Wagholi',
@@ -194,8 +195,8 @@ const sampleData = {
       _id: new mongoose.Types.ObjectId(),
       name: 'Tech City Plots',
       type: 'plot',
-      totalUnits: 180,
-      targetRevenue: 1800000000, // 1800 Cr - Plot development
+      totalUnits: 180, // Plots don't have towers, so kept same
+      targetRevenue: 1800000000,
       location: { 
         city: 'Hyderabad', 
         area: 'HITEC City',
@@ -213,15 +214,393 @@ const sampleData = {
     }
   ],
 
+  // NEW: Tower data for projects that need towers
+  towers: [
+    // Skyline Towers Premium - 3 Towers
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Skyline Tower A',
+      towerCode: 'SKY-A',
+      totalFloors: 25,
+      unitsPerFloor: 8,
+      towerType: 'residential',
+      status: 'under_construction',
+      configuration: {
+        elevators: { count: 3, type: 'high_speed' },
+        staircases: { count: 2, type: 'fire_exit' },
+        powerBackup: 'full',
+        waterSupply: 'mixed'
+      },
+      amenities: {
+        lobby: true,
+        security: true,
+        cctv: true,
+        intercom: true,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: true,
+        solarPanels: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.0,
+        floorPremium: { startFloor: 5, premiumPerFloor: 75000 },
+        penthousePremium: { enabled: true, topFloors: 2, premiumPercentage: 20 },
+        cornerUnitPremium: { percentage: 5 }
+      },
+      construction: {
+        progressPercentage: 75,
+        plannedCompletionDate: new Date('2025-12-31')
+      },
+      financials: {
+        constructionCost: { budgeted: 80000000, actual: 70000000 },
+        revenueTarget: 4800000000,
+        revenueAchieved: 2400000000
+      },
+      metadata: {
+        architect: 'Premium Architects Ltd',
+        facingDirection: 'North-West',
+        cornerTower: false,
+        premiumLocation: true
+      }
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Skyline Tower B',
+      towerCode: 'SKY-B',
+      totalFloors: 25,
+      unitsPerFloor: 8,
+      towerType: 'residential',
+      status: 'under_construction',
+      configuration: {
+        elevators: { count: 3, type: 'high_speed' },
+        staircases: { count: 2, type: 'fire_exit' },
+        powerBackup: 'full',
+        waterSupply: 'mixed'
+      },
+      amenities: {
+        lobby: true,
+        security: true,
+        cctv: true,
+        intercom: true,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: true,
+        solarPanels: false
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.05, // 5% premium for better location
+        floorPremium: { startFloor: 5, premiumPerFloor: 75000 },
+        penthousePremium: { enabled: true, topFloors: 2, premiumPercentage: 20 },
+        cornerUnitPremium: { percentage: 5 }
+      },
+      construction: {
+        progressPercentage: 60,
+        plannedCompletionDate: new Date('2026-03-31')
+      },
+      financials: {
+        constructionCost: { budgeted: 80000000, actual: 65000000 },
+        revenueTarget: 5040000000,
+        revenueAchieved: 1800000000
+      },
+      metadata: {
+        architect: 'Premium Architects Ltd',
+        facingDirection: 'South-East',
+        cornerTower: false,
+        premiumLocation: true
+      }
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Skyline Tower C',
+      towerCode: 'SKY-C',
+      totalFloors: 20,
+      unitsPerFloor: 8,
+      towerType: 'residential',
+      status: 'planning',
+      configuration: {
+        elevators: { count: 3, type: 'high_speed' },
+        staircases: { count: 2, type: 'fire_exit' },
+        powerBackup: 'full',
+        waterSupply: 'mixed'
+      },
+      amenities: {
+        lobby: true,
+        security: true,
+        cctv: true,
+        intercom: true,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: false,
+        solarPanels: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.1, // 10% premium for latest design
+        floorPremium: { startFloor: 3, premiumPerFloor: 80000 },
+        penthousePremium: { enabled: true, topFloors: 2, premiumPercentage: 25 },
+        cornerUnitPremium: { percentage: 7 }
+      },
+      construction: {
+        progressPercentage: 5,
+        plannedCompletionDate: new Date('2026-12-31')
+      },
+      financials: {
+        constructionCost: { budgeted: 70000000, actual: 5000000 },
+        revenueTarget: 4560000000,
+        revenueAchieved: 200000000
+      },
+      metadata: {
+        architect: 'Premium Architects Ltd',
+        facingDirection: 'East',
+        cornerTower: true,
+        premiumLocation: true
+      }
+    },
+
+    // Green Valley Villas - 3 Blocks
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Villa Block A',
+      towerCode: 'VLA-A',
+      totalFloors: 3,
+      unitsPerFloor: 10,
+      towerType: 'residential',
+      status: 'completed',
+      configuration: {
+        elevators: { count: 1, type: 'service' },
+        staircases: { count: 1, type: 'regular' },
+        powerBackup: 'full',
+        waterSupply: 'borewell'
+      },
+      amenities: {
+        lobby: false,
+        security: true,
+        cctv: true,
+        intercom: false,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: true,
+        rainwaterHarvesting: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.0,
+        floorPremium: { startFloor: 2, premiumPerFloor: 200000 },
+        penthousePremium: { enabled: false },
+        cornerUnitPremium: { percentage: 15 }
+      },
+      construction: {
+        progressPercentage: 100,
+        plannedCompletionDate: new Date('2024-06-30'),
+        actualCompletionDate: new Date('2024-06-15')
+      },
+      financials: {
+        constructionCost: { budgeted: 180000000, actual: 175000000 },
+        revenueTarget: 1800000000,
+        revenueAchieved: 1650000000
+      },
+      metadata: {
+        architect: 'Coastal Design Studios',
+        facingDirection: 'West',
+        cornerTower: false,
+        premiumLocation: true
+      }
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Villa Block B',
+      towerCode: 'VLA-B',
+      totalFloors: 3,
+      unitsPerFloor: 10,
+      towerType: 'residential',
+      status: 'under_construction',
+      configuration: {
+        elevators: { count: 1, type: 'service' },
+        staircases: { count: 1, type: 'regular' },
+        powerBackup: 'full',
+        waterSupply: 'borewell'
+      },
+      amenities: {
+        lobby: false,
+        security: true,
+        cctv: true,
+        intercom: false,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: true,
+        rainwaterHarvesting: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.05,
+        floorPremium: { startFloor: 2, premiumPerFloor: 200000 },
+        penthousePremium: { enabled: false },
+        cornerUnitPremium: { percentage: 15 }
+      },
+      construction: {
+        progressPercentage: 85,
+        plannedCompletionDate: new Date('2025-09-30')
+      },
+      financials: {
+        constructionCost: { budgeted: 180000000, actual: 160000000 },
+        revenueTarget: 1890000000,
+        revenueAchieved: 1200000000
+      },
+      metadata: {
+        architect: 'Coastal Design Studios',
+        facingDirection: 'South-West',
+        cornerTower: false,
+        premiumLocation: true
+      }
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Villa Block C',
+      towerCode: 'VLA-C',
+      totalFloors: 3,
+      unitsPerFloor: 10,
+      towerType: 'residential',
+      status: 'planning',
+      configuration: {
+        elevators: { count: 1, type: 'service' },
+        staircases: { count: 1, type: 'regular' },
+        powerBackup: 'full',
+        waterSupply: 'borewell'
+      },
+      amenities: {
+        lobby: false,
+        security: true,
+        cctv: true,
+        intercom: true,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: true,
+        rainwaterHarvesting: true,
+        solarPanels: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.1,
+        floorPremium: { startFloor: 2, premiumPerFloor: 250000 },
+        penthousePremium: { enabled: true, topFloors: 1, premiumPercentage: 15 },
+        cornerUnitPremium: { percentage: 20 }
+      },
+      construction: {
+        progressPercentage: 0,
+        plannedCompletionDate: new Date('2026-06-30')
+      },
+      financials: {
+        constructionCost: { budgeted: 200000000, actual: 0 },
+        revenueTarget: 2100000000,
+        revenueAchieved: 150000000
+      },
+      metadata: {
+        architect: 'Coastal Design Studios',
+        facingDirection: 'North',
+        cornerTower: true,
+        premiumLocation: true
+      }
+    },
+
+    // Affordable Heights - 2 Towers
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Affordable Tower 1',
+      towerCode: 'AFF-1',
+      totalFloors: 15,
+      unitsPerFloor: 8,
+      towerType: 'residential',
+      status: 'under_construction',
+      configuration: {
+        elevators: { count: 2, type: 'standard' },
+        staircases: { count: 2, type: 'fire_exit' },
+        powerBackup: 'partial',
+        waterSupply: 'municipal'
+      },
+      amenities: {
+        lobby: true,
+        security: true,
+        cctv: false,
+        intercom: false,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: false,
+        solarPanels: false
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.0,
+        floorPremium: { startFloor: 5, premiumPerFloor: 25000 },
+        penthousePremium: { enabled: false },
+        cornerUnitPremium: { percentage: 3 }
+      },
+      construction: {
+        progressPercentage: 40,
+        plannedCompletionDate: new Date('2025-08-31')
+      },
+      financials: {
+        constructionCost: { budgeted: 60000000, actual: 25000000 },
+        revenueTarget: 1200000000,
+        revenueAchieved: 400000000
+      },
+      metadata: {
+        architect: 'Affordable Housing Designs',
+        facingDirection: 'East',
+        cornerTower: false,
+        premiumLocation: false
+      }
+    },
+    {
+      _id: new mongoose.Types.ObjectId(),
+      towerName: 'Affordable Tower 2',
+      towerCode: 'AFF-2',
+      totalFloors: 15,
+      unitsPerFloor: 8,
+      towerType: 'residential',
+      status: 'planning',
+      configuration: {
+        elevators: { count: 2, type: 'standard' },
+        staircases: { count: 2, type: 'fire_exit' },
+        powerBackup: 'partial',
+        waterSupply: 'municipal'
+      },
+      amenities: {
+        lobby: true,
+        security: true,
+        cctv: true,
+        intercom: false,
+        generator: true,
+        waterTank: true,
+        sewageTreatment: false,
+        solarPanels: true
+      },
+      pricingConfiguration: {
+        basePriceModifier: 1.02,
+        floorPremium: { startFloor: 5, premiumPerFloor: 25000 },
+        penthousePremium: { enabled: false },
+        cornerUnitPremium: { percentage: 3 }
+      },
+      construction: {
+        progressPercentage: 10,
+        plannedCompletionDate: new Date('2026-02-28')
+      },
+      financials: {
+        constructionCost: { budgeted: 60000000, actual: 8000000 },
+        revenueTarget: 1224000000,
+        revenueAchieved: 100000000
+      },
+      metadata: {
+        architect: 'Affordable Housing Designs',
+        facingDirection: 'West',
+        cornerTower: false,
+        premiumLocation: false
+      }
+    }
+  ],
+
   units: [],
   leads: [],
   interactions: [],
   sales: []
 };
 
-// --- AI CONVERSATION TEMPLATES ---
+// --- AI CONVERSATION TEMPLATES (Same as before) ---
 
-// Realistic conversation templates for different interaction types
 const conversationTemplates = {
   initial_call: [
     "Hello {firstName}, this is {salesPerson} from {projectName}. I understand you're interested in our property. What specific requirements are you looking for?",
@@ -282,12 +661,11 @@ const conversationTemplates = {
   ]
 };
 
-// Function to generate realistic conversation content
+// Function to generate realistic conversation content (Same as before)
 const generateConversationContent = (template, leadData, projectData, interactionType) => {
   const salesPersonNames = ['Rahul Kumar', 'Priya Singh', 'Amit Sharma', 'Kavita Patel'];
   const salesPerson = salesPersonNames[Math.floor(Math.random() * salesPersonNames.length)];
   
-  // Calculate price ranges based on project
   let priceRange, bookingAmount, discount, savings;
   const budget = leadData.budget ? `₹${(leadData.budget.min / 10000000).toFixed(1)}-${(leadData.budget.max / 10000000).toFixed(1)} Cr` : '₹50-80 Lakhs';
   
@@ -335,7 +713,6 @@ const generateConversationContent = (template, leadData, projectData, interactio
   
   let conversation = template.join('\n\n');
   
-  // Replace placeholders
   Object.keys(replacements).forEach(placeholder => {
     conversation = conversation.replace(new RegExp(placeholder, 'g'), replacements[placeholder]);
   });
@@ -343,148 +720,256 @@ const generateConversationContent = (template, leadData, projectData, interactio
   return conversation;
 };
 
-// --- GENERATE COMPREHENSIVE UNIT DATA ---
+// --- ENHANCED UNIT GENERATION WITH TOWER SUPPORT ---
 
-// Premium Skyline Towers (2 Towers, 20 floors, 10 units per floor)
-['Tower-A', 'Tower-B'].forEach(tower => {
-  for (let floor = 1; floor <= 20; floor++) {
-    for (let unitNum = 1; unitNum <= 10; unitNum++) {
-      const unitNumber = `${tower}-${floor}${String(unitNum).padStart(2, '0')}`;
-      const unitType = unitNum <= 3 ? '2BHK' : unitNum <= 7 ? '3BHK' : '3BHK+Study';
-      const baseAreas = { '2BHK': 1150, '3BHK': 1450, '3BHK+Study': 1650 };
-      const basePrices = { '2BHK': 25000000, '3BHK': 32000000, '3BHK+Study': 38000000 };
-      
-      // Premium pricing with floor rise
-      const floorMultiplier = 1 + (floor * 0.02); // 2% per floor
-      const finalPrice = Math.round(basePrices[unitType] * floorMultiplier);
-      
-      sampleData.units.push({
-        project: sampleData.projects[0]._id,
-        unitNumber,
-        type: unitType,
-        floor,
-        areaSqft: baseAreas[unitType] + Math.floor(Math.random() * 100),
-        basePrice: finalPrice,
-        currentPrice: finalPrice,
-        facing: ['North', 'South', 'East', 'West', 'North-East', 'South-West'][unitNum % 6],
-        features: { 
-          isParkFacing: unitNum % 4 === 0,
-          isCornerUnit: unitNum === 1 || unitNum === 10,
-          hasBalcony: true,
-          hasServantRoom: unitType === '3BHK+Study'
-        },
-        status: Math.random() > 0.3 ? 'available' : 'blocked' // 70% available
-      });
+const generateUnitsWithTowers = () => {
+  console.log('🏗️ Generating units with tower assignments...');
+  
+  // Skyline Towers Premium - 3 Towers with different configurations
+  const skylineTowers = sampleData.towers.slice(0, 3); // First 3 towers
+  
+  skylineTowers.forEach((tower, towerIndex) => {
+    console.log(`   Creating units for ${tower.towerName}...`);
+    
+    for (let floor = 1; floor <= tower.totalFloors; floor++) {
+      for (let unitNum = 1; unitNum <= tower.unitsPerFloor; unitNum++) {
+        const unitNumber = `${tower.towerCode}-${floor}${String(unitNum).padStart(2, '0')}`;
+        const unitType = unitNum <= 3 ? '2BHK' : unitNum <= 6 ? '3BHK' : '3BHK+Study';
+        const baseAreas = { '2BHK': 1150, '3BHK': 1450, '3BHK+Study': 1650 };
+        const basePrices = { '2BHK': 25000000, '3BHK': 32000000, '3BHK+Study': 38000000 };
+        
+        // Use tower pricing configuration
+        const isCornerUnit = unitNum === 1 || unitNum === tower.unitsPerFloor;
+        const basePrice = basePrices[unitType];
+        
+        // Apply tower's pricing calculations
+        let finalPrice = basePrice * tower.pricingConfiguration.basePriceModifier;
+        
+        // Floor premium
+        if (floor >= tower.pricingConfiguration.floorPremium.startFloor) {
+          const premiumFloors = floor - tower.pricingConfiguration.floorPremium.startFloor + 1;
+          finalPrice += premiumFloors * tower.pricingConfiguration.floorPremium.premiumPerFloor;
+        }
+        
+        // Corner unit premium
+        if (isCornerUnit) {
+          finalPrice *= (1 + tower.pricingConfiguration.cornerUnitPremium.percentage / 100);
+        }
+        
+        // Penthouse premium
+        if (tower.pricingConfiguration.penthousePremium.enabled) {
+          const penthouseFloor = tower.totalFloors - tower.pricingConfiguration.penthousePremium.topFloors + 1;
+          if (floor >= penthouseFloor) {
+            finalPrice *= (1 + tower.pricingConfiguration.penthousePremium.premiumPercentage / 100);
+          }
+        }
+        
+        finalPrice = Math.round(finalPrice);
+        
+        sampleData.units.push({
+          project: sampleData.projects[0]._id,
+          tower: tower._id, // NEW: Tower reference
+          unitNumber,
+          type: unitType,
+          floor,
+          areaSqft: baseAreas[unitType] + Math.floor(Math.random() * 100),
+          basePrice: finalPrice,
+          currentPrice: finalPrice,
+          facing: ['North', 'South', 'East', 'West', 'North-East', 'South-West'][unitNum % 6],
+          features: { 
+            isParkFacing: unitNum % 4 === 0,
+            isCornerUnit,
+            hasBalcony: true,
+            hasServantRoom: unitType === '3BHK+Study'
+          },
+          specifications: {
+            bedrooms: unitType === '2BHK' ? 2 : 3,
+            bathrooms: unitType === '2BHK' ? 2 : unitType === '3BHK' ? 2 : 3,
+            livingRooms: 1,
+            kitchen: 1,
+            balconies: unitType === '2BHK' ? 1 : 2
+          },
+          status: Math.random() > 0.3 ? 'available' : 'blocked'
+        });
+      }
     }
-  }
-});
-
-// Luxury Green Valley Villas
-for (let i = 1; i <= 75; i++) {
-  const villaTypes = ['4BHK Villa', '5BHK Villa', '4BHK Duplex'];
-  const villaType = villaTypes[Math.floor(Math.random() * villaTypes.length)];
-  const baseAreas = { '4BHK Villa': 3200, '5BHK Villa': 4000, '4BHK Duplex': 3500 };
-  const basePrices = { '4BHK Villa': 60000000, '5BHK Villa': 80000000, '4BHK Duplex': 70000000 };
-  
-  // Add premium for special features
-  let premiumMultiplier = 1;
-  const isBeachFacing = i <= 25;
-  const isCornerUnit = i % 10 === 0;
-  
-  if (isBeachFacing) premiumMultiplier += 0.25; // 25% premium for beach facing
-  if (isCornerUnit) premiumMultiplier += 0.15; // 15% premium for corner units
-  
-  sampleData.units.push({
-    project: sampleData.projects[1]._id,
-    unitNumber: `Villa-${String(i).padStart(3, '0')}`,
-    type: villaType,
-    floor: villaType.includes('Duplex') ? 2 : 1,
-    areaSqft: baseAreas[villaType],
-    basePrice: Math.round(basePrices[villaType] * premiumMultiplier),
-    currentPrice: Math.round(basePrices[villaType] * premiumMultiplier),
-    facing: isBeachFacing ? 'West' : ['North', 'South', 'East'][i % 3],
-    features: { 
-      isCornerUnit,
-      isBeachFacing,
-      hasPrivatePool: true,
-      hasGarden: true,
-      smartHome: Math.random() > 0.5
-    },
-    status: Math.random() > 0.2 ? 'available' : 'booked' // 80% available
   });
-}
 
-// Affordable Heights (10 floors, 20 units per floor)
-for (let floor = 1; floor <= 10; floor++) {
-  for (let unitNum = 1; unitNum <= 20; unitNum++) {
-    const unitNumber = `AH-${floor}${String(unitNum).padStart(2, '0')}`;
-    const unitType = unitNum <= 10 ? '1BHK' : unitNum <= 16 ? '2BHK' : '2BHK+Study';
-    const baseAreas = { '1BHK': 550, '2BHK': 750, '2BHK+Study': 850 };
-    const basePrices = { '1BHK': 3500000, '2BHK': 4500000, '2BHK+Study': 5200000 };
+  // Green Valley Villas - 3 Blocks
+  const villaTowers = sampleData.towers.slice(3, 6); // Next 3 towers
+  
+  villaTowers.forEach((tower, towerIndex) => {
+    console.log(`   Creating units for ${tower.towerName}...`);
+    
+    for (let floor = 1; floor <= tower.totalFloors; floor++) {
+      for (let unitNum = 1; unitNum <= tower.unitsPerFloor; unitNum++) {
+        const unitNumber = `${tower.towerCode}-${floor}${String(unitNum).padStart(2, '0')}`;
+        const villaTypes = ['4BHK Villa', '5BHK Villa', '4BHK Duplex'];
+        const villaType = villaTypes[unitNum % villaTypes.length];
+        const baseAreas = { '4BHK Villa': 3200, '5BHK Villa': 4000, '4BHK Duplex': 3500 };
+        const basePrices = { '4BHK Villa': 60000000, '5BHK Villa': 80000000, '4BHK Duplex': 70000000 };
+        
+        const isCornerUnit = unitNum === 1 || unitNum === tower.unitsPerFloor;
+        const isBeachFacing = Math.random() > 0.6; // 40% beach facing
+        
+        let finalPrice = basePrices[villaType] * tower.pricingConfiguration.basePriceModifier;
+        
+        // Apply floor premium
+        if (floor >= tower.pricingConfiguration.floorPremium.startFloor) {
+          finalPrice += tower.pricingConfiguration.floorPremium.premiumPerFloor;
+        }
+        
+        // Corner unit premium
+        if (isCornerUnit) {
+          finalPrice *= (1 + tower.pricingConfiguration.cornerUnitPremium.percentage / 100);
+        }
+        
+        finalPrice = Math.round(finalPrice);
+        
+        sampleData.units.push({
+          project: sampleData.projects[1]._id,
+          tower: tower._id, // NEW: Tower reference
+          unitNumber,
+          type: villaType,
+          floor,
+          areaSqft: baseAreas[villaType],
+          basePrice: finalPrice,
+          currentPrice: finalPrice,
+          facing: isBeachFacing ? 'West' : ['North', 'South', 'East'][unitNum % 3],
+          features: { 
+            isCornerUnit,
+            isBeachFacing,
+            hasPrivatePool: true,
+            hasGarden: true,
+            smartHome: Math.random() > 0.5
+          },
+          specifications: {
+            bedrooms: villaType.includes('5BHK') ? 5 : 4,
+            bathrooms: villaType.includes('5BHK') ? 4 : 3,
+            livingRooms: villaType.includes('Duplex') ? 2 : 1,
+            kitchen: 1,
+            balconies: villaType.includes('Duplex') ? 3 : 2
+          },
+          status: Math.random() > 0.2 ? 'available' : 'booked'
+        });
+      }
+    }
+  });
+
+  // Affordable Heights - 2 Towers
+  const affordableTowers = sampleData.towers.slice(6, 8); // Last 2 towers
+  
+  affordableTowers.forEach((tower, towerIndex) => {
+    console.log(`   Creating units for ${tower.towerName}...`);
+    
+    for (let floor = 1; floor <= tower.totalFloors; floor++) {
+      for (let unitNum = 1; unitNum <= tower.unitsPerFloor; unitNum++) {
+        const unitNumber = `${tower.towerCode}-${floor}${String(unitNum).padStart(2, '0')}`;
+        const unitType = unitNum <= 3 ? '1BHK' : unitNum <= 6 ? '2BHK' : '2BHK+Study';
+        const baseAreas = { '1BHK': 550, '2BHK': 750, '2BHK+Study': 850 };
+        const basePrices = { '1BHK': 3500000, '2BHK': 4500000, '2BHK+Study': 5200000 };
+        
+        const isCornerUnit = unitNum === 1 || unitNum === tower.unitsPerFloor;
+        
+        let finalPrice = basePrices[unitType] * tower.pricingConfiguration.basePriceModifier;
+        
+        // Apply floor premium
+        if (floor >= tower.pricingConfiguration.floorPremium.startFloor) {
+          const premiumFloors = floor - tower.pricingConfiguration.floorPremium.startFloor + 1;
+          finalPrice += premiumFloors * tower.pricingConfiguration.floorPremium.premiumPerFloor;
+        }
+        
+        // Corner unit premium
+        if (isCornerUnit) {
+          finalPrice *= (1 + tower.pricingConfiguration.cornerUnitPremium.percentage / 100);
+        }
+        
+        finalPrice = Math.round(finalPrice);
+        
+        sampleData.units.push({
+          project: sampleData.projects[2]._id,
+          tower: tower._id, // NEW: Tower reference
+          unitNumber,
+          type: unitType,
+          floor,
+          areaSqft: baseAreas[unitType],
+          basePrice: finalPrice,
+          currentPrice: finalPrice,
+          facing: ['North', 'South', 'East', 'West'][unitNum % 4],
+          features: { 
+            isParkFacing: unitNum % 6 === 0,
+            hasBalcony: unitType !== '1BHK',
+            isCornerUnit
+          },
+          specifications: {
+            bedrooms: unitType === '1BHK' ? 1 : 2,
+            bathrooms: unitType === '1BHK' ? 1 : 2,
+            livingRooms: 1,
+            kitchen: 1,
+            balconies: unitType === '1BHK' ? 1 : 1
+          },
+          status: Math.random() > 0.25 ? 'available' : 'sold'
+        });
+      }
+    }
+  });
+
+  // Tech City Plots (No towers - plots don't need towers)
+  console.log('   Creating plots for Tech City Plots (no towers)...');
+  for (let i = 1; i <= 180; i++) {
+    const plotSizes = [1200, 1500, 2000, 2400, 3000];
+    const area = plotSizes[Math.floor(Math.random() * plotSizes.length)];
+    const pricePerSqft = 5000 + Math.floor(Math.random() * 1000);
     
     sampleData.units.push({
-      project: sampleData.projects[2]._id,
-      unitNumber,
-      type: unitType,
-      floor,
-      areaSqft: baseAreas[unitType],
-      basePrice: basePrices[unitType] + (floor * 25000),
-      currentPrice: basePrices[unitType] + (floor * 25000),
-      facing: ['North', 'South', 'East', 'West'][unitNum % 4],
+      project: sampleData.projects[3]._id,
+      // tower: null, // No tower for plots
+      unitNumber: `Plot-${String(i).padStart(3, '0')}`,
+      type: 'Residential Plot',
+      floor: 0,
+      areaSqft: area,
+      basePrice: area * pricePerSqft,
+      currentPrice: area * pricePerSqft,
       features: { 
-        isParkFacing: unitNum % 6 === 0,
-        hasBalcony: unitType !== '1BHK'
+        isCornerPlot: i % 15 === 0,
+        hasRoadAccess: true,
+        isGatedCommunity: true
       },
-      status: Math.random() > 0.25 ? 'available' : 'sold' // 75% available
+      specifications: {
+        plotType: 'residential',
+        roadWidth: Math.random() > 0.5 ? 30 : 40,
+        facing: ['North', 'South', 'East', 'West'][i % 4]
+      },
+      status: Math.random() > 0.4 ? 'available' : 'blocked'
     });
   }
-}
-
-// Tech City Plots (varied sizes)
-for (let i = 1; i <= 180; i++) {
-  const plotSizes = [1200, 1500, 2000, 2400, 3000];
-  const area = plotSizes[Math.floor(Math.random() * plotSizes.length)];
-  const pricePerSqft = 5000 + Math.floor(Math.random() * 1000); // 5000-6000 per sqft
   
-  sampleData.units.push({
-    project: sampleData.projects[3]._id,
-    unitNumber: `Plot-${String(i).padStart(3, '0')}`,
-    type: 'Residential Plot',
-    floor: 0,
-    areaSqft: area,
-    basePrice: area * pricePerSqft,
-    currentPrice: area * pricePerSqft,
-    features: { 
-      isCornerPlot: i % 15 === 0,
-      hasRoadAccess: true,
-      isGatedCommunity: true
-    },
-    status: Math.random() > 0.4 ? 'available' : 'blocked' // 60% available
-  });
-}
+  console.log(`✅ Generated ${sampleData.units.length} units with tower assignments`);
+};
 
-// --- GENERATE REALISTIC LEAD DATA WITH DIVERSE SCENARIOS ---
+// Generate units with tower support
+generateUnitsWithTowers();
+
+// --- GENERATE REALISTIC LEAD DATA (Same as before) ---
 
 const leadSources = ['Website', 'Property Portal', 'Referral', 'Walk-in', 'Social Media', 'Advertisement', 'Cold Call'];
 const leadStatuses = ['New', 'Contacted', 'Qualified', 'Site Visit Scheduled', 'Site Visit Completed', 'Negotiating'];
 const timelineOptions = ['immediate', '1-3_months', '3-6_months', '6-12_months', '12+_months'];
 const unitTypes = ['2BHK', '3BHK', '3BHK+Study', '4BHK Villa', '1BHK', 'Any'];
 
-// Generate leads with realistic distribution across projects
 const leadDistribution = [
-  { project: 0, count: 80 },  // Premium project - more leads
-  { project: 1, count: 40 },  // Luxury villas - fewer but high-value leads
-  { project: 2, count: 60 },  // Affordable - good volume
-  { project: 3, count: 30 }   // Plots - niche market
+  { project: 0, count: 80 },
+  { project: 1, count: 40 },
+  { project: 2, count: 60 },
+  { project: 3, count: 30 }
 ];
 
 leadDistribution.forEach(({ project, count }, projectIndex) => {
   for (let i = 0; i < count; i++) {
-    const leadAge = Math.floor(Math.random() * 90); // 0-90 days old
+    const leadAge = Math.floor(Math.random() * 90);
     const createdDate = new Date();
     createdDate.setDate(createdDate.getDate() - leadAge);
     
-    // Generate realistic budget based on project
     let budgetRange;
     switch (projectIndex) {
       case 0: // Premium
@@ -501,12 +986,10 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
         break;
     }
     
-    // Add some variation to budgets
-    const budgetVariation = 0.2; // 20% variation
+    const budgetVariation = 0.2;
     let minBudget = Math.round(budgetRange.min * (1 + (Math.random() - 0.5) * budgetVariation));
     let maxBudget = Math.round(budgetRange.max * (1 + (Math.random() - 0.5) * budgetVariation));
     
-    // Generate realistic name combinations
     const firstNames = ['Rajesh', 'Priya', 'Amit', 'Kavita', 'Suresh', 'Meera', 'Vikram', 'Anita', 'Ravi', 'Deepa', 
                        'Sanjay', 'Neha', 'Arun', 'Pooja', 'Manoj', 'Sunita', 'Kiran', 'Swati', 'Ashok', 'Rekha'];
     const lastNames = ['Sharma', 'Patel', 'Kumar', 'Singh', 'Gupta', 'Mehta', 'Jain', 'Shah', 'Agarwal', 'Bansal',
@@ -516,21 +999,19 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
     const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
     const phoneNumber = `9${Math.floor(Math.random() * 900000000) + 100000000}`;
     
-    // Determine lead quality scenario
     const scenarioType = Math.random();
     let leadScenario;
     
     if (scenarioType < 0.2) {
-      leadScenario = 'hot'; // 20% hot leads
+      leadScenario = 'hot';
     } else if (scenarioType < 0.5) {
-      leadScenario = 'warm'; // 30% warm leads
+      leadScenario = 'warm';
     } else if (scenarioType < 0.8) {
-      leadScenario = 'cold'; // 30% cold leads
+      leadScenario = 'cold';
     } else {
-      leadScenario = 'poor'; // 20% poor quality leads
+      leadScenario = 'poor';
     }
     
-    // Set lead properties based on scenario
     let source, status, timeline, unitType, hasEmail;
     
     switch (leadScenario) {
@@ -557,11 +1038,10 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
         status = 'New';
         timeline = '12+_months';
         hasEmail = Math.random() > 0.7;
-        minBudget = Math.round(minBudget * 0.6); // Lower budget
+        minBudget = Math.round(minBudget * 0.6);
         break;
     }
     
-    // Enhanced lead object with AI scoring fields
     const lead = {
       project: sampleData.projects[project]._id,
       firstName,
@@ -571,7 +1051,6 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
       source,
       status,
       
-      // Enhanced budget information
       budget: {
         min: minBudget,
         max: maxBudget,
@@ -581,7 +1060,6 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
         lastUpdated: createdDate
       },
       
-      // Enhanced requirements
       requirements: {
         timeline,
         unitType: unitTypes[Math.floor(Math.random() * unitTypes.length)],
@@ -594,28 +1072,24 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
                   ['Parking', 'Security']
       },
       
-      // Initialize scoring fields
       score: 0,
       scoreGrade: 'D',
       priority: 'Very Low',
       confidence: 60,
       lastScoreUpdate: createdDate,
       
-      // Enhanced engagement metrics
       engagementMetrics: {
         totalInteractions: 0,
         responseRate: leadScenario === 'hot' ? 90 : leadScenario === 'warm' ? 70 : 40,
         preferredContactMethod: ['phone', 'email', 'whatsapp'][Math.floor(Math.random() * 3)]
       },
       
-      // Follow-up scheduling
       followUpSchedule: leadScenario !== 'poor' ? {
-        nextFollowUpDate: new Date(createdDate.getTime() + Math.random() * 7 * 24 * 60 * 60 * 1000), // Within next 7 days
+        nextFollowUpDate: new Date(createdDate.getTime() + Math.random() * 7 * 24 * 60 * 60 * 1000),
         followUpType: 'call',
         notes: `Follow up on ${timeline} timeline interest`
       } : {},
       
-      // Marketing attribution
       attribution: {
         campaign: source === 'Website' ? 'Digital Campaign Q4' : 
                  source === 'Social Media' ? 'Facebook Ads' : 
@@ -625,7 +1099,6 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
         touchpointCount: Math.floor(Math.random() * 3) + 1
       },
       
-      // Activity summary
       activitySummary: {
         callsCount: 0,
         emailsCount: 0,
@@ -643,9 +1116,8 @@ leadDistribution.forEach(({ project, count }, projectIndex) => {
   }
 });
 
-// --- ENHANCED INTERACTION DATA WITH CONVERSATION CONTENT ---
+// --- ENHANCED INTERACTION GENERATION (Same as before) ---
 
-// Enhanced interaction generation with conversation content
 const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
   const interactionTypes = [
     { type: 'Call', weight: 0.4, hasConversation: true },
@@ -658,7 +1130,6 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
   const callOutcomes = ['connected', 'not_answered', 'busy', 'callback_requested'];
   const callSentiments = ['positive', 'neutral', 'negative'];
   
-  // Generate interaction count based on lead status and scenario
   let interactionCount;
   const leadScenario = leadData.notes?.includes('hot') ? 'hot' : 
                       leadData.notes?.includes('warm') ? 'warm' : 
@@ -694,10 +1165,9 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
     const dayOffset = Math.floor((i + 1) * (Math.max(1, (new Date() - leadData.createdAt) / (24 * 60 * 60 * 1000)) / interactionCount));
     interactionDate.setDate(interactionDate.getDate() + dayOffset);
     
-    // Select interaction type based on weights and progression
     let selectedType;
     if (i === 0) {
-      selectedType = 'Call'; // First interaction is usually a call
+      selectedType = 'Call';
     } else if (leadData.status === 'Site Visit Scheduled' || leadData.status === 'Site Visit Completed') {
       selectedType = Math.random() > 0.3 ? 'Call' : 'Site Visit';
     } else if (leadData.status === 'Negotiating') {
@@ -710,7 +1180,6 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
       else selectedType = 'Meeting';
     }
     
-    // Determine conversation template based on interaction progression
     let conversationTemplate;
     if (i === 0) {
       conversationTemplate = 'initial_call';
@@ -724,7 +1193,6 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
       conversationTemplate = 'follow_up_call';
     }
     
-    // Generate conversation content
     let conversationContent = '';
     let summary = '';
     let outcome = 'completed';
@@ -733,7 +1201,7 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
     
     if (selectedType === 'Call') {
       outcome = callOutcomes[Math.floor(Math.random() * callOutcomes.length)];
-      duration = outcome === 'connected' ? Math.floor(Math.random() * 25) + 5 : 0; // 5-30 minutes
+      duration = outcome === 'connected' ? Math.floor(Math.random() * 25) + 5 : 0;
       sentiment = outcome === 'connected' ? 
         (leadScenario === 'hot' ? 'positive' : 
          leadScenario === 'warm' ? (Math.random() > 0.3 ? 'positive' : 'neutral') :
@@ -779,20 +1247,18 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
       leadIndex,
       type: selectedType,
       direction: 'Outbound',
-      content: conversationContent || summary, // Use content instead of notes
+      content: conversationContent || summary,
       outcome: outcome,
       nextAction: i === interactionCount - 1 ? 
         (leadData.status === 'Negotiating' ? 'Send revised quotation' : 
          leadData.status === 'Site Visit Scheduled' ? 'Confirm site visit timing' :
          'Schedule follow-up call in 3 days') : null,
       
-      // Additional fields that may be useful but not in the schema
       summary: summary,
       duration: duration,
       sentiment: sentiment,
       followUpRequired: i === interactionCount - 1 && leadData.status !== 'Booked',
       
-      // AI-relevant metadata
       aiMetadata: {
         keyTopics: selectedType === 'Call' && outcome === 'connected' ? 
           ['pricing', 'amenities', 'location', 'timeline'] : [],
@@ -814,7 +1280,6 @@ const generateEnhancedInteractions = (leadIndex, leadData, projectData) => {
   return interactions;
 };
 
-// Generate enhanced interactions for each lead
 sampleData.leads.forEach((lead, index) => {
   const projectData = sampleData.projects.find(p => p._id.equals(lead.project));
   const enhancedInteractions = generateEnhancedInteractions(index, lead, projectData);
@@ -825,14 +1290,14 @@ sampleData.leads.forEach((lead, index) => {
 
 const importData = async () => {
   try {
-    console.log('🚀 Starting enhanced data import with AI conversation content...');
+    console.log('🚀 Starting enhanced data import with Tower Management + AI conversation content...');
     
-    // Clear existing data with confirmation
     console.log('🧹 Clearing existing data...');
     await Sale.deleteMany();
     await Interaction.deleteMany();
     await Lead.deleteMany();
     await Unit.deleteMany();
+    await Tower.deleteMany(); // NEW: Clear towers
     await Project.deleteMany();
     await User.deleteMany();
     await Organization.deleteMany();
@@ -843,7 +1308,7 @@ const importData = async () => {
     const createdOrg = await Organization.create(sampleData.organization);
     console.log(`✅ Organization created: ${createdOrg.name}`);
 
-    // Create Users with enhanced error handling
+    // Create Users
     console.log('👥 Creating users...');
     const createdUsers = [];
     for (const [index, userData] of sampleData.users.entries()) {
@@ -863,19 +1328,65 @@ const importData = async () => {
     const createdProjects = await Project.insertMany(projectsWithOrg);
     console.log(`✅ ${createdProjects.length} projects created`);
 
-    // Create Units
-    console.log('🏠 Creating units...');
-    const unitsWithOrg = sampleData.units.map(u => ({ ...u, organization: createdOrg._id }));
-    const createdUnits = await Unit.insertMany(unitsWithOrg);
-    console.log(`✅ ${createdUnits.length} units created`);
+    // NEW: Create Towers
+    console.log('🏰 Creating towers...');
+    const businessHead = createdUsers.find(u => u.role === 'Business Head') || createdUsers[0];
+    const towersWithOrg = sampleData.towers.map((t, index) => ({
+      ...t,
+      organization: createdOrg._id,
+      project: createdProjects[index < 3 ? 0 : index < 6 ? 1 : 2]._id, // Assign to correct projects
+      createdBy: businessHead._id
+    }));
+    
+    const createdTowers = await Tower.insertMany(towersWithOrg);
+    console.log(`✅ ${createdTowers.length} towers created`);
+    
+    // Print tower summary
+    console.log('🏰 Tower Summary:');
+    createdTowers.forEach(tower => {
+      const project = createdProjects.find(p => p._id.equals(tower.project));
+      console.log(`   🏗️ ${tower.towerName} (${tower.towerCode}) - ${project.name} - ${tower.totalUnits} units`);
+    });
 
-    // Create Leads with assignment to sales executives
+    // Create Units with Tower References
+    console.log('🏠 Creating units with tower assignments...');
+    const unitsWithOrgAndTower = sampleData.units.map(u => {
+      const unitData = { ...u, organization: createdOrg._id };
+      
+      // Find and assign correct tower ID
+      if (u.tower) {
+        const towerInSampleData = sampleData.towers.find(t => t._id.equals(u.tower));
+        if (towerInSampleData) {
+          const createdTower = createdTowers.find(ct => ct.towerCode === towerInSampleData.towerCode);
+          if (createdTower) {
+            unitData.tower = createdTower._id;
+          }
+        }
+      }
+      
+      return unitData;
+    });
+    
+    const createdUnits = await Unit.insertMany(unitsWithOrgAndTower);
+    console.log(`✅ ${createdUnits.length} units created with tower assignments`);
+    
+    // Print unit distribution by tower
+    console.log('🏠 Unit Distribution by Tower:');
+    for (const tower of createdTowers) {
+      const towerUnits = createdUnits.filter(u => u.tower && u.tower.equals(tower._id));
+      console.log(`   🏗️ ${tower.towerName}: ${towerUnits.length} units`);
+    }
+    
+    // Units without towers (plots)
+    const unitsWithoutTowers = createdUnits.filter(u => !u.tower);
+    console.log(`   📍 Units without towers (plots): ${unitsWithoutTowers.length}`);
+
+    // Create Leads with assignment
     console.log('🎯 Creating leads...');
     const salesExecutives = createdUsers.filter(u => u.role === 'Sales Executive');
     const salesManager = createdUsers.find(u => u.role === 'Sales Manager');
     
     const leadsWithOrg = sampleData.leads.map((lead, index) => {
-      // Assign leads to sales executives (round-robin)
       const assignedTo = salesExecutives.length > 0 ? 
         salesExecutives[index % salesExecutives.length]._id : 
         salesManager?._id || null;
@@ -890,19 +1401,18 @@ const importData = async () => {
     const createdLeads = await Lead.insertMany(leadsWithOrg);
     console.log(`✅ ${createdLeads.length} leads created and assigned`);
 
-    // Create Enhanced Interactions with Conversation Content
+    // Create Enhanced Interactions
     console.log('💬 Creating interactions with AI conversation content...');
     const interactionsWithData = sampleData.interactions.map(interaction => {
       const lead = createdLeads[interaction.leadIndex];
       const assignedUser = lead.assignedTo || createdUsers[0]._id;
       
-      // Remove the leadIndex property and add proper references
       const { leadIndex, summary, duration, sentiment, followUpRequired, aiMetadata, ...interactionData } = interaction;
       
       return {
         ...interactionData,
         lead: lead._id,
-        user: assignedUser, // Use 'user' instead of 'createdBy'
+        user: assignedUser,
         organization: createdOrg._id
       };
     });
@@ -910,7 +1420,6 @@ const importData = async () => {
     const createdInteractions = await Interaction.insertMany(interactionsWithData);
     console.log(`✅ ${createdInteractions.length} interactions with conversation content created`);
 
-    // Add summary of conversation content
     const conversationInteractions = createdInteractions.filter(i => i.content && i.content.length > 100);
     console.log(`📝 ${conversationInteractions.length} interactions contain detailed conversation content for AI analysis`);
 
@@ -930,8 +1439,7 @@ const importData = async () => {
         const lead = qualifiedLeads[i];
         const salesPerson = lead.assignedTo || salesExecutives[0]._id;
         
-        // Create realistic sale price (base price + some negotiation)
-        const negotiationFactor = 0.95 + (Math.random() * 0.1); // 95% to 105% of base price
+        const negotiationFactor = 0.95 + (Math.random() * 0.1);
         const salePrice = Math.round(unit.currentPrice * negotiationFactor);
         
         const sale = {
@@ -949,13 +1457,12 @@ const importData = async () => {
             totalAmount: Math.round(salePrice * 1.05) + 500000,
             timestamp: new Date()
           },
-          bookingDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000), // Last 30 days
+          bookingDate: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000),
           status: 'Booked'
         };
         
         salesData.push(sale);
         
-        // Update unit and lead status
         unit.status = 'sold';
         await unit.save();
         
@@ -989,12 +1496,13 @@ const importData = async () => {
       console.warn('⚠️ Lead scoring service not available, skipping initial scoring');
     }
 
-    // Print summary
+    // Print comprehensive summary
     console.log('\n🎉 Data import completed successfully!');
     console.log('📊 Summary:');
     console.log(`   Organization: ${createdOrg.name}`);
     console.log(`   Users: ${createdUsers.length}`);
     console.log(`   Projects: ${createdProjects.length}`);
+    console.log(`   Towers: ${createdTowers.length}`); // NEW
     console.log(`   Units: ${createdUnits.length}`);
     console.log(`   Leads: ${createdLeads.length}`);
     console.log(`   Interactions: ${createdInteractions.length}`);
@@ -1010,19 +1518,49 @@ const importData = async () => {
     console.log(`   WhatsApp conversations: ${createdInteractions.filter(i => i.type === 'WhatsApp').length}`);
     console.log(`   Email interactions: ${createdInteractions.filter(i => i.type === 'Email').length}`);
     
+    // NEW: Tower-specific summary
+    console.log('\n🏰 Tower Management Features Ready:');
+    console.log(`   Total towers created: ${createdTowers.length}`);
+    console.log(`   Units with tower assignments: ${createdUnits.filter(u => u.tower).length}`);
+    console.log(`   Units without towers (plots): ${createdUnits.filter(u => !u.tower).length}`);
+    console.log(`   Tower types: ${[...new Set(createdTowers.map(t => t.towerType))].join(', ')}`);
+    console.log(`   Tower statuses: ${[...new Set(createdTowers.map(t => t.status))].join(', ')}`);
+    
+    // Project-wise tower breakdown
+    console.log('\n🏗️ Project-wise Tower Breakdown:');
+    for (const project of createdProjects) {
+      const projectTowers = createdTowers.filter(t => t.project.equals(project._id));
+      const projectUnits = createdUnits.filter(u => u.project.equals(project._id));
+      console.log(`   ${project.name}:`);
+      console.log(`     Towers: ${projectTowers.length}`);
+      console.log(`     Total Units: ${projectUnits.length}`);
+      if (projectTowers.length > 0) {
+        projectTowers.forEach(tower => {
+          const towerUnits = projectUnits.filter(u => u.tower && u.tower.equals(tower._id));
+          console.log(`       ${tower.towerName} (${tower.towerCode}): ${towerUnits.length} units`);
+        });
+      }
+    }
+    
     console.log('\n🔑 Login Credentials:');
     console.log(`   Business Head: ${createdUsers[0]?.email} / SecurePass123!`);
     console.log(`   Sales Executive 1: ${createdUsers[3]?.email} / SecurePass123!`);
     console.log(`   Sales Executive 2: ${createdUsers[4]?.email} / SecurePass123!`);
 
-    console.log('\n🚀 AI Testing Ready:');
-    console.log('   • Conversation Analysis: Real conversation content available');
-    console.log('   • Sentiment Detection: Positive/Neutral/Negative sentiments included');
-    console.log('   • Buying Signals: Embedded in conversation templates');
-    console.log('   • Objection Handling: Common real estate objections included');
-    console.log('   • Follow-up Recommendations: Next actions suggested');
-    console.log('   • Interaction Patterns: Multi-touch customer journeys');
-    console.log('\n🧪 Test the AI features: node tests/aiConversationTest.js');
+    console.log('\n🚀 Testing Ready:');
+    console.log('   • AI Conversation Analysis: Real conversation content available');
+    console.log('   • Tower Management: Complete hierarchy with pricing');
+    console.log('   • Lead Scoring: AI-powered scoring system');
+    console.log('   • Analytics: Project, tower, and unit level insights');
+    console.log('   • Sales Pipeline: End-to-end lead to sale journey');
+    
+    console.log('\n🧪 API Endpoints to Test:');
+    console.log('   • GET /api/towers - List all towers');
+    console.log('   • GET /api/towers/:id - Tower details with analytics');
+    console.log('   • GET /api/units?towerId=:id - Units by tower');
+    console.log('   • POST /api/towers/:id/units/bulk-create - Bulk create units');
+    console.log('   • GET /api/analytics/dashboard - Complete dashboard');
+    console.log('   • GET /api/ai/leads/:id/insights - AI insights for leads');
 
     process.exit(0);
   } catch (error) {
@@ -1039,6 +1577,7 @@ const destroyData = async () => {
     await Interaction.deleteMany();
     await Lead.deleteMany();
     await Unit.deleteMany();
+    await Tower.deleteMany(); // NEW: Delete towers
     await Project.deleteMany();
     await User.deleteMany();
     await Organization.deleteMany();

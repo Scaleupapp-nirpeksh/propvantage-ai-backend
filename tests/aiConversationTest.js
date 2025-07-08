@@ -13,7 +13,7 @@ let authToken = '';
 
 // Test configuration
 const testConfig = {
-  email: 'ceo.1751637347184@propvantage.com',
+  email: 'ceo.1751987275395@propvantage.com',
   password: 'SecurePass123!',
   organizationId: null
 };
