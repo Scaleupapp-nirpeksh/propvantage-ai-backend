@@ -343,6 +343,5 @@ app.listen(PORT, () => {
   console.log(`   Performance Monitor: http://localhost:${PORT}/api/performance`);
   
   console.log(`\n✨ PropVantage AI v1.8.0 - Complete Real Estate CRM with Predictive Analytics`);
-  console.log(`🎯 AI Capabilities: 90% Complete`); // Updated from 85% to 90%
-  console.log(`🚀 New: Sales Forecasting, Revenue Projections, Lead Conversion Predictions`);
+
 });

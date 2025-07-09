@@ -1,6 +1,6 @@
 // File: routes/leadRoutes.js
 // Description: Compatible Lead Routes - only imports existing functions
-// Version: 1.5 - Compatible with current controller structure
+// Version: 1.7 - Corrected and Unified with Authentication Middleware
 // Location: routes/leadRoutes.js
 
 import express from 'express';
@@ -13,11 +13,6 @@ import {
   updateLead,
   addInteractionToLead,
   getLeadInteractions,
-  // Add other existing functions if available
-  // assignLead,                    // Add if exists
-  // bulkUpdateLeads,              // Add if exists
-  // getLeadStats,                 // Add if exists
-  // deleteLead                    // Add if exists
 } from '../controllers/leadController.js';
 
 // EXISTING: Import only available functions from leadScoringController
@@ -31,13 +26,20 @@ import {
   getLeadScoreHistory,
   getScoringConfig,
   updateScoringConfig
-  // NOT YET AVAILABLE: getLeadsByPriority, getOverdueFollowUps, getAIInsights
 } from '../controllers/leadScoringController.js';
 
-// Import authentication middleware (when available)
-// import { protect, authorize } from '../middleware/authMiddleware.js';
+// --- START FIX ---
+// 1. Import the security middleware
+import { protect, authorize } from '../middleware/authMiddleware.js';
+// --- END FIX ---
 
 const router = express.Router();
+
+// --- START FIX ---
+// 2. Apply the 'protect' middleware to all routes in this file
+router.use(protect);
+// --- END FIX ---
+
 
 // =============================================================================
 // EXISTING ROUTES - CORE LEAD MANAGEMENT
@@ -74,18 +76,14 @@ router.route('/:id/score-history')
   .get(getLeadScoreHistory);     // EXISTING: Get score history
 
 // Priority and analytics routes (existing functions)
-router.route('/high-priority')
-  .get(getHighPriorityLeads);    // EXISTING: Get high-priority leads
+router.get('/high-priority', getHighPriorityLeads);    // EXISTING: Get high-priority leads
 
-router.route('/needs-attention')
-  .get(getLeadsNeedingAttention); // EXISTING: Get leads needing attention
+router.get('/needs-attention', getLeadsNeedingAttention); // EXISTING: Get leads needing attention
 
-router.route('/score-analytics')
-  .get(getScoreAnalytics);       // EXISTING: Get score analytics
+router.get('/score-analytics', getScoreAnalytics);       // EXISTING: Get score analytics
 
 // Bulk operations (existing functions)
-router.route('/bulk-recalculate-scores')
-  .post(bulkRecalculateScores);  // EXISTING: Bulk recalculate scores
+router.post('/bulk-recalculate-scores', bulkRecalculateScores);  // EXISTING: Bulk recalculate scores
 
 // Configuration routes (existing functions)
 router.route('/scoring-config')
@@ -121,13 +119,12 @@ router.route('/scoring-config')
 // =============================================================================
 
 // Simple lead statistics endpoint (basic implementation)
-router.route('/simple-stats')
-  .get(async (req, res) => {
+router.get('/simple-stats', async (req, res) => {
     try {
       // Import Lead model dynamically to avoid circular deps
       const { default: Lead } = await import('../models/leadModel.js');
       
-      const query = { organization: req.user?.organization || 'test' };
+      const query = { organization: req.user.organization }; // No longer needs fallback
       
       // Basic stats calculation
       const totalLeads = await Lead.countDocuments(query);
@@ -157,11 +154,10 @@ router.route('/simple-stats')
         error: error.message
       });
     }
-  });
+});
 
 // Simple priority filter endpoint
-router.route('/by-priority/:priority')
-  .get(async (req, res) => {
+router.get('/by-priority/:priority', async (req, res) => {
     try {
       const { priority } = req.params;
       const { limit = 20 } = req.query;
@@ -178,7 +174,7 @@ router.route('/by-priority/:priority')
       }
       
       const query = {
-        organization: req.user?.organization || 'test',
+        organization: req.user.organization, // No longer needs fallback
         priority,
         status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
       };
@@ -205,18 +201,17 @@ router.route('/by-priority/:priority')
         error: error.message
       });
     }
-  });
+});
 
 // Simple overdue follow-ups endpoint
-router.route('/simple-overdue-followups')
-  .get(async (req, res) => {
+router.get('/simple-overdue-followups', async (req, res) => {
     try {
       // Import Lead model dynamically
       const { default: Lead } = await import('../models/leadModel.js');
       
       const now = new Date();
       const query = {
-        organization: req.user?.organization || 'test',
+        organization: req.user.organization, // No longer needs fallback
         'followUpSchedule.nextFollowUpDate': { $lt: now },
         status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
       };
@@ -255,15 +250,14 @@ router.route('/simple-overdue-followups')
         error: error.message
       });
     }
-  });
+});
 
 // =============================================================================
 // HEALTH CHECK ROUTES
 // =============================================================================
 
 // Route to check which lead scoring functions are available
-router.route('/scoring-health')
-  .get((req, res) => {
+router.get('/scoring-health', (req, res) => {
     res.json({
       success: true,
       availableFunctions: {
@@ -293,6 +287,6 @@ router.route('/scoring-health')
       },
       message: 'Lead scoring system partially available. Core functions working.'
     });
-  });
+});
 
 export default router;
