@@ -13,6 +13,7 @@ import {
   updateLead,
   addInteractionToLead,
   getLeadInteractions,
+  deleteLead
 } from '../controllers/leadController.js';
 
 // EXISTING: Import only available functions from leadScoringController
@@ -53,8 +54,8 @@ router.route('/')
 // Route for getting a single lead and updating it
 router.route('/:id')
   .get(getLeadById)              // EXISTING: Get lead details
-  .put(updateLead);              // EXISTING: Update lead
-  // .delete(deleteLead);         // ADD: When deleteLead is available
+  .put(updateLead)            // EXISTING: Update lead
+  .delete(deleteLead);         // ADD: When deleteLead is available
 
 // Route for adding and getting interactions for a specific lead
 router.route('/:id/interactions')
