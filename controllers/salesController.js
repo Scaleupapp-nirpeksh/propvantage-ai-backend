@@ -1,6 +1,6 @@
 // File: controllers/salesController.js
-// Description: Fixed sales controller with proper data population and comprehensive sales management
-// Version: 2.0 - Complete sales management with proper data population and filtering
+// Description: Complete sales controller with pagination, filtering, and proper data population
+// Version: 3.0 - Production-ready with comprehensive pagination and search
 // Location: controllers/salesController.js
 
 import asyncHandler from 'express-async-handler';
@@ -15,7 +15,7 @@ import { generateCostSheetForUnit } from '../services/pricingService.js';
 /**
  * @desc    Create a new sale (book a unit)
  * @route   POST /api/sales
- * @access  Private
+ * @access  Private (Sales roles)
  */
 const createSale = asyncHandler(async (req, res) => {
   const { unitId, leadId, discountPercentage = 0, discountAmount = 0 } = req.body;
@@ -91,10 +91,10 @@ const createSale = asyncHandler(async (req, res) => {
 
     // 8. Return the created sale with populated data
     const populatedSale = await Sale.findById(createdSale._id)
-      .populate('project', 'name location')
-      .populate('unit', 'unitNumber fullAddress floor')
-      .populate('lead', 'firstName lastName email phone')
-      .populate('salesPerson', 'firstName lastName email');
+      .populate('project', 'name location type status')
+      .populate('unit', 'unitNumber fullAddress floor area')
+      .populate('lead', 'firstName lastName email phone source priority')
+      .populate('salesPerson', 'firstName lastName email role');
 
     res.status(201).json({
       success: true,
@@ -112,9 +112,9 @@ const createSale = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get all sales for the organization with proper filtering and pagination
+ * @desc    Get all sales with comprehensive pagination, filtering, and search
  * @route   GET /api/sales
- * @access  Private
+ * @access  Private (Sales and Management roles)
  */
 const getSales = asyncHandler(async (req, res) => {
   try {
@@ -132,39 +132,41 @@ const getSales = asyncHandler(async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
-    // Build query filters
-    const filters = {
+    console.log('📋 getSales query params:', req.query);
+
+    // Build base query filters
+    const baseFilters = {
       organization: req.user.organization
     };
 
     // Add status filter
     if (status && status !== 'all') {
-      filters.status = status;
+      baseFilters.status = status;
     }
 
     // Add payment status filter
     if (paymentStatus && paymentStatus !== 'all') {
-      filters.paymentStatus = paymentStatus;
+      baseFilters.paymentStatus = paymentStatus;
     }
 
     // Add project filter
     if (project && project !== 'all') {
-      filters.project = project;
+      baseFilters.project = project;
     }
 
     // Add salesperson filter
     if (salesperson && salesperson !== 'all') {
-      filters.salesPerson = salesperson;
+      baseFilters.salesPerson = salesperson;
     }
 
     // Add date range filter
     if (dateFrom || dateTo) {
-      filters.bookingDate = {};
+      baseFilters.bookingDate = {};
       if (dateFrom) {
-        filters.bookingDate.$gte = new Date(dateFrom);
+        baseFilters.bookingDate.$gte = new Date(dateFrom);
       }
       if (dateTo) {
-        filters.bookingDate.$lte = new Date(dateTo);
+        baseFilters.bookingDate.$lte = new Date(dateTo);
       }
     }
 
@@ -177,24 +179,16 @@ const getSales = asyncHandler(async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    // Execute query with proper population
-    const salesQuery = Sale.find(filters)
-      .populate('project', 'name location type status')
-      .populate('unit', 'unitNumber fullAddress floor area')
-      .populate('lead', 'firstName lastName email phone source priority')
-      .populate('salesPerson', 'firstName lastName email role')
-      .sort(sort)
-      .skip(skip)
-      .limit(pageSize);
+    console.log('🔍 Base filters:', baseFilters);
+    console.log('📄 Pagination:', { page: pageNumber, limit: pageSize, skip });
 
-    // Add search functionality
-    if (search) {
-      const searchRegex = new RegExp(search, 'i');
+    // Handle search with aggregation pipeline
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
       
-      // We need to use aggregation for searching across populated fields
       const searchPipeline = [
         {
-          $match: filters
+          $match: baseFilters
         },
         {
           $lookup: {
@@ -246,38 +240,43 @@ const getSales = asyncHandler(async (req, res) => {
         },
         {
           $sort: sort
-        },
-        {
-          $skip: skip
-        },
-        {
-          $limit: pageSize
         }
       ];
 
-      const salesWithSearch = await Sale.aggregate(searchPipeline);
-      
+      // Get total count for pagination
+      const totalCountPipeline = [
+        ...searchPipeline,
+        { $count: 'total' }
+      ];
+
+      // Get paginated results
+      const dataPipeline = [
+        ...searchPipeline,
+        { $skip: skip },
+        { $limit: pageSize }
+      ];
+
+      const [totalCountResult, salesData] = await Promise.all([
+        Sale.aggregate(totalCountPipeline),
+        Sale.aggregate(dataPipeline)
+      ]);
+
+      const total = totalCountResult[0]?.total || 0;
+
       // Populate the aggregated results
-      const sales = await Sale.populate(salesWithSearch, [
+      const populatedSales = await Sale.populate(salesData, [
         { path: 'project', select: 'name location type status' },
         { path: 'unit', select: 'unitNumber fullAddress floor area' },
         { path: 'lead', select: 'firstName lastName email phone source priority' },
         { path: 'salesPerson', select: 'firstName lastName email role' }
       ]);
 
-      const totalCount = await Sale.aggregate([
-        ...searchPipeline.slice(0, -3), // Remove sort, skip, limit
-        { $count: 'total' }
-      ]);
-
-      const total = totalCount[0]?.total || 0;
-
-      // Calculate basic stats
-      const stats = await calculateSalesStats(req.user.organization, filters);
+      // Calculate stats
+      const stats = await calculateSalesStats(req.user.organization, baseFilters);
 
       res.json({
         success: true,
-        data: sales,
+        data: populatedSales,
         pagination: {
           page: pageNumber,
           limit: pageSize,
@@ -287,15 +286,29 @@ const getSales = asyncHandler(async (req, res) => {
           hasPrev: pageNumber > 1
         },
         stats,
-        count: sales.length
+        count: populatedSales.length
       });
+
     } else {
       // Regular query without search
-      const sales = await salesQuery;
-      const total = await Sale.countDocuments(filters);
+      const salesQuery = Sale.find(baseFilters)
+        .populate('project', 'name location type status')
+        .populate('unit', 'unitNumber fullAddress floor area')
+        .populate('lead', 'firstName lastName email phone source priority')
+        .populate('salesPerson', 'firstName lastName email role')
+        .sort(sort)
+        .skip(skip)
+        .limit(pageSize);
 
-      // Calculate basic stats
-      const stats = await calculateSalesStats(req.user.organization, filters);
+      const [sales, total] = await Promise.all([
+        salesQuery,
+        Sale.countDocuments(baseFilters)
+      ]);
+
+      // Calculate stats
+      const stats = await calculateSalesStats(req.user.organization, baseFilters);
+
+      console.log('✅ Sales query results:', { count: sales.length, total });
 
       res.json({
         success: true,
@@ -312,8 +325,9 @@ const getSales = asyncHandler(async (req, res) => {
         count: sales.length
       });
     }
+
   } catch (error) {
-    console.error('Error in getSales:', error);
+    console.error('❌ Error in getSales:', error);
     res.status(500);
     throw new Error('Failed to fetch sales data');
   }
@@ -322,74 +336,92 @@ const getSales = asyncHandler(async (req, res) => {
 /**
  * @desc    Get a single sale by ID
  * @route   GET /api/sales/:id
- * @access  Private
+ * @access  Private (Sales and Management roles)
  */
 const getSale = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const sale = await Sale.findOne({
-    _id: id,
-    organization: req.user.organization
-  })
-    .populate('project', 'name location type status configuration')
-    .populate('unit', 'unitNumber fullAddress floor area bedrooms bathrooms')
-    .populate('lead', 'firstName lastName email phone source priority requirements')
-    .populate('salesPerson', 'firstName lastName email role');
+  try {
+    const sale = await Sale.findOne({
+      _id: id,
+      organization: req.user.organization
+    })
+      .populate('project', 'name location type status configuration')
+      .populate('unit', 'unitNumber fullAddress floor area bedrooms bathrooms')
+      .populate('lead', 'firstName lastName email phone source priority requirements')
+      .populate('salesPerson', 'firstName lastName email role');
 
-  if (!sale) {
-    res.status(404);
-    throw new Error('Sale not found');
+    if (!sale) {
+      res.status(404);
+      throw new Error('Sale not found');
+    }
+
+    res.json({
+      success: true,
+      data: sale
+    });
+
+  } catch (error) {
+    console.error('❌ Error in getSale:', error);
+    if (error.message === 'Sale not found') {
+      res.status(404);
+      throw new Error('Sale not found');
+    }
+    res.status(500);
+    throw new Error('Failed to fetch sale details');
   }
-
-  res.json({
-    success: true,
-    data: sale
-  });
 });
 
 /**
  * @desc    Update a sale
  * @route   PUT /api/sales/:id
- * @access  Private
+ * @access  Private (Sales and Management roles)
  */
 const updateSale = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
 
-  const sale = await Sale.findOne({
-    _id: id,
-    organization: req.user.organization
-  });
+  try {
+    const sale = await Sale.findOne({
+      _id: id,
+      organization: req.user.organization
+    });
 
-  if (!sale) {
-    res.status(404);
-    throw new Error('Sale not found');
+    if (!sale) {
+      res.status(404);
+      throw new Error('Sale not found');
+    }
+
+    // Update the sale
+    Object.assign(sale, updateData);
+    sale.updatedAt = new Date();
+
+    const updatedSale = await sale.save();
+
+    // Return with populated data
+    const populatedSale = await Sale.findById(updatedSale._id)
+      .populate('project', 'name location type status')
+      .populate('unit', 'unitNumber fullAddress floor area')
+      .populate('lead', 'firstName lastName email phone')
+      .populate('salesPerson', 'firstName lastName email role');
+
+    res.json({
+      success: true,
+      data: populatedSale,
+      message: 'Sale updated successfully'
+    });
+
+  } catch (error) {
+    console.error('❌ Error in updateSale:', error);
+    res.status(400);
+    throw new Error('Failed to update sale');
   }
-
-  // Update the sale
-  Object.assign(sale, updateData);
-  sale.updatedAt = new Date();
-
-  const updatedSale = await sale.save();
-
-  // Return with populated data
-  const populatedSale = await Sale.findById(updatedSale._id)
-    .populate('project', 'name location type status')
-    .populate('unit', 'unitNumber fullAddress floor area')
-    .populate('lead', 'firstName lastName email phone')
-    .populate('salesPerson', 'firstName lastName email role');
-
-  res.json({
-    success: true,
-    data: populatedSale,
-    message: 'Sale updated successfully'
-  });
 });
 
 /**
  * @desc    Cancel a sale
  * @route   DELETE /api/sales/:id
- * @access  Private
+ * @access  Private (Management roles)
  */
 const cancelSale = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -436,11 +468,97 @@ const cancelSale = asyncHandler(async (req, res) => {
       success: true,
       message: 'Sale cancelled successfully'
     });
+
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
+    console.error('❌ Error in cancelSale:', error);
     res.status(400);
     throw new Error(`Failed to cancel sale: ${error.message}`);
+  }
+});
+
+/**
+ * @desc    Get sales analytics
+ * @route   GET /api/sales/analytics
+ * @access  Private (Management roles)
+ */
+const getSalesAnalytics = asyncHandler(async (req, res) => {
+  try {
+    const { period = '30', projectId, salespersonId } = req.query;
+    
+    // Build filters
+    const filters = { organization: req.user.organization };
+    if (projectId) filters.project = projectId;
+    if (salespersonId) filters.salesPerson = salespersonId;
+    
+    // Date range
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(period));
+    
+    const analytics = await Sale.aggregate([
+      { $match: { ...filters, bookingDate: { $gte: startDate } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$bookingDate' }
+          },
+          totalSales: { $sum: 1 },
+          totalRevenue: { $sum: '$salePrice' },
+          averageValue: { $avg: '$salePrice' }
+        }
+      },
+      { $sort: { '_id': 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: analytics,
+      period: `${period} days`
+    });
+
+  } catch (error) {
+    console.error('❌ Error in getSalesAnalytics:', error);
+    res.status(500);
+    throw new Error('Failed to fetch sales analytics');
+  }
+});
+
+/**
+ * @desc    Get sales pipeline data
+ * @route   GET /api/sales/pipeline
+ * @access  Private (Sales and Management roles)
+ */
+const getSalesPipeline = asyncHandler(async (req, res) => {
+  try {
+    const pipeline = await Sale.aggregate([
+      { $match: { organization: req.user.organization } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalValue: { $sum: '$salePrice' }
+        }
+      },
+      {
+        $project: {
+          status: '$_id',
+          count: 1,
+          totalValue: 1,
+          _id: 0
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: pipeline
+    });
+
+  } catch (error) {
+    console.error('❌ Error in getSalesPipeline:', error);
+    res.status(500);
+    throw new Error('Failed to fetch sales pipeline');
   }
 });
 
@@ -505,8 +623,9 @@ const calculateSalesStats = async (organizationId, filters = {}) => {
       monthlyStats: monthlyStats[0] || { count: 0, revenue: 0 },
       statusBreakdown: statusBreakdown
     };
+
   } catch (error) {
-    console.error('Error calculating sales stats:', error);
+    console.error('❌ Error calculating sales stats:', error);
     return {
       totalSales: 0,
       totalRevenue: 0,
@@ -522,5 +641,7 @@ export {
   getSales, 
   getSale, 
   updateSale, 
-  cancelSale 
+  cancelSale,
+  getSalesAnalytics,
+  getSalesPipeline
 };
