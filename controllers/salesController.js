@@ -18,7 +18,16 @@ import { generateCostSheetForUnit } from '../services/pricingService.js';
  * @access  Private (Sales roles)
  */
 const createSale = asyncHandler(async (req, res) => {
-  const { unitId, leadId, discountPercentage = 0, discountAmount = 0 } = req.body;
+  const { unitId, leadId, discountPercentage = 0, discountAmount = 0, costSheetSnapshot, paymentPlanSnapshot } = req.body;
+
+  console.log('📝 Creating sale with data:', {
+    unitId,
+    leadId,
+    discountPercentage,
+    discountAmount,
+    hasCostSheet: !!costSheetSnapshot,
+    hasPaymentPlan: !!paymentPlanSnapshot
+  });
 
   // 1. Validate input
   if (!unitId || !leadId) {
@@ -54,42 +63,66 @@ const createSale = asyncHandler(async (req, res) => {
       throw new Error('Lead not found or not accessible.');
     }
 
-    // 4. Generate the final, official cost sheet for the sale
-    const costSheet = await generateCostSheetForUnit(unitId, { 
-      discountPercentage,
-      discountAmount 
-    });
+    // 4. Generate or use provided cost sheet
+    let costSheet;
+    if (costSheetSnapshot) {
+      costSheet = costSheetSnapshot;
+      console.log('✅ Using provided cost sheet snapshot');
+    } else {
+      // Fallback: Generate cost sheet if not provided
+      costSheet = await generateCostSheetForUnit(unitId, { 
+        discountPercentage,
+        discountAmount 
+      });
+      console.log('✅ Generated new cost sheet');
+    }
 
-    // 5. Create the sale record
+    // 5. Calculate final sale price
+    const finalSalePrice = costSheet.totals?.finalAmount || 
+                          costSheet.finalPayableAmount || 
+                          costSheet.total || 
+                          costSheet.negotiatedPrice ||
+                          unit.currentPrice ||
+                          unit.basePrice;
+
+    console.log('💰 Final sale price calculated:', finalSalePrice);
+
+    // 6. Create the sale record with CORRECT status case
     const sale = new Sale({
       project: unit.project._id,
       unit: unitId,
       lead: leadId,
       organization: req.user.organization,
       salesPerson: req.user._id,
-      salePrice: costSheet.finalPayableAmount || costSheet.negotiatedPrice,
-      discountAmount: discountAmount || (costSheet.basePrice * discountPercentage / 100),
+      salePrice: finalSalePrice,
+      discountAmount: discountAmount || (finalSalePrice * discountPercentage / 100),
       costSheetSnapshot: costSheet,
-      status: 'booked',
-      paymentStatus: 'pending',
+      status: 'Booked', // ✅ FIXED: Correct case - 'Booked' not 'booked'
       bookingDate: new Date(),
+      // ✅ REMOVED: paymentStatus field (doesn't exist in model)
+      // Add payment plan if provided
+      ...(paymentPlanSnapshot && { paymentPlanSnapshot })
     });
     
     const createdSale = await sale.save({ session });
+    console.log('✅ Sale created successfully:', createdSale._id);
 
-    // 6. Update the unit and lead status
+    // 7. Update the unit and lead status
     unit.status = 'sold';
     await unit.save({ session });
+    console.log('✅ Unit status updated to sold');
 
-    lead.status = 'Booked';
+    lead.status = 'Booked'; // ✅ FIXED: Correct case here too
     lead.lastContactDate = new Date();
     await lead.save({ session });
+    console.log('✅ Lead status updated to Booked');
     
-    // 7. If all operations are successful, commit the transaction
+    // 8. If all operations are successful, commit the transaction
     await session.commitTransaction();
     session.endSession();
+    console.log('✅ Transaction committed successfully');
 
-    // 8. Return the created sale with populated data
+    // 9. Return the created sale with populated data
     const populatedSale = await Sale.findById(createdSale._id)
       .populate('project', 'name location type status')
       .populate('unit', 'unitNumber fullAddress floor area')
@@ -106,6 +139,7 @@ const createSale = asyncHandler(async (req, res) => {
     // 8. If any operation fails, abort the transaction
     await session.abortTransaction();
     session.endSession();
+    console.error('❌ Transaction aborted due to error:', error.message);
     res.status(400);
     throw new Error(`Failed to create sale: ${error.message}`);
   }
