@@ -334,12 +334,18 @@ const recordPayment = asyncHandler(async (req, res) => {
     throw new Error('Payment plan not found.');
   }
 
+  const generateTransactionNumber = () => {
+    const timestamp = Date.now().toString();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `TXN${timestamp}${random}`;
+  };
   const paymentData = {
     organization: req.user.organization,
     project: paymentPlan.project,
     paymentPlan: paymentPlanId,
     customer: paymentPlan.customer,
     amount,
+    transactionNumber: generateTransactionNumber(), 
     paymentDate: new Date(paymentDate),
     paymentMethod,
     paymentMethodDetails,
