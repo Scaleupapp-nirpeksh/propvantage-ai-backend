@@ -1,5 +1,5 @@
-// File: models/projectModel.js - FIXED VERSION
-// Description: Fixed project model with proper null/undefined handling in virtual fields
+// File: models/projectModel.js - CORRECTED VERSION
+// Description: Fixed project model with correct payment plan schema matching frontend and PaymentPlan model
 // Location: models/projectModel.js
 
 import mongoose from 'mongoose';
@@ -36,9 +36,14 @@ const pricingRulesSchema = new mongoose.Schema({
   },
 });
 
-// Schema for payment plan template installments
+// CORRECTED: Schema for payment plan template installments (matches frontend and PaymentPlan model)
 const installmentSchema = new mongoose.Schema({
-  name: {
+  installmentNumber: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  description: {  // ✅ CORRECTED: Changed from 'name' to 'description'
     type: String,
     required: true,
     trim: true
@@ -49,18 +54,27 @@ const installmentSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
-  daysFromBooking: {
+  dueAfterDays: {  // ✅ CORRECTED: Changed from 'daysFromBooking' to 'dueAfterDays'
     type: Number,
-    required: true,
+    default: 0,
     min: 0
   },
-  description: {
+  milestoneType: {
+    type: String,
+    enum: ['booking', 'time_based', 'construction', 'possession', 'custom'],
+    default: 'time_based'
+  },
+  milestoneDescription: {
     type: String,
     trim: true
+  },
+  isOptional: {
+    type: Boolean,
+    default: false
   }
 });
 
-// Schema for payment plan templates
+// CORRECTED: Schema for payment plan templates (matches PaymentPlan model)
 const paymentPlanTemplateSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -71,17 +85,23 @@ const paymentPlanTemplateSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  planType: {
+  planType: {  // ✅ CORRECTED: Fixed enum values to match frontend
     type: String,
-    enum: ['construction_linked', 'time_linked', 'possession_linked', 'custom'],
+    enum: ['construction_linked', 'time_based', 'milestone_based', 'custom'],  // Changed 'time_linked' to 'time_based'
     required: true
   },
   installments: [installmentSchema],
   totalPercentage: {
     type: Number,
     default: 100,
-    min: 100,
-    max: 100
+    validate: {
+      validator: function() {
+        // Calculate total percentage from installments
+        const total = this.installments.reduce((sum, inst) => sum + (inst.percentage || 0), 0);
+        return Math.abs(total - 100) < 0.01; // Allow for small floating point differences
+      },
+      message: 'Total installment percentages must equal 100%'
+    }
   },
   gracePeriodDays: {
     type: Number,
@@ -97,6 +117,11 @@ const paymentPlanTemplateSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  usageCount: {  // Track how many times this template has been used
+    type: Number,
+    default: 0,
+    min: 0
   }
 }, {
   timestamps: true
@@ -250,7 +275,7 @@ const projectSchema = new mongoose.Schema(
     },
     location: {
       city: { type: String, required: true },
-      area: { type: String, required: true },
+      area: { type: String, required: true },  // ✅ Required field
       pincode: { type: String },
       state: { type: String },
       landmark: { type: String },
@@ -264,7 +289,7 @@ const projectSchema = new mongoose.Schema(
       type: Number, // Total area in square feet
       min: [1, 'Total area must be positive'],
     },
-    priceRange: {
+    priceRange: {  // ✅ Required fields
       min: { type: Number, required: true },
       max: { type: Number, required: true },
     },
@@ -306,7 +331,7 @@ const projectSchema = new mongoose.Schema(
     pricingRules: pricingRulesSchema,
     additionalCharges: [additionalChargeSchema],
     
-    // NEW: Payment configuration for this project
+    // Payment configuration for this project
     paymentConfiguration: {
       type: paymentConfigurationSchema,
       default: () => ({
@@ -349,18 +374,16 @@ const projectSchema = new mongoose.Schema(
   }
 );
 
-// FIXED: Virtual to get active payment plan templates with proper null checks
+// Virtual to get active payment plan templates with proper null checks
 projectSchema.virtual('activePaymentTemplates').get(function() {
-  // FIXED: Add null/undefined checks
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     return [];
   }
   return this.paymentConfiguration.paymentPlanTemplates.filter(template => template && template.isActive);
 });
 
-// FIXED: Virtual to get primary bank account with proper null checks
+// Virtual to get primary bank account with proper null checks
 projectSchema.virtual('primaryBankAccount').get(function() {
-  // FIXED: Add null/undefined checks
   if (!this.paymentConfiguration || !this.paymentConfiguration.bankAccountDetails) {
     return null;
   }
@@ -369,9 +392,8 @@ projectSchema.virtual('primaryBankAccount').get(function() {
   ) || null;
 });
 
-// FIXED: Method to add a new payment plan template with null checks
+// Method to add a new payment plan template with null checks
 projectSchema.methods.addPaymentPlanTemplate = function(templateData) {
-  // FIXED: Ensure paymentConfiguration exists
   if (!this.paymentConfiguration) {
     this.paymentConfiguration = {
       paymentPlanTemplates: []
@@ -385,9 +407,8 @@ projectSchema.methods.addPaymentPlanTemplate = function(templateData) {
   return this.save();
 };
 
-// FIXED: Method to update payment plan template with null checks
+// Method to update payment plan template with null checks
 projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateData) {
-  // FIXED: Add null checks
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     throw new Error('Payment configuration not found');
   }
@@ -400,9 +421,8 @@ projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateDat
   throw new Error('Payment plan template not found');
 };
 
-// FIXED: Method to deactivate payment plan template with null checks
+// Method to deactivate payment plan template with null checks
 projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
-  // FIXED: Add null checks
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     throw new Error('Payment configuration not found');
   }
@@ -415,9 +435,18 @@ projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
   throw new Error('Payment plan template not found');
 };
 
-// FIXED: Method to get available payment methods with null checks
+// Method to remove payment plan template completely
+projectSchema.methods.removePaymentPlanTemplate = function(templateId) {
+  if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
+    throw new Error('Payment configuration not found');
+  }
+  
+  this.paymentConfiguration.paymentPlanTemplates.pull(templateId);
+  return this.save();
+};
+
+// Method to get available payment methods with null checks
 projectSchema.methods.getAvailablePaymentMethods = function() {
-  // FIXED: Add null checks
   if (!this.paymentConfiguration || !this.paymentConfiguration.acceptedPaymentMethods) {
     return [];
   }
@@ -426,9 +455,8 @@ projectSchema.methods.getAvailablePaymentMethods = function() {
   );
 };
 
-// FIXED: Method to calculate total project charges for a unit with null checks
+// Method to calculate total project charges for a unit with null checks
 projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}) {
-  // FIXED: Add null checks and default values
   const charges = this.paymentConfiguration?.defaultCharges || {};
   const taxes = this.paymentConfiguration?.taxConfiguration || { 
     gstApplicable: true, 
@@ -487,7 +515,7 @@ projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}
   return breakdown;
 };
 
-// FIXED: Static method to get project with payment configuration
+// Static method to get project with payment configuration
 projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
   return this.findById(projectId)
     .populate('organization', 'name')
@@ -499,7 +527,7 @@ projectSchema.index({ organization: 1 });
 projectSchema.index({ status: 1 });
 projectSchema.index({ 'paymentConfiguration.paymentPlanTemplates.isActive': 1 });
 
-// FIXED: Pre-save middleware to ensure paymentConfiguration exists
+// Pre-save middleware to ensure paymentConfiguration exists
 projectSchema.pre('save', function(next) {
   if (!this.paymentConfiguration) {
     this.paymentConfiguration = {
