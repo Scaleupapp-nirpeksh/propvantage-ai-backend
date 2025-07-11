@@ -1,5 +1,5 @@
 // File: models/salesModel.js
-// Description: Defines the Mongoose schema for a Sale, capturing the final transaction details.
+// Updated to include payment plan reference and frontend compatibility
 
 import mongoose from 'mongoose';
 
@@ -32,20 +32,25 @@ const saleSchema = new mongoose.Schema(
       ref: 'User',
     },
     channelPartner: {
-      // Optional, if the sale came through a partner
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Organization',
     },
     salePrice: {
-      // The final agreed-upon price from the cost sheet
       type: Number,
       required: true,
     },
-    // A complete JSON snapshot of the generated cost sheet at the time of booking.
-    // This is crucial for auditing and record-keeping.
+    // 🔥 ADD REFERENCE TO PAYMENT PLAN
+    paymentPlan: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PaymentPlan',
+    },
+    // Keep snapshots for historical reference and frontend compatibility
     costSheetSnapshot: {
       type: Object,
       required: true,
+    },
+    paymentPlanSnapshot: {
+      type: Object, // Frontend sends: { templateId, templateName, schedule }
     },
     bookingDate: {
       type: Date,
@@ -56,16 +61,53 @@ const saleSchema = new mongoose.Schema(
       enum: ['Booked', 'Agreement Signed', 'Registered', 'Completed', 'Cancelled'],
       default: 'Booked',
     },
-    // Fields for commission calculation
     commission: {
-      rate: { type: Number }, // e.g., 2 for 2%
+      rate: { type: Number },
       amount: { type: Number },
+    },
+    // Add discount tracking for frontend compatibility
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+    // Additional fields for cancellation tracking
+    cancellationReason: {
+      type: String,
+    },
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    cancelledAt: {
+      type: Date,
     },
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
 );
+
+// Virtual for sale number generation
+saleSchema.virtual('saleNumber').get(function() {
+  return `SAL-${this._id.toString().slice(-6).toUpperCase()}`;
+});
+
+// Virtual for payment plan status
+saleSchema.virtual('paymentPlanStatus').get(function() {
+  // This will be populated when payment plan is populated
+  return this.paymentPlan?.status || 'not_created';
+});
+
+// Index for better query performance
+saleSchema.index({ organization: 1, project: 1 });
+saleSchema.index({ unit: 1 }, { unique: true });
+saleSchema.index({ lead: 1 });
+saleSchema.index({ salesPerson: 1 });
+saleSchema.index({ status: 1 });
+saleSchema.index({ bookingDate: 1 });
+saleSchema.index({ paymentPlan: 1 });
 
 const Sale = mongoose.model('Sale', saleSchema);
 

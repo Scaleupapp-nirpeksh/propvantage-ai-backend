@@ -522,6 +522,113 @@ projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
     .select('+paymentConfiguration'); // Ensure payment configuration is included
 };
 
+projectSchema.virtual('activePaymentTemplates').get(function() {
+  // Return active payment plan templates for frontend compatibility
+  if (this.paymentConfiguration && this.paymentConfiguration.paymentPlanTemplates) {
+    return this.paymentConfiguration.paymentPlanTemplates.filter(template => template.isActive);
+  }
+  return [];
+});
+
+// Add this static method to your existing Project model
+projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
+  return this.findById(projectId)
+    .populate('organization', 'name')
+    .select('+paymentConfiguration'); // Ensure payment config is included
+};
+
+// Add this instance method for calculating project charges (if not already present)
+projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}) {
+  const {
+    includeStampDuty = false,
+    includeRegistrationFee = false,
+    discounts = {}
+  } = options;
+
+  let breakdown = {
+    basePrice: unitPrice,
+    taxes: {
+      gst: 0,
+      stampDuty: 0,
+      registrationFees: 0,
+      otherTaxes: 0
+    },
+    charges: {
+      parkingCharges: 0,
+      clubMembership: 0,
+      maintenanceDeposit: 0,
+      legalCharges: 0,
+      otherCharges: 0
+    },
+    discounts: {
+      earlyBirdDiscount: discounts.earlyBird || 0,
+      loyaltyDiscount: discounts.loyalty || 0,
+      negotiatedDiscount: discounts.negotiated || 0,
+      otherDiscounts: discounts.other || 0
+    }
+  };
+
+  // Calculate GST (5% for under construction, 12% for ready)
+  const gstRate = this.status === 'Under Construction' ? 0.05 : 0.12;
+  breakdown.taxes.gst = unitPrice * gstRate;
+
+  // Calculate stamp duty if included (varies by state, using 6% as default)
+  if (includeStampDuty) {
+    breakdown.taxes.stampDuty = unitPrice * 0.06;
+  }
+
+  // Calculate registration fees if included
+  if (includeRegistrationFee) {
+    breakdown.taxes.registrationFees = unitPrice * 0.01;
+  }
+
+  // Add default charges from project configuration
+  if (this.paymentConfiguration && this.paymentConfiguration.defaultCharges) {
+    const defaultCharges = this.paymentConfiguration.defaultCharges;
+    breakdown.charges.parkingCharges = defaultCharges.parkingCharges || 0;
+    breakdown.charges.clubMembership = defaultCharges.clubMembership || 0;
+    breakdown.charges.maintenanceDeposit = defaultCharges.maintenanceDeposit || 0;
+    breakdown.charges.legalCharges = defaultCharges.legalCharges || 0;
+  }
+
+  // Calculate totals
+  const totalTaxes = Object.values(breakdown.taxes).reduce((sum, tax) => sum + tax, 0);
+  const totalCharges = Object.values(breakdown.charges).reduce((sum, charge) => sum + charge, 0);
+  const totalDiscounts = Object.values(breakdown.discounts).reduce((sum, discount) => sum + discount, 0);
+
+  breakdown.finalAmount = breakdown.basePrice + totalTaxes + totalCharges - totalDiscounts;
+
+  return breakdown;
+};
+
+// Add this instance method for getting available payment methods
+projectSchema.methods.getAvailablePaymentMethods = function() {
+  if (this.paymentConfiguration && this.paymentConfiguration.acceptedPaymentMethods) {
+    return this.paymentConfiguration.acceptedPaymentMethods.filter(method => method.isActive);
+  }
+  
+  // Default payment methods if none configured
+  return [
+    { type: 'cash', label: 'Cash', isActive: true },
+    { type: 'cheque', label: 'Cheque', isActive: true },
+    { type: 'bank_transfer', label: 'Bank Transfer', isActive: true },
+    { type: 'online_payment', label: 'Online Payment', isActive: true },
+    { type: 'home_loan', label: 'Home Loan', isActive: true }
+  ];
+};
+
+// Add this virtual for primary bank account
+projectSchema.virtual('primaryBankAccount').get(function() {
+  if (this.paymentConfiguration && this.paymentConfiguration.bankAccountDetails) {
+    return this.paymentConfiguration.bankAccountDetails.find(account => account.isPrimary);
+  }
+  return null;
+});
+
+// Make sure virtual fields are included in JSON output
+projectSchema.set('toJSON', { virtuals: true });
+projectSchema.set('toObject', { virtuals: true });
+
 // Indexes for better query performance
 projectSchema.index({ organization: 1 });
 projectSchema.index({ status: 1 });
