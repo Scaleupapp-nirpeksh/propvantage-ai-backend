@@ -31,6 +31,7 @@ import constructionRoutes from './routes/constructionRoutes.js';
 import contractorRoutes from './routes/contractorRoutes.js';
 import predictiveRoutes from './routes/predictiveRoutes.js';
 import towerRoutes from './routes/towerRoutes.js';
+import invoiceRoutes from './routes/invoiceRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -68,7 +69,7 @@ app.use('/api/construction', constructionRoutes);
 app.use('/api/contractors', contractorRoutes);
 app.use('/api/analytics/predictions', predictiveRoutes);
 app.use('/api/towers', towerRoutes);
-
+app.use('/api/invoices', invoiceRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
