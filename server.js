@@ -32,6 +32,8 @@ import contractorRoutes from './routes/contractorRoutes.js';
 import predictiveRoutes from './routes/predictiveRoutes.js';
 import towerRoutes from './routes/towerRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
+import budgetVarianceRoutes from './routes/budgetVarianceRoutes.js';
+
 
 // Load environment variables
 dotenv.config();
@@ -49,8 +51,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/projects', projectRoutes);
+app.use('/api/projects', budgetVarianceRoutes);    // ← Budget variance first
 app.use('/api/projects', projectPaymentRoutes);
+app.use('/api/projects', projectRoutes); 
 app.use('/api/units', unitRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/leads', leadScoringRoutes);

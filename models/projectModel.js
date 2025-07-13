@@ -1,6 +1,6 @@
-// File: models/projectModel.js - CORRECTED VERSION
-// Description: Fixed project model with correct payment plan schema matching frontend and PaymentPlan model
-// Location: models/projectModel.js
+// File: models/projectModel.js - ENHANCED VERSION
+// Description: Added budget tracking fields to existing project model
+// ⚠️ IMPORTANT: This enhances your existing model - copy and replace your current projectModel.js
 
 import mongoose from 'mongoose';
 
@@ -36,14 +36,14 @@ const pricingRulesSchema = new mongoose.Schema({
   },
 });
 
-// CORRECTED: Schema for payment plan template installments (matches frontend and PaymentPlan model)
+// Schema for payment plan template installments (matches frontend and PaymentPlan model)
 const installmentSchema = new mongoose.Schema({
   installmentNumber: {
     type: Number,
     required: true,
     min: 1
   },
-  description: {  // ✅ CORRECTED: Changed from 'name' to 'description'
+  description: {
     type: String,
     required: true,
     trim: true
@@ -54,7 +54,7 @@ const installmentSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
-  dueAfterDays: {  // ✅ CORRECTED: Changed from 'daysFromBooking' to 'dueAfterDays'
+  dueAfterDays: {
     type: Number,
     default: 0,
     min: 0
@@ -74,7 +74,7 @@ const installmentSchema = new mongoose.Schema({
   }
 });
 
-// CORRECTED: Schema for payment plan templates (matches PaymentPlan model)
+// Schema for payment plan templates (matches PaymentPlan model)
 const paymentPlanTemplateSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -85,9 +85,9 @@ const paymentPlanTemplateSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  planType: {  // ✅ CORRECTED: Fixed enum values to match frontend
+  planType: {
     type: String,
-    enum: ['construction_linked', 'time_based', 'milestone_based', 'custom'],  // Changed 'time_linked' to 'time_based'
+    enum: ['construction_linked', 'time_based', 'milestone_based', 'custom'],
     required: true
   },
   installments: [installmentSchema],
@@ -118,7 +118,7 @@ const paymentPlanTemplateSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  usageCount: {  // Track how many times this template has been used
+  usageCount: {
     type: Number,
     default: 0,
     min: 0
@@ -243,7 +243,115 @@ const paymentConfigurationSchema = new mongoose.Schema({
   }]
 });
 
-// Main Project Schema
+// 🆕 NEW: Budget tracking schema (ADDED FOR REAL-TIME BUDGET TRACKING)
+const budgetTrackingSchema = new mongoose.Schema({
+  // Enable/disable budget tracking for this project
+  enabled: {
+    type: Boolean,
+    default: true
+  },
+  
+  // Variance threshold for alerts (percentage)
+  varianceThreshold: {
+    type: Number,
+    default: 10, // 10% variance threshold
+    min: [1, 'Variance threshold must be at least 1%'],
+    max: [50, 'Variance threshold cannot exceed 50%']
+  },
+  
+  // Target pricing per unit (calculated from targetRevenue / totalUnits)
+  targetPricePerUnit: {
+    type: Number,
+    min: [0, 'Target price per unit must be positive']
+  },
+  
+  // Last budget variance check timestamp
+  lastVarianceCheck: {
+    type: Date,
+    default: Date.now
+  },
+  
+  // Number of times budget has been checked
+  varianceCheckCount: {
+    type: Number,
+    default: 0
+  },
+  
+  // Last calculated variance percentage
+  lastVariancePercentage: {
+    type: Number,
+    default: 0
+  },
+  
+  // Budget alerts history (keep last 50 alerts)
+  alerts: [{
+    alertType: {
+      type: String,
+      enum: ['variance_warning', 'variance_critical', 'target_achieved', 'price_adjustment_needed'],
+      required: true
+    },
+    severity: {
+      type: String,
+      enum: ['info', 'warning', 'critical'],
+      required: true
+    },
+    message: {
+      type: String,
+      required: true
+    },
+    variancePercentage: {
+      type: Number
+    },
+    generatedAt: {
+      type: Date,
+      default: Date.now
+    },
+    acknowledged: {
+      type: Boolean,
+      default: false
+    },
+    acknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    acknowledgedAt: {
+      type: Date
+    }
+  }],
+  
+  // Pricing adjustment history
+  pricingAdjustments: [{
+    adjustmentDate: {
+      type: Date,
+      default: Date.now
+    },
+    reason: {
+      type: String,
+      enum: ['budget_variance', 'market_conditions', 'promotional', 'manual'],
+      required: true
+    },
+    variancePercentage: {
+      type: Number
+    },
+    adjustmentPercentage: {
+      type: Number,
+      required: true
+    },
+    affectedUnits: {
+      type: Number,
+      default: 0
+    },
+    expectedImpact: {
+      type: String
+    },
+    adjustedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }]
+});
+
+// Main Project Schema (ENHANCED with budget tracking)
 const projectSchema = new mongoose.Schema(
   {
     organization: {
@@ -275,7 +383,7 @@ const projectSchema = new mongoose.Schema(
     },
     location: {
       city: { type: String, required: true },
-      area: { type: String, required: true },  // ✅ Required field
+      area: { type: String, required: true },
       pincode: { type: String },
       state: { type: String },
       landmark: { type: String },
@@ -289,7 +397,7 @@ const projectSchema = new mongoose.Schema(
       type: Number, // Total area in square feet
       min: [1, 'Total area must be positive'],
     },
-    priceRange: {  // ✅ Required fields
+    priceRange: {
       min: { type: Number, required: true },
       max: { type: Number, required: true },
     },
@@ -322,16 +430,14 @@ const projectSchema = new mongoose.Schema(
         date: Date 
       },
     },
-    amenities: [String], // e.g., ['Swimming Pool', 'Gym', 'Parking']
+    amenities: [String],
     configuration: {
       type: Map,
       of: String,
     },
-    // Embedded schemas for financial rules (keeping existing functionality)
+    // Existing schemas (UNCHANGED)
     pricingRules: pricingRulesSchema,
     additionalCharges: [additionalChargeSchema],
-    
-    // Payment configuration for this project
     paymentConfiguration: {
       type: paymentConfigurationSchema,
       default: () => ({
@@ -365,16 +471,43 @@ const projectSchema = new mongoose.Schema(
         acceptedPaymentMethods: [],
         bankAccountDetails: []
       })
+    },
+    
+    // 🆕 NEW: Budget tracking configuration (ADDED)
+    budgetTracking: {
+      type: budgetTrackingSchema,
+      default: () => ({
+        enabled: true,
+        varianceThreshold: 10,
+        lastVarianceCheck: new Date(),
+        varianceCheckCount: 0,
+        lastVariancePercentage: 0,
+        alerts: [],
+        pricingAdjustments: []
+      })
     }
   },
   {
-    timestamps: true, // Automatically adds createdAt and updatedAt fields
+    timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
   }
 );
 
-// Virtual to get active payment plan templates with proper null checks
+// 🆕 NEW: Virtual field for target price per unit (ADDED)
+projectSchema.virtual('targetPricePerUnit').get(function() {
+  if (this.targetRevenue && this.totalUnits) {
+    return Math.round(this.targetRevenue / this.totalUnits);
+  }
+  return 0;
+});
+
+// 🆕 NEW: Virtual field for budget tracking status (ADDED)
+projectSchema.virtual('budgetTrackingEnabled').get(function() {
+  return this.budgetTracking?.enabled ?? true;
+});
+
+// Existing virtual fields (UNCHANGED)
 projectSchema.virtual('activePaymentTemplates').get(function() {
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     return [];
@@ -382,7 +515,6 @@ projectSchema.virtual('activePaymentTemplates').get(function() {
   return this.paymentConfiguration.paymentPlanTemplates.filter(template => template && template.isActive);
 });
 
-// Virtual to get primary bank account with proper null checks
 projectSchema.virtual('primaryBankAccount').get(function() {
   if (!this.paymentConfiguration || !this.paymentConfiguration.bankAccountDetails) {
     return null;
@@ -392,12 +524,94 @@ projectSchema.virtual('primaryBankAccount').get(function() {
   ) || null;
 });
 
-// Method to add a new payment plan template with null checks
+// 🆕 NEW: Budget tracking methods (ADDED)
+
+// Method to update budget tracking info
+projectSchema.methods.updateBudgetTracking = function(varianceData) {
+  if (!this.budgetTracking) {
+    this.budgetTracking = {
+      enabled: true,
+      varianceThreshold: 10,
+      alerts: [],
+      pricingAdjustments: []
+    };
+  }
+  
+  this.budgetTracking.lastVarianceCheck = new Date();
+  this.budgetTracking.varianceCheckCount += 1;
+  this.budgetTracking.lastVariancePercentage = varianceData.variancePercentage || 0;
+  
+  // Update target price per unit if not set
+  if (!this.budgetTracking.targetPricePerUnit && this.targetRevenue && this.totalUnits) {
+    this.budgetTracking.targetPricePerUnit = Math.round(this.targetRevenue / this.totalUnits);
+  }
+  
+  return this.save();
+};
+
+// Method to add budget variance alert
+projectSchema.methods.addBudgetAlert = function(alertData) {
+  if (!this.budgetTracking) {
+    this.budgetTracking = { alerts: [] };
+  }
+  if (!this.budgetTracking.alerts) {
+    this.budgetTracking.alerts = [];
+  }
+  
+  // Add new alert
+  this.budgetTracking.alerts.push({
+    alertType: alertData.type,
+    severity: alertData.severity,
+    message: alertData.message,
+    variancePercentage: alertData.variancePercentage,
+    generatedAt: new Date()
+  });
+  
+  // Keep only last 50 alerts
+  if (this.budgetTracking.alerts.length > 50) {
+    this.budgetTracking.alerts = this.budgetTracking.alerts.slice(-50);
+  }
+  
+  return this.save();
+};
+
+// Method to add pricing adjustment record
+projectSchema.methods.addPricingAdjustment = function(adjustmentData) {
+  if (!this.budgetTracking) {
+    this.budgetTracking = { pricingAdjustments: [] };
+  }
+  if (!this.budgetTracking.pricingAdjustments) {
+    this.budgetTracking.pricingAdjustments = [];
+  }
+  
+  this.budgetTracking.pricingAdjustments.push({
+    adjustmentDate: new Date(),
+    reason: adjustmentData.reason,
+    variancePercentage: adjustmentData.variancePercentage,
+    adjustmentPercentage: adjustmentData.adjustmentPercentage,
+    affectedUnits: adjustmentData.affectedUnits || 0,
+    expectedImpact: adjustmentData.expectedImpact,
+    adjustedBy: adjustmentData.adjustedBy
+  });
+  
+  return this.save();
+};
+
+// Method to get recent budget alerts
+projectSchema.methods.getRecentBudgetAlerts = function(limit = 10) {
+  if (!this.budgetTracking || !this.budgetTracking.alerts) {
+    return [];
+  }
+  
+  return this.budgetTracking.alerts
+    .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt))
+    .slice(0, limit);
+};
+
+// Existing methods (UNCHANGED)
 projectSchema.methods.addPaymentPlanTemplate = function(templateData) {
   if (!this.paymentConfiguration) {
-    this.paymentConfiguration = {
-      paymentPlanTemplates: []
-    };
+    this.paymentConfiguration = { paymentPlanTemplates: [] };
   }
   if (!this.paymentConfiguration.paymentPlanTemplates) {
     this.paymentConfiguration.paymentPlanTemplates = [];
@@ -407,7 +621,6 @@ projectSchema.methods.addPaymentPlanTemplate = function(templateData) {
   return this.save();
 };
 
-// Method to update payment plan template with null checks
 projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateData) {
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     throw new Error('Payment configuration not found');
@@ -421,7 +634,6 @@ projectSchema.methods.updatePaymentPlanTemplate = function(templateId, updateDat
   throw new Error('Payment plan template not found');
 };
 
-// Method to deactivate payment plan template with null checks
 projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     throw new Error('Payment configuration not found');
@@ -435,7 +647,6 @@ projectSchema.methods.deactivatePaymentPlanTemplate = function(templateId) {
   throw new Error('Payment plan template not found');
 };
 
-// Method to remove payment plan template completely
 projectSchema.methods.removePaymentPlanTemplate = function(templateId) {
   if (!this.paymentConfiguration || !this.paymentConfiguration.paymentPlanTemplates) {
     throw new Error('Payment configuration not found');
@@ -445,7 +656,6 @@ projectSchema.methods.removePaymentPlanTemplate = function(templateId) {
   return this.save();
 };
 
-// Method to get available payment methods with null checks
 projectSchema.methods.getAvailablePaymentMethods = function() {
   if (!this.paymentConfiguration || !this.paymentConfiguration.acceptedPaymentMethods) {
     return [];
@@ -455,7 +665,6 @@ projectSchema.methods.getAvailablePaymentMethods = function() {
   );
 };
 
-// Method to calculate total project charges for a unit with null checks
 projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}) {
   const charges = this.paymentConfiguration?.defaultCharges || {};
   const taxes = this.paymentConfiguration?.taxConfiguration || { 
@@ -511,131 +720,36 @@ projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}
     });
   }
   
-  breakdown.finalAmount = Math.max(0, totalAmount); // Ensure non-negative
+  breakdown.finalAmount = Math.max(0, totalAmount);
   return breakdown;
 };
 
-// Static method to get project with payment configuration
+// Static methods
 projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
   return this.findById(projectId)
     .populate('organization', 'name')
-    .select('+paymentConfiguration'); // Ensure payment configuration is included
+    .select('+paymentConfiguration');
 };
 
-projectSchema.virtual('activePaymentTemplates').get(function() {
-  // Return active payment plan templates for frontend compatibility
-  if (this.paymentConfiguration && this.paymentConfiguration.paymentPlanTemplates) {
-    return this.paymentConfiguration.paymentPlanTemplates.filter(template => template.isActive);
-  }
-  return [];
-});
-
-// Add this static method to your existing Project model
-projectSchema.statics.getProjectWithPaymentConfig = async function(projectId) {
+// 🆕 NEW: Static method to get project with budget tracking (ADDED)
+projectSchema.statics.getProjectWithBudgetTracking = async function(projectId) {
   return this.findById(projectId)
     .populate('organization', 'name')
-    .select('+paymentConfiguration'); // Ensure payment config is included
+    .select('+budgetTracking +paymentConfiguration');
 };
 
-// Add this instance method for calculating project charges (if not already present)
-projectSchema.methods.calculateProjectCharges = function(unitPrice, options = {}) {
-  const {
-    includeStampDuty = false,
-    includeRegistrationFee = false,
-    discounts = {}
-  } = options;
-
-  let breakdown = {
-    basePrice: unitPrice,
-    taxes: {
-      gst: 0,
-      stampDuty: 0,
-      registrationFees: 0,
-      otherTaxes: 0
-    },
-    charges: {
-      parkingCharges: 0,
-      clubMembership: 0,
-      maintenanceDeposit: 0,
-      legalCharges: 0,
-      otherCharges: 0
-    },
-    discounts: {
-      earlyBirdDiscount: discounts.earlyBird || 0,
-      loyaltyDiscount: discounts.loyalty || 0,
-      negotiatedDiscount: discounts.negotiated || 0,
-      otherDiscounts: discounts.other || 0
-    }
-  };
-
-  // Calculate GST (5% for under construction, 12% for ready)
-  const gstRate = this.status === 'Under Construction' ? 0.05 : 0.12;
-  breakdown.taxes.gst = unitPrice * gstRate;
-
-  // Calculate stamp duty if included (varies by state, using 6% as default)
-  if (includeStampDuty) {
-    breakdown.taxes.stampDuty = unitPrice * 0.06;
-  }
-
-  // Calculate registration fees if included
-  if (includeRegistrationFee) {
-    breakdown.taxes.registrationFees = unitPrice * 0.01;
-  }
-
-  // Add default charges from project configuration
-  if (this.paymentConfiguration && this.paymentConfiguration.defaultCharges) {
-    const defaultCharges = this.paymentConfiguration.defaultCharges;
-    breakdown.charges.parkingCharges = defaultCharges.parkingCharges || 0;
-    breakdown.charges.clubMembership = defaultCharges.clubMembership || 0;
-    breakdown.charges.maintenanceDeposit = defaultCharges.maintenanceDeposit || 0;
-    breakdown.charges.legalCharges = defaultCharges.legalCharges || 0;
-  }
-
-  // Calculate totals
-  const totalTaxes = Object.values(breakdown.taxes).reduce((sum, tax) => sum + tax, 0);
-  const totalCharges = Object.values(breakdown.charges).reduce((sum, charge) => sum + charge, 0);
-  const totalDiscounts = Object.values(breakdown.discounts).reduce((sum, discount) => sum + discount, 0);
-
-  breakdown.finalAmount = breakdown.basePrice + totalTaxes + totalCharges - totalDiscounts;
-
-  return breakdown;
-};
-
-// Add this instance method for getting available payment methods
-projectSchema.methods.getAvailablePaymentMethods = function() {
-  if (this.paymentConfiguration && this.paymentConfiguration.acceptedPaymentMethods) {
-    return this.paymentConfiguration.acceptedPaymentMethods.filter(method => method.isActive);
-  }
-  
-  // Default payment methods if none configured
-  return [
-    { type: 'cash', label: 'Cash', isActive: true },
-    { type: 'cheque', label: 'Cheque', isActive: true },
-    { type: 'bank_transfer', label: 'Bank Transfer', isActive: true },
-    { type: 'online_payment', label: 'Online Payment', isActive: true },
-    { type: 'home_loan', label: 'Home Loan', isActive: true }
-  ];
-};
-
-// Add this virtual for primary bank account
-projectSchema.virtual('primaryBankAccount').get(function() {
-  if (this.paymentConfiguration && this.paymentConfiguration.bankAccountDetails) {
-    return this.paymentConfiguration.bankAccountDetails.find(account => account.isPrimary);
-  }
-  return null;
-});
-
-// Make sure virtual fields are included in JSON output
-projectSchema.set('toJSON', { virtuals: true });
-projectSchema.set('toObject', { virtuals: true });
-
-// Indexes for better query performance
+// Indexes for better performance (ENHANCED)
 projectSchema.index({ organization: 1 });
 projectSchema.index({ status: 1 });
 projectSchema.index({ 'paymentConfiguration.paymentPlanTemplates.isActive': 1 });
+// 🆕 NEW: Budget tracking indexes (ADDED)
+projectSchema.index({ 'budgetTracking.enabled': 1 });
+projectSchema.index({ 'budgetTracking.lastVarianceCheck': 1 });
+projectSchema.index({ 'budgetTracking.alerts.generatedAt': -1 });
 
-// Pre-save middleware to ensure paymentConfiguration exists
+// Pre-save middleware (ENHANCED)
 projectSchema.pre('save', function(next) {
+  // Ensure paymentConfiguration exists (EXISTING)
   if (!this.paymentConfiguration) {
     this.paymentConfiguration = {
       defaultPaymentTerms: {
@@ -669,6 +783,25 @@ projectSchema.pre('save', function(next) {
       bankAccountDetails: []
     };
   }
+  
+  // 🆕 NEW: Ensure budgetTracking exists (ADDED)
+  if (!this.budgetTracking) {
+    this.budgetTracking = {
+      enabled: true,
+      varianceThreshold: 10,
+      lastVarianceCheck: new Date(),
+      varianceCheckCount: 0,
+      lastVariancePercentage: 0,
+      alerts: [],
+      pricingAdjustments: []
+    };
+  }
+  
+  // 🆕 NEW: Auto-calculate target price per unit (ADDED)
+  if (this.targetRevenue && this.totalUnits && this.budgetTracking) {
+    this.budgetTracking.targetPricePerUnit = Math.round(this.targetRevenue / this.totalUnits);
+  }
+  
   next();
 });
 
