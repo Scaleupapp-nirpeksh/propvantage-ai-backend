@@ -11,6 +11,7 @@ import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 // Import route files
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import inviteRoutes from './routes/invitationRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import unitRoutes from './routes/unitRoutes.js';
 import leadRoutes from './routes/leadRoutes.js';
@@ -51,6 +52,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/invitations', inviteRoutes);
 app.use('/api/projects', budgetVarianceRoutes);    // ← Budget variance first
 app.use('/api/projects', projectPaymentRoutes);
 app.use('/api/projects', projectRoutes); 
@@ -301,51 +303,5 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`🚀 PropVantage AI Server running on port ${PORT}`);
-  console.log(`\n📊 Core Features:`);
-  console.log(`   Analytics Dashboard: http://localhost:${PORT}/api/analytics/dashboard`);
-  console.log(`   Sales Reports: http://localhost:${PORT}/api/analytics/sales-report`);
-  console.log(`   Lead Scoring: http://localhost:${PORT}/api/leads/high-priority`);
-  console.log(`   Budget vs Actual: http://localhost:${PORT}/api/analytics/budget-dashboard`);
-  
-  console.log(`\n🤖 AI Features:`);
-  console.log(`   Sales Insights: http://localhost:${PORT}/api/ai/leads/:id/insights`);
-  console.log(`   Conversation Analysis: http://localhost:${PORT}/api/ai/conversation/analyze`);
-  console.log(`   Follow-up Recommendations: http://localhost:${PORT}/api/ai/conversation/recommendations`);
-  console.log(`   Interaction Patterns: http://localhost:${PORT}/api/ai/conversation/leads/:id/interaction-patterns`);
-  console.log(`   Conversation Summary: http://localhost:${PORT}/api/ai/conversation/leads/:id/conversation-summary`);
-  console.log(`   AI Features Overview: http://localhost:${PORT}/api/ai-features`);
-  
-  // NEW: Predictive Analytics Endpoints
-  console.log(`\n🔮 Predictive Analytics:`);
-  console.log(`   Sales Forecasting: http://localhost:${PORT}/api/analytics/predictions/sales-forecast`);
-  console.log(`   Revenue Projections: http://localhost:${PORT}/api/analytics/predictions/revenue-projection`);
-  console.log(`   Lead Conversion Probability: http://localhost:${PORT}/api/analytics/predictions/lead-conversion-probability`);
-  console.log(`   Inventory Turnover: http://localhost:${PORT}/api/analytics/predictions/inventory-turnover`);
-  console.log(`   Predictions Dashboard: http://localhost:${PORT}/api/analytics/predictions/dashboard-summary`);
-  console.log(`   Health Check: http://localhost:${PORT}/api/analytics/predictions/health-check`);
-  
-  console.log(`\n💰 Financial Management:`);
-  console.log(`   Payment System: http://localhost:${PORT}/api/payments`);
-  console.log(`   Project Payment Config: http://localhost:${PORT}/api/projects/:id/payment-config`);
-  console.log(`   Commission System: http://localhost:${PORT}/api/commissions`);
-  console.log(`   Budget Analytics: http://localhost:${PORT}/api/analytics/budget-vs-actual`);
-  
-  console.log(`\n📄 Document Management:`);
-  console.log(`   Document Management: http://localhost:${PORT}/api/documents`);
-  console.log(`   Document Approvals: http://localhost:${PORT}/api/documents/approvals/pending`);
-  console.log(`   Document Categories: http://localhost:${PORT}/api/documents/categories`);
-  
-  console.log(`\n🏗️ Construction Management:`);
-  console.log(`   Construction Milestones: http://localhost:${PORT}/api/construction/milestones`);
-  console.log(`   Project Timeline: http://localhost:${PORT}/api/construction/projects/:id/timeline`);
-  console.log(`   Contractor Management: http://localhost:${PORT}/api/contractors`);
-  console.log(`   Overdue Milestones: http://localhost:${PORT}/api/construction/milestones/overdue`);
-  
-  console.log(`\n📖 System Information:`);
-  console.log(`   API Documentation: http://localhost:${PORT}/api/docs`);
-  console.log(`   Health Check: http://localhost:${PORT}/api/health`);
-  console.log(`   Performance Monitor: http://localhost:${PORT}/api/performance`);
-  
-  console.log(`\n✨ PropVantage AI v1.8.0 - Complete Real Estate CRM with Predictive Analytics`);
 
 });
