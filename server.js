@@ -34,6 +34,7 @@ import predictiveRoutes from './routes/predictiveRoutes.js';
 import towerRoutes from './routes/towerRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
 import budgetVarianceRoutes from './routes/budgetVarianceRoutes.js';
+import aiCopilotRoutes from './routes/aiCopilotRoutes.js';
 
 
 // Load environment variables
@@ -75,12 +76,13 @@ app.use('/api/contractors', contractorRoutes);
 app.use('/api/analytics/predictions', predictiveRoutes);
 app.use('/api/towers', towerRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/ai/copilot', aiCopilotRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.8.0', // Updated version
+    version: '1.9.0',
     features: [
       'Authentication',
       'User Management',
@@ -120,7 +122,8 @@ app.get('/api/health', (req, res) => {
       'Sales Performance Analytics',
       'Marketing ROI Tracking',
       'Project Comparison',
-      'Financial Forecasting'
+      'Financial Forecasting',
+      'AI Copilot Chat'
     ]
   });
 });
@@ -145,7 +148,8 @@ app.get('/api/docs', (req, res) => {
       analytics: '/api/analytics',
       ai: '/api/ai',
       aiConversation: '/api/ai/conversation',
-      predictiveAnalytics: '/api/analytics/predictions' // NEW: Predictive analytics endpoints
+      predictiveAnalytics: '/api/analytics/predictions',
+      aiCopilot: '/api/ai/copilot'
     },
     latestFeatures: [
       'AI-powered sales forecasting with trend analysis',
