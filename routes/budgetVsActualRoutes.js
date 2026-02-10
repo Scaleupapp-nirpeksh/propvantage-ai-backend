@@ -15,49 +15,13 @@ import {
 } from '../controllers/budgetVsActualController.js';
 
 // Import authentication middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply authentication to all routes
 router.use(protect);
-
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager'
-];
-
-const salesRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Sales Executive',
-  'Channel Partner Manager'
-];
-
-const financeRoles = [
-  'Business Head',
-  'Project Director',
-  'Finance Head',
-  'Finance Manager'
-];
-
-const seniorManagementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head'
-];
 
 // =============================================================================
 // COMPREHENSIVE BUDGET VS ACTUAL ROUTES
@@ -68,7 +32,7 @@ const seniorManagementRoles = [
 // @access  Private (Management roles)
 router.get(
   '/budget-vs-actual',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getBudgetVsActualReport
 );
 
@@ -77,7 +41,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/budget-dashboard',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getBudgetDashboard
 );
 
@@ -90,7 +54,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/revenue-analysis',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getRevenueAnalysis
 );
 
@@ -99,7 +63,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/sales-analysis',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getSalesAnalysis
 );
 
@@ -108,7 +72,7 @@ router.get(
 // @access  Private (Sales & Management roles)
 router.get(
   '/lead-analysis',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getLeadAnalysis
 );
 
@@ -117,7 +81,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/project-comparison',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   getProjectComparison
 );
 
@@ -126,7 +90,7 @@ router.get(
 // @access  Private (Senior Management roles)
 router.get(
   '/marketing-roi',
-  authorize(...seniorManagementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.MARKETING_ROI),
   getMarketingROI
 );
 
@@ -139,15 +103,15 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/revenue-kpis',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   async (req, res) => {
     try {
       // Quick revenue metrics for dashboards
       const { getRevenueAnalysis } = await import('../controllers/budgetVsActualController.js');
-      
+
       // Set format to summary for quick response
       req.query.format = 'summary';
-      
+
       await getRevenueAnalysis(req, res);
     } catch (error) {
       res.status(500).json({
@@ -164,14 +128,14 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/sales-kpis',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   async (req, res) => {
     try {
       const { getSalesAnalysis } = await import('../controllers/budgetVsActualController.js');
-      
+
       // Disable velocity data for quick response
       req.query.includeVelocity = 'false';
-      
+
       await getSalesAnalysis(req, res);
     } catch (error) {
       res.status(500).json({
@@ -188,15 +152,15 @@ router.get(
 // @access  Private (Sales & Management roles)
 router.get(
   '/lead-kpis',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.BUDGET_VS_ACTUAL),
   async (req, res) => {
     try {
       const { getLeadAnalysis } = await import('../controllers/budgetVsActualController.js');
-      
+
       // Disable detailed breakdowns for quick response
       req.query.includeSourceBreakdown = 'false';
       req.query.includeConversionFunnel = 'false';
-      
+
       await getLeadAnalysis(req, res);
     } catch (error) {
       res.status(500).json({

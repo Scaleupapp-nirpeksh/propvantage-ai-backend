@@ -19,7 +19,8 @@ import {
 } from '../controllers/constructionController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit per file
     files: 10 // Maximum 10 files per upload
   },
@@ -39,7 +40,7 @@ const upload = multer({
       'image/gif',
       'image/webp'
     ];
-    
+
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -51,36 +52,6 @@ const upload = multer({
 // Apply authentication to all routes
 router.use(protect);
 
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Sales Manager'
-];
-
-const constructionRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Sales Manager',
-  'Sales Executive'
-];
-
-const allRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
-
 // =============================================================================
 // CONSTRUCTION MILESTONE ROUTES
 // =============================================================================
@@ -90,7 +61,7 @@ const allRoles = [
 // @access  Private (Management roles)
 router.post(
   '/milestones',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.CREATE),
   createMilestone
 );
 
@@ -99,7 +70,7 @@ router.post(
 // @access  Private (Construction roles)
 router.get(
   '/milestones',
-  authorize(...constructionRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.VIEW),
   getMilestones
 );
 
@@ -108,7 +79,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/milestones/overdue',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.VIEW),
   getOverdueMilestones
 );
 
@@ -117,7 +88,7 @@ router.get(
 // @access  Private (Construction roles)
 router.get(
   '/milestones/:id',
-  authorize(...constructionRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.VIEW),
   getMilestoneById
 );
 
@@ -126,7 +97,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/milestones/:id',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.UPDATE),
   updateMilestone
 );
 
@@ -135,7 +106,7 @@ router.put(
 // @access  Private (Construction roles)
 router.put(
   '/milestones/:id/progress',
-  authorize(...constructionRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.PROGRESS),
   updateMilestoneProgress
 );
 
@@ -148,7 +119,7 @@ router.put(
 // @access  Private (Management roles)
 router.post(
   '/milestones/:id/quality-checks',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.QUALITY_CONTROL),
   addQualityCheck
 );
 
@@ -157,7 +128,7 @@ router.post(
 // @access  Private (Management roles)
 router.put(
   '/milestones/:id/quality-checks/:checkId',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.QUALITY_CONTROL),
   updateQualityCheck
 );
 
@@ -170,7 +141,7 @@ router.put(
 // @access  Private (Construction roles)
 router.post(
   '/milestones/:id/issues',
-  authorize(...constructionRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.ISSUES),
   addIssue
 );
 
@@ -183,7 +154,7 @@ router.post(
 // @access  Private (Construction roles)
 router.post(
   '/milestones/:id/photos',
-  authorize(...constructionRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.UPLOAD_PHOTOS),
   upload.array('photos', 10),
   uploadProgressPhotos
 );
@@ -197,7 +168,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/projects/:projectId/timeline',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.TIMELINE),
   getProjectTimeline
 );
 
@@ -210,7 +181,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/analytics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONSTRUCTION.ANALYTICS),
   getConstructionAnalytics
 );
 
@@ -240,14 +211,14 @@ router.use((error, req, res, next) => {
       });
     }
   }
-  
+
   if (error.message.includes('File type') && error.message.includes('is not allowed')) {
     return res.status(400).json({
       success: false,
       message: 'Only image files (JPEG, PNG, GIF, WebP) are allowed for progress photos.'
     });
   }
-  
+
   next(error);
 });
 

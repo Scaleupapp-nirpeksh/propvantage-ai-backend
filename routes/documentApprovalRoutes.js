@@ -17,7 +17,8 @@ import {
 } from '../controllers/documentApprovalController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
     files: 1 // Single file upload
   }
@@ -33,32 +34,6 @@ const upload = multer({
 
 // Apply authentication to all routes
 router.use(protect);
-
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager'
-];
-
-const allRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
 
 // =============================================================================
 // DOCUMENT APPROVAL ROUTES
@@ -69,7 +44,7 @@ const allRoles = [
 // @access  Private (Management roles)
 router.get(
   '/approvals/pending',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.APPROVE),
   getPendingApprovals
 );
 
@@ -78,7 +53,7 @@ router.get(
 // @access  Private (Management roles)
 router.post(
   '/:id/approve',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.APPROVE),
   approveDocument
 );
 
@@ -87,7 +62,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/:id/reject',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.APPROVE),
   rejectDocument
 );
 
@@ -96,7 +71,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/:id/approval-history',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getApprovalHistory
 );
 
@@ -109,7 +84,7 @@ router.get(
 // @access  Private (All roles)
 router.post(
   '/:id/new-version',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VERSION_CONTROL),
   upload.single('file'),
   uploadNewVersion
 );
@@ -119,7 +94,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/:id/versions',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getVersionHistory
 );
 
@@ -132,7 +107,7 @@ router.get(
 // @access  Private (All roles)
 router.post(
   '/:id/comments',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   addComment
 );
 
@@ -141,7 +116,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/:id/comments',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getComments
 );
 
@@ -150,7 +125,7 @@ router.get(
 // @access  Private (All roles)
 router.post(
   '/:id/share',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.SHARE),
   shareDocument
 );
 
@@ -163,7 +138,7 @@ router.post(
 // @access  Private (Management roles)
 router.get(
   '/analytics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.ANALYTICS),
   getDocumentAnalytics
 );
 

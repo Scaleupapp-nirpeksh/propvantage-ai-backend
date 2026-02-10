@@ -19,7 +19,8 @@ import {
 } from '../controllers/contractorController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit
     files: 1 // Single file upload
   },
@@ -41,7 +42,7 @@ const upload = multer({
       'image/png',
       'image/gif'
     ];
-    
+
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -53,40 +54,6 @@ const upload = multer({
 // Apply authentication to all routes
 router.use(protect);
 
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Sales Manager',
-  'Channel Partner Manager'
-];
-
-const viewRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive'
-];
-
-const allRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
-
 // =============================================================================
 // CONTRACTOR CRUD ROUTES
 // =============================================================================
@@ -96,7 +63,7 @@ const allRoles = [
 // @access  Private (Management roles)
 router.post(
   '/',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.CREATE),
   createContractor
 );
 
@@ -105,7 +72,7 @@ router.post(
 // @access  Private (View roles)
 router.get(
   '/',
-  authorize(...viewRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.VIEW),
   getContractors
 );
 
@@ -114,7 +81,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/analytics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.ANALYTICS),
   getContractorAnalytics
 );
 
@@ -123,7 +90,7 @@ router.get(
 // @access  Private (View roles)
 router.get(
   '/available',
-  authorize(...viewRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.VIEW),
   getAvailableContractors
 );
 
@@ -132,7 +99,7 @@ router.get(
 // @access  Private (View roles)
 router.get(
   '/by-specialization/:specialization',
-  authorize(...viewRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.VIEW),
   getContractorsBySpecialization
 );
 
@@ -141,7 +108,7 @@ router.get(
 // @access  Private (View roles)
 router.get(
   '/:id',
-  authorize(...viewRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.VIEW),
   getContractorById
 );
 
@@ -150,7 +117,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/:id',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.UPDATE),
   updateContractor
 );
 
@@ -163,7 +130,7 @@ router.put(
 // @access  Private (Management roles)
 router.post(
   '/:id/documents',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.DOCUMENTS),
   upload.single('document'),
   uploadContractorDocument
 );
@@ -177,7 +144,7 @@ router.post(
 // @access  Private (View roles)
 router.post(
   '/:id/reviews',
-  authorize(...viewRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.REVIEWS),
   addContractorReview
 );
 
@@ -190,7 +157,7 @@ router.post(
 // @access  Private (Management roles)
 router.put(
   '/:id/status',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.MANAGE),
   updateContractorStatus
 );
 
@@ -199,7 +166,7 @@ router.put(
 // @access  Private (Management roles)
 router.put(
   '/:id/preferred',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.MANAGE),
   togglePreferredStatus
 );
 
@@ -212,7 +179,7 @@ router.put(
 // @access  Private (Management roles)
 router.post(
   '/:id/notes',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.CONTRACTORS.MANAGE),
   addInternalNote
 );
 
@@ -236,14 +203,14 @@ router.use((error, req, res, next) => {
       });
     }
   }
-  
+
   if (error.message.includes('File type') && error.message.includes('is not allowed')) {
     return res.status(400).json({
       success: false,
       message: 'File type not allowed. Please upload PDF, DOC, DOCX, or image files.'
     });
   }
-  
+
   next(error);
 });
 

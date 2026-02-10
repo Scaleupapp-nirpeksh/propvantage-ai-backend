@@ -16,7 +16,8 @@ import {
 } from '../controllers/userController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -75,41 +76,6 @@ const userDeletionLimiter = rateLimit({
 });
 
 // =============================================================================
-// ROLE DEFINITIONS FOR AUTHORIZATION
-// =============================================================================
-
-// Users who can manage other users (view, update roles, etc.)
-const userManagementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Finance Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-];
-
-// Users who can delete other users (more restrictive)
-const userDeletionRoles = [
-  'Business Head',
-  'Project Director',
-];
-
-// Users who can view user details (broader access)
-const userViewRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Finance Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive', // Can view team members
-];
-
-// =============================================================================
 // APPLY GLOBAL MIDDLEWARE
 // =============================================================================
 
@@ -154,7 +120,7 @@ router.put(
  */
 router.get(
   '/',
-  authorize(...userViewRoles),
+  hasPermission(PERMISSIONS.USERS.VIEW),
   userManagementLimiter,
   getUsers
 );
@@ -168,7 +134,7 @@ router.get(
  */
 router.get(
   '/:id',
-  authorize(...userViewRoles),
+  hasPermission(PERMISSIONS.USERS.VIEW),
   getUserById
 );
 
@@ -182,7 +148,7 @@ router.get(
  */
 router.put(
   '/:id',
-  authorize(...userManagementRoles),
+  hasPermission(PERMISSIONS.USERS.UPDATE),
   userManagementLimiter,
   updateUser
 );
@@ -196,7 +162,7 @@ router.put(
  */
 router.delete(
   '/:id',
-  authorize(...userDeletionRoles),
+  hasPermission(PERMISSIONS.USERS.DELETE),
   userDeletionLimiter,
   deleteUser
 );
@@ -296,7 +262,7 @@ router.use((error, req, res, next) => {
   if (error.code === 11000) {
     const field = Object.keys(error.keyValue)[0];
     const value = error.keyValue[field];
-    
+
     return res.status(400).json({
       success: false,
       message: `User with ${field} '${value}' already exists`,
@@ -340,41 +306,41 @@ router.use((error, req, res, next) => {
 
 /**
  * USER MANAGEMENT ROUTE DOCUMENTATION:
- * 
+ *
  * 1. Profile Management (Self-access):
  *    - GET /api/users/me - Get own profile
  *    - PUT /api/users/me - Update own profile
  *    - No special permissions required (any authenticated user)
- * 
+ *
  * 2. User Management (Management roles):
  *    - GET /api/users - List users with filtering/pagination
  *    - GET /api/users/:id - Get specific user details
  *    - PUT /api/users/:id - Update user role/status/profile
  *    - DELETE /api/users/:id - Soft delete user (admin only)
- * 
+ *
  * 3. Authorization Levels:
  *    - Profile routes: Any authenticated user
  *    - View routes: Management + Sales Executive roles
  *    - Modification routes: Management roles only
  *    - Deletion routes: Business Head + Project Director only
- * 
+ *
  * 4. Rate Limiting:
  *    - Profile updates: 10 per 15 minutes
  *    - User management: 50 per hour
  *    - User deletion: 5 per hour
- * 
+ *
  * 5. Security Features:
  *    - JWT authentication required for all routes
- *    - Role-based authorization
+ *    - Permission-based authorization
  *    - Rate limiting protection
  *    - Input validation and sanitization
  *    - Comprehensive error handling
- * 
+ *
  * 6. Invitation Separation:
  *    - User invitations are handled separately via /api/invitations/*
  *    - This maintains clean separation of concerns
  *    - No invitation logic in user management routes
- * 
+ *
  * 7. RESTful Design:
  *    - Standard HTTP methods (GET, PUT, DELETE)
  *    - Resource-based URLs

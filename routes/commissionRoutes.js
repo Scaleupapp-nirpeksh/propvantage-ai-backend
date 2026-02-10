@@ -9,7 +9,7 @@ import {
   getCommissionStructureById,
   updateCommissionStructure,
   deactivateCommissionStructure,
-  
+
   // Commission Management
   createCommissionForSaleEndpoint,
   getCommissions,
@@ -19,11 +19,11 @@ import {
   putCommissionOnHold,
   releaseCommissionHold,
   bulkApproveCommissionsEndpoint,
-  
+
   // Commission Payments
   recordCommissionPayment,
   processBulkCommissionPayments,
-  
+
   // Reports & Analytics
   getCommissionReport,
   getCommissionAnalyticsEndpoint,
@@ -33,44 +33,13 @@ import {
 } from '../controllers/commissionController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// Define role-based access control groups
-const salesAndManagementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-  'Sales Manager',
-  'Sales Executive',
-  'Channel Partner Manager'
-];
-
-const managementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-  'Sales Manager',
-  'Channel Partner Manager'
-];
-
-const financeRoles = [
-  'Business Head',
-  'Finance Head',
-  'Finance Manager',
-  'Project Director'
-];
-
-const seniorManagementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director'
-];
 
 // =============================================================================
 // COMMISSION STRUCTURE ROUTES
@@ -81,7 +50,7 @@ const seniorManagementRoles = [
 // @access  Private (Management roles)
 router.post(
   '/structures',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.MANAGE_STRUCTURES),
   createCommissionStructure
 );
 
@@ -90,7 +59,7 @@ router.post(
 // @access  Private (Management roles)
 router.get(
   '/structures',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.MANAGE_STRUCTURES),
   getCommissionStructures
 );
 
@@ -99,7 +68,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/structures/:id',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.MANAGE_STRUCTURES),
   getCommissionStructureById
 );
 
@@ -108,7 +77,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/structures/:id',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.MANAGE_STRUCTURES),
   updateCommissionStructure
 );
 
@@ -117,7 +86,7 @@ router.put(
 // @access  Private (Senior Management roles)
 router.delete(
   '/structures/:id',
-  authorize(...seniorManagementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.MANAGE_STRUCTURES),
   deactivateCommissionStructure
 );
 
@@ -130,7 +99,7 @@ router.delete(
 // @access  Private (Sales/Management roles)
 router.post(
   '/create-for-sale',
-  authorize(...salesAndManagementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.CREATE),
   createCommissionForSaleEndpoint
 );
 
@@ -139,7 +108,7 @@ router.post(
 // @access  Private (Sales/Management roles)
 router.get(
   '/',
-  authorize(...salesAndManagementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.VIEW),
   getCommissions
 );
 
@@ -148,7 +117,7 @@ router.get(
 // @access  Private (Sales/Management roles)
 router.get(
   '/:id',
-  authorize(...salesAndManagementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.VIEW),
   getCommissionById
 );
 
@@ -157,7 +126,7 @@ router.get(
 // @access  Private (Management roles)
 router.post(
   '/:id/approve',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.APPROVE),
   approveCommission
 );
 
@@ -166,7 +135,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/:id/reject',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.REJECT),
   rejectCommission
 );
 
@@ -175,7 +144,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/:id/hold',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.HOLD),
   putCommissionOnHold
 );
 
@@ -184,7 +153,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/:id/release',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.HOLD),
   releaseCommissionHold
 );
 
@@ -193,7 +162,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/bulk-approve',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.APPROVE),
   bulkApproveCommissionsEndpoint
 );
 
@@ -202,7 +171,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/:id/recalculate',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.RECALCULATE),
   recalculateCommissionEndpoint
 );
 
@@ -215,7 +184,7 @@ router.post(
 // @access  Private (Finance roles)
 router.post(
   '/:id/payment',
-  authorize(...financeRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.RECORD_PAYMENT),
   recordCommissionPayment
 );
 
@@ -224,7 +193,7 @@ router.post(
 // @access  Private (Finance roles)
 router.post(
   '/bulk-payment',
-  authorize(...financeRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.RECORD_PAYMENT),
   processBulkCommissionPayments
 );
 
@@ -237,7 +206,7 @@ router.post(
 // @access  Private (Management roles)
 router.get(
   '/reports/detailed',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.REPORTS),
   getCommissionReport
 );
 
@@ -246,7 +215,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/analytics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.REPORTS),
   getCommissionAnalyticsEndpoint
 );
 
@@ -255,7 +224,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/reports/overdue',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.REPORTS),
   getOverdueCommissions
 );
 
@@ -264,7 +233,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/partners/:partnerId/performance',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.COMMISSIONS.REPORTS),
   getPartnerPerformanceEndpoint
 );
 

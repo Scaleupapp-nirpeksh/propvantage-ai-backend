@@ -15,36 +15,13 @@ import {
 } from '../controllers/leadScoringController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// Define role-based access control groups
-const salesRoles = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-  'Sales Manager',
-  'Sales Executive',
-  'Channel Partner Manager'
-];
-
-const managementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-  'Sales Manager',
-  'Channel Partner Manager'
-];
-
-const seniorManagementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Project Director'
-];
 
 // ============================================================================
 // LEAD SCORING ROUTES
@@ -55,7 +32,7 @@ const seniorManagementRoles = [
 // @access  Private (Sales roles)
 router.get(
   '/high-priority',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   getHighPriorityLeads
 );
 
@@ -64,7 +41,7 @@ router.get(
 // @access  Private (Sales roles)
 router.get(
   '/needs-attention',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   getLeadsNeedingAttention
 );
 
@@ -73,7 +50,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/score-analytics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   getScoreAnalytics
 );
 
@@ -82,7 +59,7 @@ router.get(
 // @access  Private (Management roles)
 router.post(
   '/score/bulk-recalculate',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.LEADS.BULK_OPERATIONS),
   bulkRecalculateScores
 );
 
@@ -91,7 +68,7 @@ router.post(
 // @access  Private (Management roles)
 router.get(
   '/scoring-config',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_CONFIG),
   getScoringConfig
 );
 
@@ -100,7 +77,7 @@ router.get(
 // @access  Private (Senior Management roles)
 router.put(
   '/scoring-config',
-  authorize(...seniorManagementRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_CONFIG),
   updateScoringConfig
 );
 
@@ -113,7 +90,7 @@ router.put(
 // @access  Private (Sales roles)
 router.get(
   '/:id/score',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   getLeadScore
 );
 
@@ -122,7 +99,7 @@ router.get(
 // @access  Private (Sales roles)
 router.post(
   '/:id/score/recalculate',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   recalculateLeadScore
 );
 
@@ -131,7 +108,7 @@ router.post(
 // @access  Private (Sales roles)
 router.get(
   '/:id/score-history',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.LEADS.SCORING_VIEW),
   getLeadScoreHistory
 );
 

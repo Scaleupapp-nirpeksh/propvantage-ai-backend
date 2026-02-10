@@ -16,39 +16,13 @@ import {
 } from '../controllers/projectPaymentController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// Define role-based access control groups
-const salesAndFinanceRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager',
-  'Sales Executive'
-];
-
-const managementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-const financeRoles = [
-  'Business Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager'
-];
 
 // =============================================================================
 // PROJECT PAYMENT CONFIGURATION ROUTES
@@ -59,7 +33,7 @@ const financeRoles = [
 // @access  Private (Management roles)
 router.get(
   '/:projectId/payment-config',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.VIEW_CONFIG),
   getProjectPaymentConfig
 );
 
@@ -68,7 +42,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/:projectId/payment-config',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.UPDATE_CONFIG),
   updateProjectPaymentConfig
 );
 
@@ -81,7 +55,7 @@ router.put(
 // @access  Private (Sales/Management roles)
 router.get(
   '/:projectId/payment-templates',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.VIEW_TEMPLATES),
   getPaymentPlanTemplates
 );
 
@@ -90,7 +64,7 @@ router.get(
 // @access  Private (Management roles)
 router.post(
   '/:projectId/payment-templates',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.MANAGE_TEMPLATES),
   createPaymentPlanTemplate
 );
 
@@ -99,7 +73,7 @@ router.post(
 // @access  Private (Management roles)
 router.put(
   '/:projectId/payment-templates/:templateId',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.MANAGE_TEMPLATES),
   updatePaymentPlanTemplate
 );
 
@@ -108,7 +82,7 @@ router.put(
 // @access  Private (Management roles)
 router.delete(
   '/:projectId/payment-templates/:templateId',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.MANAGE_TEMPLATES),
   deactivatePaymentPlanTemplate
 );
 
@@ -121,7 +95,7 @@ router.delete(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/:projectId/payment-methods',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.VIEW_CONFIG),
   getAvailablePaymentMethods
 );
 
@@ -130,7 +104,7 @@ router.get(
 // @access  Private (Sales/Finance roles)
 router.post(
   '/:projectId/calculate-charges',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.CALCULATE),
   calculateProjectCharges
 );
 
@@ -143,7 +117,7 @@ router.post(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/:projectId/bank-accounts',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.VIEW_CONFIG),
   getProjectBankAccounts
 );
 
@@ -152,7 +126,7 @@ router.get(
 // @access  Private (Finance/Management roles)
 router.post(
   '/:projectId/bank-accounts',
-  authorize(...financeRoles),
+  hasPermission(PERMISSIONS.PROJECT_PAYMENTS.MANAGE_BANK),
   addProjectBankAccount
 );
 

@@ -35,6 +35,7 @@ import towerRoutes from './routes/towerRoutes.js';
 import invoiceRoutes from './routes/invoiceRoutes.js';
 import budgetVarianceRoutes from './routes/budgetVarianceRoutes.js';
 import aiCopilotRoutes from './routes/aiCopilotRoutes.js';
+import roleRoutes from './routes/roleRoutes.js';
 
 
 // Load environment variables
@@ -77,12 +78,13 @@ app.use('/api/analytics/predictions', predictiveRoutes);
 app.use('/api/towers', towerRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/ai/copilot', aiCopilotRoutes);
+app.use('/api/roles', roleRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    version: '1.9.0',
+    version: '2.0.0',
     features: [
       'Authentication',
       'User Management',
@@ -123,7 +125,9 @@ app.get('/api/health', (req, res) => {
       'Marketing ROI Tracking',
       'Project Comparison',
       'Financial Forecasting',
-      'AI Copilot Chat'
+      'AI Copilot Chat',
+      'Custom Roles & Permissions',
+      'Permission-Based Access Control'
     ]
   });
 });
@@ -149,7 +153,8 @@ app.get('/api/docs', (req, res) => {
       ai: '/api/ai',
       aiConversation: '/api/ai/conversation',
       predictiveAnalytics: '/api/analytics/predictions',
-      aiCopilot: '/api/ai/copilot'
+      aiCopilot: '/api/ai/copilot',
+      roles: '/api/roles'
     },
     latestFeatures: [
       'AI-powered sales forecasting with trend analysis',

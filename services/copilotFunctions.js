@@ -79,7 +79,7 @@ function getDateRange(period, startDate, endDate) {
 function applyRoleScope(filter, user, entityType) {
   filter.organization = user.organization;
 
-  const role = user.role;
+  const role = user.roleRef?.name || user.role;
 
   // Full access roles
   if (['Business Head', 'Project Director', 'Sales Head', 'Marketing Head'].includes(role)) {

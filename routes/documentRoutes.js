@@ -10,7 +10,7 @@ import {
   getCategoryTree,
   updateDocumentCategory,
   deleteDocumentCategory,
-  
+
   // Document management
   uploadDocument,
   getDocuments,
@@ -20,7 +20,8 @@ import {
 } from '../controllers/documentController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { 
+  limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit
     files: 1 // Single file upload
   },
@@ -54,7 +55,7 @@ const upload = multer({
       'application/zip',
       'application/x-rar-compressed'
     ];
-    
+
     if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -66,40 +67,6 @@ const upload = multer({
 // Apply authentication to all routes
 router.use(protect);
 
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager'
-];
-
-const allRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
-
-const seniorManagementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head'
-];
-
 // =============================================================================
 // DOCUMENT CATEGORY ROUTES
 // =============================================================================
@@ -109,7 +76,7 @@ const seniorManagementRoles = [
 // @access  Private (Management roles)
 router.post(
   '/categories',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.MANAGE_CATEGORIES),
   createDocumentCategory
 );
 
@@ -118,7 +85,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/categories',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getDocumentCategories
 );
 
@@ -127,7 +94,7 @@ router.get(
 // @access  Private (All roles)
 router.get(
   '/categories/tree',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getCategoryTree
 );
 
@@ -136,7 +103,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/categories/:id',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.MANAGE_CATEGORIES),
   updateDocumentCategory
 );
 
@@ -145,7 +112,7 @@ router.put(
 // @access  Private (Senior Management roles)
 router.delete(
   '/categories/:id',
-  authorize(...seniorManagementRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.MANAGE_CATEGORIES),
   deleteDocumentCategory
 );
 
@@ -158,7 +125,7 @@ router.delete(
 // @access  Private (All roles)
 router.post(
   '/upload',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.UPLOAD),
   upload.single('file'),
   uploadDocument
 );
@@ -168,7 +135,7 @@ router.post(
 // @access  Private (All roles)
 router.get(
   '/',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getDocuments
 );
 
@@ -177,7 +144,7 @@ router.get(
 // @access  Private (All roles)
 router.get(
   '/:id',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   getDocumentById
 );
 
@@ -186,7 +153,7 @@ router.get(
 // @access  Private (All roles)
 router.put(
   '/:id',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.UPDATE),
   updateDocument
 );
 
@@ -195,7 +162,7 @@ router.put(
 // @access  Private (All roles - with permission check in controller)
 router.delete(
   '/:id',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.DELETE),
   deleteDocument
 );
 
@@ -208,7 +175,7 @@ router.delete(
 // @access  Private (All roles)
 router.get(
   '/search',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   async (req, res) => {
     // This will be handled by the main getDocuments function with search parameter
     req.query.search = req.query.q || req.query.search;
@@ -221,7 +188,7 @@ router.get(
 // @access  Private (All roles)
 router.get(
   '/category/:categoryId',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   async (req, res) => {
     req.query.category = req.params.categoryId;
     await getDocuments(req, res);
@@ -233,7 +200,7 @@ router.get(
 // @access  Private (All roles)
 router.get(
   '/resource/:resourceType/:resourceId',
-  authorize(...allRoles),
+  hasPermission(PERMISSIONS.DOCUMENTS.VIEW),
   async (req, res) => {
     req.query.resourceType = req.params.resourceType;
     req.query.associatedResource = req.params.resourceId;
@@ -267,14 +234,14 @@ router.use((error, req, res, next) => {
       });
     }
   }
-  
+
   if (error.message.includes('File type') && error.message.includes('is not allowed')) {
     return res.status(400).json({
       success: false,
       message: error.message
     });
   }
-  
+
   next(error);
 });
 

@@ -6,7 +6,8 @@ import multer from 'multer';
 import { uploadFile, getFilesForResource } from '../controllers/fileController.js';
 
 // Import the security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
@@ -22,21 +23,12 @@ const upload = multer({
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
 
-// Define roles that can upload/manage files
-const fileManagementAccess = [
-  'Business Head',
-  'Project Director',
-  'Sales Manager',
-  'Sales Executive',
-  'Finance Manager',
-];
-
 // @route   POST /api/files/upload
 // @desc    Upload a file
 // @access  Private
 router.post(
   '/upload',
-  authorize(...fileManagementAccess),
+  hasPermission(PERMISSIONS.FILES.UPLOAD),
   upload.single('file'), // Multer middleware to process a single file upload with the field name 'file'
   uploadFile
 );
@@ -46,7 +38,7 @@ router.post(
 // @access  Private
 router.get(
     '/resource/:resourceId',
-    authorize(...fileManagementAccess), // Or a broader view-only role
+    hasPermission(PERMISSIONS.FILES.VIEW),
     getFilesForResource
 );
 

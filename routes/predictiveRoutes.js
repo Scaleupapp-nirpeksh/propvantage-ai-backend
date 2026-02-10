@@ -12,15 +12,13 @@ import {
 } from '../controllers/predictiveController.js';
 
 // Import authentication middleware
-// Note: Adjust import path based on your middleware structure
-// import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
-// Define role arrays for authorization (adjust based on your role system)
-const managementRoles = ['Business Head', 'Sales Manager', 'Finance Manager'];
-const salesRoles = ['Business Head', 'Sales Manager', 'Sales Executive'];
-const seniorManagementRoles = ['Business Head', 'Finance Manager'];
+// Apply authentication to all routes
+router.use(protect);
 
 // =============================================================================
 // SALES FORECASTING ROUTES
@@ -35,8 +33,7 @@ const seniorManagementRoles = ['Business Head', 'Finance Manager'];
  */
 router.get(
   '/sales-forecast',
-  // protect,                    // Uncomment when auth middleware is available
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   getSalesForecast
 );
 
@@ -49,8 +46,7 @@ router.get(
  */
 router.get(
   '/revenue-projection',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   getRevenueProjection
 );
 
@@ -67,8 +63,7 @@ router.get(
  */
 router.get(
   '/lead-conversion-probability',
-  // protect,
-  // authorize(...salesRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   getLeadConversionProbability
 );
 
@@ -80,8 +75,7 @@ router.get(
  */
 router.get(
   '/lead-conversion-probability/:leadId',
-  // protect,
-  // authorize(...salesRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   (req, res, next) => {
     req.query.leadId = req.params.leadId;
     next();
@@ -102,8 +96,7 @@ router.get(
  */
 router.get(
   '/inventory-turnover',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   getInventoryTurnoverPrediction
 );
 
@@ -115,8 +108,7 @@ router.get(
  */
 router.get(
   '/inventory-turnover/:projectId',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   (req, res, next) => {
     req.query.projectId = req.params.projectId;
     next();
@@ -135,15 +127,14 @@ router.get(
  */
 router.get(
   '/dashboard-summary',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   async (req, res) => {
     try {
       console.log('📊 Generating predictive analytics dashboard summary...');
-      
+
       // Get quick forecasts for dashboard
       const organizationId = req.user?.organization || req.headers['x-organization']; // Fallback for testing
-      
+
       const [salesForecast, conversionData] = await Promise.all([
         // Quick 3-month sales forecast
         getSalesForecast({
@@ -156,7 +147,7 @@ router.get(
           user: { organization: organizationId }
         })
       ]);
-      
+
       res.json({
         success: true,
         data: {
@@ -170,7 +161,7 @@ router.get(
         },
         message: 'Predictive analytics dashboard summary generated successfully'
       });
-      
+
     } catch (error) {
       console.error('❌ Dashboard summary generation failed:', error);
       res.status(500).json({
@@ -194,14 +185,13 @@ router.get(
  */
 router.post(
   '/bulk-forecast',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   async (req, res) => {
     try {
       const { projectIds = [], period = '3_months', includeScenarios = true } = req.body;
-      
+
       console.log('🔮 Generating bulk forecasts...', { projectIds, period });
-      
+
       const forecasts = await Promise.all(
         projectIds.map(async (projectId) => {
           try {
@@ -211,10 +201,10 @@ router.post(
               forecastPeriod: period,
               includeScenarios: includeScenarios
             };
-            
+
             const { generateSalesForecast } = await import('../services/predictiveAnalyticsService.js');
             const forecast = await generateSalesForecast(forecastOptions);
-            
+
             return {
               projectId: projectId,
               forecast: forecast.forecast,
@@ -230,10 +220,10 @@ router.post(
           }
         })
       );
-      
+
       const successfulForecasts = forecasts.filter(f => f.success);
       const failedForecasts = forecasts.filter(f => !f.success);
-      
+
       res.json({
         success: true,
         data: {
@@ -242,14 +232,14 @@ router.post(
             totalProjects: projectIds.length,
             successful: successfulForecasts.length,
             failed: failedForecasts.length,
-            totalForecastedSales: successfulForecasts.reduce((sum, f) => 
+            totalForecastedSales: successfulForecasts.reduce((sum, f) =>
               sum + f.forecast.totalForecastedSales, 0)
           },
           errors: failedForecasts.length > 0 ? failedForecasts : null
         },
         message: `Bulk forecast completed: ${successfulForecasts.length}/${projectIds.length} successful`
       });
-      
+
     } catch (error) {
       console.error('❌ Bulk forecast generation failed:', error);
       res.status(500).json({
@@ -272,8 +262,7 @@ router.post(
  */
 router.get(
   '/config',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   (req, res) => {
     res.json({
       success: true,
@@ -330,39 +319,38 @@ router.get(
  */
 router.get(
   '/health-check',
-  // protect,
-  // authorize(...managementRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.PREDICTIVE),
   async (req, res) => {
     try {
       const organizationId = req.user?.organization || req.headers['x-organization'];
-      
+
       // Check data availability
       const { default: Sale } = await import('../models/salesModel.js');
       const { default: Lead } = await import('../models/leadModel.js');
       const { default: Unit } = await import('../models/unitModel.js');
-      
+
       const [salesCount, leadsCount, unitsCount] = await Promise.all([
         Sale.countDocuments({ organization: organizationId }),
         Lead.countDocuments({ organization: organizationId }),
         Unit.countDocuments({ organization: organizationId })
       ]);
-      
+
       // Assess data quality
       let dataQuality = 'Low';
       if (salesCount >= 50 && leadsCount >= 100) dataQuality = 'High';
       else if (salesCount >= 20 && leadsCount >= 50) dataQuality = 'Medium';
-      
+
       // Check if historical data is sufficient
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      
+
       const recentSalesCount = await Sale.countDocuments({
         organization: organizationId,
         bookingDate: { $gte: threeMonthsAgo }
       });
-      
+
       const hasMinimumData = recentSalesCount >= 5;
-      
+
       res.json({
         success: true,
         data: {
@@ -380,16 +368,16 @@ router.get(
             inventoryTurnover: unitsCount >= 5
           },
           recommendations: generateHealthCheckRecommendations(
-            salesCount, 
-            leadsCount, 
-            unitsCount, 
+            salesCount,
+            leadsCount,
+            unitsCount,
             recentSalesCount
           ),
           status: hasMinimumData ? 'Ready' : 'Insufficient Data'
         },
         message: 'Predictive analytics health check completed'
       });
-      
+
     } catch (error) {
       console.error('❌ Health check failed:', error);
       res.status(500).json({
@@ -407,7 +395,7 @@ router.get(
 
 const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, recentSalesCount) => {
   const recommendations = [];
-  
+
   if (salesCount < 20) {
     recommendations.push({
       category: 'data',
@@ -416,7 +404,7 @@ const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, 
       action: 'Import past sales records or wait for more transactions'
     });
   }
-  
+
   if (leadsCount < 50) {
     recommendations.push({
       category: 'leads',
@@ -425,7 +413,7 @@ const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, 
       action: 'Ensure all leads are properly tracked and scored'
     });
   }
-  
+
   if (recentSalesCount < 5) {
     recommendations.push({
       category: 'activity',
@@ -434,7 +422,7 @@ const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, 
       action: 'Focus on closing current pipeline or review sales processes'
     });
   }
-  
+
   if (unitsCount < 10) {
     recommendations.push({
       category: 'inventory',
@@ -443,7 +431,7 @@ const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, 
       action: 'Ensure all units are properly catalogued in the system'
     });
   }
-  
+
   if (recommendations.length === 0) {
     recommendations.push({
       category: 'optimization',
@@ -452,7 +440,7 @@ const generateHealthCheckRecommendations = (salesCount, leadsCount, unitsCount, 
       action: 'Enable AI-enhanced forecasting and scenario planning'
     });
   }
-  
+
   return recommendations;
 };
 

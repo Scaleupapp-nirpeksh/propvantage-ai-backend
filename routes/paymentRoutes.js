@@ -19,46 +19,13 @@ import {
 } from '../controllers/paymentController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// Define role-based access control groups
-const salesAndFinanceRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager',
-  'Sales Executive'
-];
-
-const managementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-const financeRoles = [
-  'Business Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager'
-];
-
-const seniorManagementRoles = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director'
-];
 
 // =============================================================================
 // PAYMENT PLAN ROUTES
@@ -69,7 +36,7 @@ const seniorManagementRoles = [
 // @access  Private (Sales/Finance roles)
 router.post(
   '/plans',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.CREATE_PLAN),
   createNewPaymentPlan
 );
 
@@ -78,7 +45,7 @@ router.post(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/plans/:saleId',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.VIEW),
   getPaymentPlanDetails
 );
 
@@ -87,7 +54,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/plans/:planId',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.UPDATE_PLAN),
   updatePaymentPlan
 );
 
@@ -100,7 +67,7 @@ router.put(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/installments/:planId',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.VIEW),
   getInstallments
 );
 
@@ -109,7 +76,7 @@ router.get(
 // @access  Private (Management roles)
 router.put(
   '/installments/:installmentId',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.UPDATE_PLAN),
   updateInstallment
 );
 
@@ -118,7 +85,7 @@ router.put(
 // @access  Private (Senior Management roles)
 router.post(
   '/installments/:installmentId/waive',
-  authorize(...seniorManagementRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.WAIVE),
   waiveInstallment
 );
 
@@ -131,7 +98,7 @@ router.post(
 // @access  Private (Sales/Finance roles)
 router.post(
   '/transactions',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.RECORD),
   recordPayment
 );
 
@@ -140,7 +107,7 @@ router.post(
 // @access  Private (Finance/Management roles)
 router.put(
   '/transactions/:transactionId',
-  authorize(...financeRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.UPDATE_TRANSACTION),
   updatePaymentTransactionAmount
 );
 
@@ -149,7 +116,7 @@ router.put(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/transactions/:planId',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.VIEW),
   getPaymentTransactions
 );
 
@@ -158,7 +125,7 @@ router.get(
 // @access  Private (Finance roles)
 router.post(
   '/transactions/:transactionId/verify',
-  authorize(...financeRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.VERIFY),
   verifyPaymentTransaction
 );
 
@@ -171,7 +138,7 @@ router.post(
 // @access  Private (Management/Finance roles)
 router.get(
   '/reports/overdue',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.REPORTS),
   getOverduePayments
 );
 
@@ -180,7 +147,7 @@ router.get(
 // @access  Private (Sales/Finance roles)
 router.get(
   '/reports/due-today',
-  authorize(...salesAndFinanceRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.VIEW),
   getPaymentsDueToday
 );
 
@@ -189,7 +156,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/reports/statistics',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.PAYMENTS.REPORTS),
   getPaymentStatistics
 );
 

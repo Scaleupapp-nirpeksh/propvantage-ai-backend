@@ -94,7 +94,6 @@ const userSchema = new mongoose.Schema(
     
     role: {
       type: String,
-      required: [true, 'Role is required'],
       enum: {
         values: [
           'Business Head',
@@ -111,7 +110,13 @@ const userSchema = new mongoose.Schema(
         ],
         message: 'Invalid role specified'
       },
-      index: true, // Index for role-based queries
+      index: true,
+    },
+
+    roleRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Role',
+      index: true,
     },
     
     // =============================================================================
@@ -346,6 +351,22 @@ userSchema.virtual('isLocked').get(function() {
   return !!(this.lockUntil && this.lockUntil > Date.now());
 });
 
+// Virtual for role name — reads from populated roleRef, falls back to role string
+userSchema.virtual('roleName').get(function() {
+  if (this.populated('roleRef') && this.roleRef) {
+    return this.roleRef.name;
+  }
+  return this.role;
+});
+
+// Virtual for role permissions — reads from populated roleRef
+userSchema.virtual('rolePermissions').get(function() {
+  if (this.populated('roleRef') && this.roleRef) {
+    return this.roleRef.permissions || [];
+  }
+  return [];
+});
+
 // Virtual for checking if invitation is expired
 userSchema.virtual('isInvitationExpired').get(function() {
   if (!this.invitationExpiry) return false;
@@ -407,7 +428,7 @@ userSchema.pre('save', function(next) {
  * Validate role hierarchy on save
  */
 userSchema.pre('save', function(next) {
-  // Define role hierarchy levels (lower number = higher authority)
+  // Fallback hierarchy for legacy role string field
   const roleHierarchy = {
     'Business Head': 1,
     'Project Director': 2,
@@ -421,10 +442,14 @@ userSchema.pre('save', function(next) {
     'Channel Partner Admin': 5,
     'Channel Partner Agent': 6,
   };
-  
-  // Store role level for future use
-  this.roleLevel = roleHierarchy[this.role] || 10;
-  
+
+  // Use roleRef level if populated, otherwise fall back to hardcoded hierarchy
+  if (this.populated('roleRef') && this.roleRef?.level !== undefined) {
+    this.roleLevel = this.roleRef.level;
+  } else {
+    this.roleLevel = roleHierarchy[this.role] || 10;
+  }
+
   next();
 });
 
@@ -540,29 +565,42 @@ userSchema.methods.logInvitationAccess = function(ipAddress, userAgent) {
 };
 
 /**
- * Check if user can invite others with specific role
- * @param {string} targetRole - Role to check invitation permission for
+ * Check if user can invite others with specific role.
+ * Supports both legacy role strings and roleRef objects.
+ * @param {string|Object} targetRole - Role name (string) or Role document to check
  * @returns {boolean} - True if can invite
  */
 userSchema.methods.canInviteRole = function(targetRole) {
-  const roleHierarchy = {
-    'Business Head': 1,
-    'Project Director': 2,
-    'Sales Head': 3,
-    'Marketing Head': 3,
-    'Finance Head': 3,
-    'Sales Manager': 4,
-    'Finance Manager': 4,
-    'Channel Partner Manager': 4,
-    'Sales Executive': 5,
-    'Channel Partner Admin': 5,
-    'Channel Partner Agent': 6,
-  };
-  
-  const currentUserLevel = roleHierarchy[this.role] || 10;
-  const targetUserLevel = roleHierarchy[targetRole] || 10;
-  
-  // Can only invite roles with higher level number (lower in hierarchy)
+  // Get current user's level from roleRef or fallback
+  let currentUserLevel;
+  if (this.populated('roleRef') && this.roleRef?.level !== undefined) {
+    currentUserLevel = this.roleRef.level;
+  } else {
+    const roleHierarchy = {
+      'Business Head': 1, 'Project Director': 2,
+      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3,
+      'Sales Manager': 4, 'Finance Manager': 4, 'Channel Partner Manager': 4,
+      'Sales Executive': 5, 'Channel Partner Admin': 5,
+      'Channel Partner Agent': 6,
+    };
+    currentUserLevel = roleHierarchy[this.role] || 10;
+  }
+
+  // Get target level — targetRole can be a Role doc or a string
+  let targetUserLevel;
+  if (typeof targetRole === 'object' && targetRole?.level !== undefined) {
+    targetUserLevel = targetRole.level;
+  } else {
+    const roleHierarchy = {
+      'Business Head': 1, 'Project Director': 2,
+      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3,
+      'Sales Manager': 4, 'Finance Manager': 4, 'Channel Partner Manager': 4,
+      'Sales Executive': 5, 'Channel Partner Admin': 5,
+      'Channel Partner Agent': 6,
+    };
+    targetUserLevel = roleHierarchy[targetRole] || 10;
+  }
+
   return currentUserLevel < targetUserLevel;
 };
 

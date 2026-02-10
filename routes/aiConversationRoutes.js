@@ -14,35 +14,13 @@ import {
 } from '../controllers/aiConversationController.js';
 
 // Import authentication middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply authentication to all routes
 router.use(protect);
-
-// Define role-based access control groups
-const salesRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Sales Executive',
-  'Channel Partner Manager',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
-
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Head',
-  'Channel Partner Manager'
-];
 
 // =============================================================================
 // CONVERSATION ANALYSIS ROUTES
@@ -53,7 +31,7 @@ const managementRoles = [
 // @access  Private (Sales roles)
 router.post(
   '/analyze',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   analyzeConversationText
 );
 
@@ -62,7 +40,7 @@ router.post(
 // @access  Private (Sales roles)
 router.post(
   '/recommendations',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   getFollowUpRecommendations
 );
 
@@ -71,7 +49,7 @@ router.post(
 // @access  Private (Management roles)
 router.post(
   '/bulk-analyze',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   bulkAnalyzeConversations
 );
 
@@ -84,7 +62,7 @@ router.post(
 // @access  Private (Sales roles)
 router.get(
   '/leads/:id/interaction-patterns',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   getInteractionPatterns
 );
 
@@ -93,7 +71,7 @@ router.get(
 // @access  Private (Sales roles)
 router.get(
   '/leads/:id/conversation-summary',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   getConversationSummary
 );
 
@@ -106,7 +84,7 @@ router.get(
 // @access  Private (Sales roles)
 router.get(
   '/interactions/:id/insights',
-  authorize(...salesRoles),
+  hasPermission(PERMISSIONS.AI.CONVERSATION),
   getInteractionInsights
 );
 

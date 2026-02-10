@@ -1,6 +1,5 @@
-// File: routes/unitRoutes.js - ENHANCED VERSION
-// Description: Enhanced unit routes with statistics and all missing endpoints
-// Location: routes/unitRoutes.js
+// File: routes/unitRoutes.js
+// Description: Enhanced unit routes with statistics and all endpoints
 
 import express from 'express';
 import {
@@ -11,49 +10,24 @@ import {
   deleteUnit,
   getUnitStatistics
 } from '../controllers/unitController.js';
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
-// Apply authentication to all routes
 router.use(protect);
 
-// Define role-based access control
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager'
-];
-
-const allRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Marketing Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-  'Sales Executive',
-  'Channel Partner Admin',
-  'Channel Partner Agent'
-];
-
 // Statistics route (MUST come before /:id route)
-router.get('/statistics', authorize(...allRoles), getUnitStatistics);
+router.get('/statistics', hasPermission(PERMISSIONS.UNITS.STATISTICS), getUnitStatistics);
 
 // Main CRUD routes
 router.route('/')
-  .get(authorize(...allRoles), getUnits)
-  .post(authorize(...managementRoles), createUnit);
+  .get(hasPermission(PERMISSIONS.UNITS.VIEW), getUnits)
+  .post(hasPermission(PERMISSIONS.UNITS.CREATE), createUnit);
 
 router.route('/:id')
-  .get(authorize(...allRoles), getUnitById)
-  .put(authorize(...managementRoles), updateUnit)
-  .delete(authorize(...managementRoles), deleteUnit);
+  .get(hasPermission(PERMISSIONS.UNITS.VIEW), getUnitById)
+  .put(hasPermission(PERMISSIONS.UNITS.UPDATE), updateUnit)
+  .delete(hasPermission(PERMISSIONS.UNITS.DELETE), deleteUnit);
 
 export default router;

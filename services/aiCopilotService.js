@@ -68,7 +68,7 @@ function buildSystemPrompt(user) {
 
   return `You are PropVantage AI Copilot, an intelligent assistant for a real estate CRM platform.
 
-Current user: ${user.firstName} ${user.lastName} (${user.role})
+Current user: ${user.firstName} ${user.lastName} (${user.roleRef?.name || user.role})
 Organization: ${user.organization}
 Current date: ${currentDate}
 Currency: INR (Indian Rupees)
@@ -130,7 +130,8 @@ Always include sources listing which data categories were queried.`;
 const FINANCIAL_ROLES = ['Business Head', 'Project Director', 'Finance Head', 'Finance Manager', 'Sales Head'];
 const FINANCIAL_FUNCTIONS = ['get_revenue_analysis', 'get_payment_summary', 'get_overdue_payments', 'get_payments_due_today', 'get_commission_summary'];
 
-function isRoleAllowedForFunction(userRole, functionName) {
+function isRoleAllowedForFunction(user, functionName) {
+  const userRole = user?.roleRef?.name || user;
   // Financial functions are restricted for non-financial roles
   if (FINANCIAL_FUNCTIONS.includes(functionName)) {
     if (['Sales Executive', 'Channel Partner Agent'].includes(userRole)) {
@@ -204,11 +205,12 @@ export const processCopilotMessage = async (message, user, conversationId, conte
           console.log(`  📊 Executing: ${functionName}(${JSON.stringify(functionArgs)})`);
 
           // Check role-based access
-          if (!isRoleAllowedForFunction(user.role, functionName)) {
+          if (!isRoleAllowedForFunction(user, functionName)) {
+            const roleName = user.roleRef?.name || user.role;
             return {
               tool_call_id: toolCall.id,
               role: 'tool',
-              content: JSON.stringify({ error: `Access denied: Your role (${user.role}) does not have permission to access this data.` }),
+              content: JSON.stringify({ error: `Access denied: Your role (${roleName}) does not have permission to access this data.` }),
             };
           }
 

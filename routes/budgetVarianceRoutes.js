@@ -3,48 +3,20 @@
 // Location: routes/budgetVarianceRoutes.js
 
 import express from 'express';
-import { 
-  getProjectBudgetVariance, 
+import {
+  getProjectBudgetVariance,
   getMultiProjectBudgetSummary,
-  updateProjectBudgetTarget 
+  updateProjectBudgetTarget
 } from '../controllers/projectBudgetController.js';
 
 // Import authentication middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply authentication to all routes
 router.use(protect);
-
-// Define role-based access control groups
-const managementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Finance Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager'
-];
-
-const salesRoles = [
-  'Business Head',
-  'Project Director', 
-  'Sales Head',
-  'Sales Manager',
-  'Sales Executive',
-  'Channel Partner Manager',
-  'Channel Partner Admin'
-];
-
-const seniorManagementRoles = [
-    'Business Head',
-    'Project Director',
-    'Sales Head',
-    'Marketing Head',
-    'Sales Manager'
-];
 
 // =============================================================================
 // BUDGET VARIANCE TRACKING ROUTES
@@ -58,19 +30,19 @@ const seniorManagementRoles = [
  */
 router.get(
   '/:id/budget-variance',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.BUDGETS.VARIANCE_VIEW),
   getProjectBudgetVariance
 );
 
 /**
- * @route   GET /api/projects/budget-variance-summary  
+ * @route   GET /api/projects/budget-variance-summary
  * @desc    Get budget variance summary for all projects
  * @access  Private (Management roles only)
  * @example GET /api/projects/budget-variance-summary?limit=5
  */
 router.get(
   '/budget-variance-summary',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.BUDGETS.VARIANCE_VIEW),
   getMultiProjectBudgetSummary
 );
 
@@ -82,7 +54,7 @@ router.get(
  */
 router.put(
   '/:id/budget-target',
-  authorize(...managementRoles),
+  hasPermission(PERMISSIONS.BUDGETS.UPDATE_TARGET),
   updateProjectBudgetTarget
 );
 

@@ -4,8 +4,8 @@
 // Location: routes/salesRoutes.js
 
 import express from 'express';
-import { 
-  createSale, 
+import {
+  createSale,
   getSales,
   getSale,
   updateSale,
@@ -15,70 +15,33 @@ import {
 } from '../controllers/salesController.js';
 
 // Import the security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
 
-// --- Define Role-Based Access Control Lists ---
-
-// Roles that are allowed to book or update a new sale
-const canManageSaleAccess = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-  'Sales Manager',
-  'Sales Executive',
-];
-
-// Roles that can view all sales records (management & finance)
-const canViewAllSalesAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager',
-];
-
-// Roles that can cancel a sale (restricted to senior management)
-const canCancelSaleAccess = [
-  'Business Head',
-  'Sales Head',
-  'Project Director',
-];
-
-// Roles that can view analytics (management roles)
-const canViewAnalyticsAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager',
-];
-
 // --- Define API Routes ---
 
 // @route   GET /api/sales/analytics
 // @desc    Get sales analytics and performance metrics
 // @access  Private (Management roles)
-router.get('/analytics', authorize(...canViewAnalyticsAccess), getSalesAnalytics);
+router.get('/analytics', hasPermission(PERMISSIONS.SALES.ANALYTICS), getSalesAnalytics);
 
 // @route   GET /api/sales/pipeline
 // @desc    Get sales pipeline data and status breakdown
 // @access  Private (Sales and Management roles)
-router.get('/pipeline', authorize(...canViewAllSalesAccess), getSalesPipeline);
+router.get('/pipeline', hasPermission(PERMISSIONS.SALES.PIPELINE), getSalesPipeline);
 
 // @route   GET /api/sales
 // @route   POST /api/sales
 // @desc    Get all sales records with filtering/pagination OR create a new sale
 // @access  Private (View: Management/Finance, Create: Sales roles)
 router.route('/')
-  .get(authorize(...canViewAllSalesAccess), getSales)
-  .post(authorize(...canManageSaleAccess), createSale);
+  .get(hasPermission(PERMISSIONS.SALES.VIEW), getSales)
+  .post(hasPermission(PERMISSIONS.SALES.CREATE), createSale);
 
 // @route   GET /api/sales/:id
 // @route   PUT /api/sales/:id
@@ -86,19 +49,19 @@ router.route('/')
 // @desc    Get, update, or cancel a specific sale by its ID
 // @access  Private (View/Update: Management/Sales, Cancel: Senior Management)
 router.route('/:id')
-  .get(authorize(...canViewAllSalesAccess), getSale)
-  .put(authorize(...canManageSaleAccess), updateSale)
-  .delete(authorize(...canCancelSaleAccess), cancelSale);
+  .get(hasPermission(PERMISSIONS.SALES.VIEW), getSale)
+  .put(hasPermission(PERMISSIONS.SALES.UPDATE), updateSale)
+  .delete(hasPermission(PERMISSIONS.SALES.CANCEL), cancelSale);
 
 // @route   PUT /api/sales/:id/cancel
 // @desc    Cancel a sale (alternative endpoint to match API service)
 // @access  Private (Senior Management roles)
-router.put('/:id/cancel', authorize(...canCancelSaleAccess), cancelSale);
+router.put('/:id/cancel', hasPermission(PERMISSIONS.SALES.CANCEL), cancelSale);
 
 // @route   POST /api/sales/:id/documents
 // @desc    Generate sale documents (receipts, agreements, etc.)
 // @access  Private (Sales and Management roles)
-router.post('/:id/documents', authorize(...canManageSaleAccess), async (req, res) => {
+router.post('/:id/documents', hasPermission(PERMISSIONS.SALES.DOCUMENTS), async (req, res) => {
   try {
     // This would typically generate PDF documents, send emails, etc.
     // For now, we'll return a success message

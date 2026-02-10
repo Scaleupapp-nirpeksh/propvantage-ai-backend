@@ -5,6 +5,7 @@ import asyncHandler from 'express-async-handler';
 import User from '../models/userModel.js';
 import Organization from '../models/organizationModel.js';
 import generateToken from '../utils/generateToken.js';
+import { seedDefaultRoles } from '../data/defaultRoles.js';
 
 /**
  * @desc    Register a new user and their organization
@@ -50,18 +51,43 @@ const registerUser = asyncHandler(async (req, res) => {
       lastName,
       email,
       password,
-      role: 'Business Head', // The first user is always the 'Business Head'
+      role: 'Business Head', // Legacy field — kept for backward compatibility
+      isActive: true,
+      invitationStatus: 'accepted',
     });
 
     if (user) {
+      // 6. Seed default roles for this new organization
+      const roles = await seedDefaultRoles(organization._id, user._id);
+
+      // 7. Assign the Organization Owner role to the first user
+      const ownerRole = roles.find((r) => r.isOwnerRole);
+      if (ownerRole) {
+        user.roleRef = ownerRole._id;
+        await user.save({ validateBeforeSave: false });
+      }
+
       const token = generateToken(res, user._id);
+
+      // Populate roleRef for the response
+      await user.populate('roleRef', 'name slug level permissions isOwnerRole');
 
       res.status(201).json({
         _id: user._id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role,
+        role: user.roleRef?.name || user.role,
+        roleRef: user.roleRef
+          ? {
+              _id: user.roleRef._id,
+              name: user.roleRef.name,
+              slug: user.roleRef.slug,
+              level: user.roleRef.level,
+              permissions: user.roleRef.permissions,
+              isOwnerRole: user.roleRef.isOwnerRole,
+            }
+          : null,
         organization: {
           _id: organization._id,
           name: organization.name,
@@ -88,9 +114,10 @@ const registerUser = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // 1. Find user by email
-  // We must explicitly select the password as it's excluded by default in the model
-  const user = await User.findOne({ email }).select('+password');
+  // 1. Find user by email with roleRef populated
+  const user = await User.findOne({ email })
+    .select('+password')
+    .populate('roleRef', 'name slug level permissions isOwnerRole');
 
   // 2. Check if user exists and password matches
   if (user && (await user.matchPassword(password))) {
@@ -105,12 +132,22 @@ const loginUser = asyncHandler(async (req, res) => {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
-      role: user.role,
+      role: user.roleRef?.name || user.role,
+      roleRef: user.roleRef
+        ? {
+            _id: user.roleRef._id,
+            name: user.roleRef.name,
+            slug: user.roleRef.slug,
+            level: user.roleRef.level,
+            permissions: user.roleRef.permissions,
+            isOwnerRole: user.roleRef.isOwnerRole,
+          }
+        : null,
       organization: user.organization,
       token,
     });
   } else {
-    res.status(401); // 401 Unauthorized
+    res.status(401);
     throw new Error('Invalid email or password');
   }
 });

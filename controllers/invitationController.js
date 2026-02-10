@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/userModel.js';
 import Organization from '../models/organizationModel.js';
+import Role from '../models/roleModel.js';
 import  generateToken  from '../utils/generateToken.js';
 
 // =============================================================================
@@ -118,11 +119,24 @@ const validateInvitationInput = (data) => {
  * @param {string} targetRole - Role being assigned to invited user
  * @returns {boolean} - True if invitation is allowed
  */
-const canUserInviteRole = (inviterRole, targetRole) => {
-  const inviterLevel = INVITATION_CONFIG.ROLE_HIERARCHY[inviterRole] || 10;
-  const targetLevel = INVITATION_CONFIG.ROLE_HIERARCHY[targetRole] || 10;
-  
-  // Can only invite roles with higher level number (lower in hierarchy)
+const canUserInviteRole = (inviter, targetRole) => {
+  // Get inviter level from roleRef or fallback to legacy
+  let inviterLevel;
+  if (typeof inviter === 'object' && inviter?.roleRef?.level !== undefined) {
+    inviterLevel = inviter.roleRef.level;
+  } else {
+    const roleName = typeof inviter === 'string' ? inviter : inviter?.role;
+    inviterLevel = INVITATION_CONFIG.ROLE_HIERARCHY[roleName] || 10;
+  }
+
+  // Get target level — can be a Role doc or a string
+  let targetLevel;
+  if (typeof targetRole === 'object' && targetRole?.level !== undefined) {
+    targetLevel = targetRole.level;
+  } else {
+    targetLevel = INVITATION_CONFIG.ROLE_HIERARCHY[targetRole] || 10;
+  }
+
   return inviterLevel < targetLevel;
 };
 
@@ -208,7 +222,7 @@ export const generateInvitationLink = async (req, res) => {
     // =============================================================================
     
     // Check if inviter has permission to invite this role
-    if (!canUserInviteRole(inviterUser.role, role)) {
+    if (!canUserInviteRole(inviterUser, role)) {
       return res.status(403).json({
         success: false,
         message: `You don't have permission to invite users with role: ${role}`,
@@ -290,12 +304,20 @@ export const generateInvitationLink = async (req, res) => {
     } else {
       // Create new user
       isNewUser = true;
+      // Look up the Role document for this role name in the org
+      const roleDoc = await Role.findOne({
+        organization: inviterUser.organization,
+        name: role,
+        isActive: true,
+      });
+
       user = new User({
         organization: inviterUser.organization,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.toLowerCase(),
         role: role,
+        roleRef: roleDoc?._id || null,
         isActive: false, // Will be activated when invitation is accepted
         invitedBy: inviterUser._id,
         invitedAt: new Date(),
@@ -792,7 +814,7 @@ export const resendInvitation = async (req, res) => {
     }
     
     // Check permissions
-    if (!canUserInviteRole(inviterUser.role, user.role)) {
+    if (!canUserInviteRole(inviterUser, user.role)) {
       return res.status(403).json({
         success: false,
         message: 'You don\'t have permission to manage this user',
@@ -872,7 +894,7 @@ export const revokeInvitation = async (req, res) => {
     }
     
     // Check permissions
-    if (!canUserInviteRole(revokerUser.role, user.role)) {
+    if (!canUserInviteRole(revokerUser, user.role)) {
       return res.status(403).json({
         success: false,
         message: 'You don\'t have permission to manage this user',
@@ -1030,7 +1052,7 @@ export const refreshInvitationToken = async (req, res) => {
     }
     
     // Check permissions
-    if (!canUserInviteRole(refresherUser.role, user.role)) {
+    if (!canUserInviteRole(refresherUser, user.role)) {
       return res.status(403).json({
         success: false,
         message: 'You don\'t have permission to manage this user',

@@ -1,5 +1,5 @@
 // File: middleware/authMiddleware.js
-// Description: Middleware for protecting routes and handling role-based access control (RBAC).
+// Description: Middleware for protecting routes and handling permission-based access control.
 
 import jwt from 'jsonwebtoken';
 import asyncHandler from 'express-async-handler';
@@ -7,33 +7,34 @@ import User from '../models/userModel.js';
 
 /**
  * @desc    Middleware to protect routes by verifying JWT.
- * It checks for a valid token in the authorization header,
- * decodes it, and attaches the user object (without the password)
- * to the request object.
+ * Populates roleRef with permissions for permission-based checks.
  */
 const protect = asyncHandler(async (req, res, next) => {
   let token;
 
-  // Check for the token in the Authorization header (Bearer token)
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
     try {
-      // Get token from header
       token = req.headers.authorization.split(' ')[1];
 
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // Get user from the token's payload (ID) and attach to request object
-      // Exclude the password field from the user object
-      req.user = await User.findById(decoded.userId).select('-password');
+      // Populate roleRef to get permissions in a single query
+      req.user = await User.findById(decoded.userId)
+        .select('-password')
+        .populate('roleRef', 'name slug level permissions isOwnerRole');
 
       if (!req.user) {
         res.status(401);
         throw new Error('Not authorized, user not found');
       }
+
+      // Attach convenience properties for permission checks
+      req.userPermissions = req.user.roleRef?.permissions || [];
+      req.userRoleLevel = req.user.roleRef?.level ?? 100;
+      req.isOwner = req.user.roleRef?.isOwnerRole || false;
 
       next();
     } catch (error) {
@@ -50,21 +51,84 @@ const protect = asyncHandler(async (req, res, next) => {
 });
 
 /**
- * @desc    Middleware for role-based authorization.
- * It takes an array of roles and checks if the authenticated user's
- * role is included in the list.
- * @param   {...string} roles - An array of role strings that are allowed access.
+ * @desc    Legacy role-based authorization middleware.
+ * Checks if user's role name is in the allowed roles array.
+ * Works with both roleRef (populated) and legacy role string.
  */
 const authorize = (...roles) => {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      res.status(403); // 403 Forbidden
+    // Owner role bypasses all role checks
+    if (req.isOwner) {
+      return next();
+    }
+
+    const userRoleName = req.user?.roleRef?.name || req.user?.role;
+
+    if (!req.user || !roles.includes(userRoleName)) {
+      res.status(403);
       throw new Error(
-        `User role '${req.user.role}' is not authorized to access this route`
+        `User role '${userRoleName}' is not authorized to access this route`
       );
     }
     next();
   };
 };
 
-export { protect, authorize };
+/**
+ * @desc    Permission-based authorization middleware (AND logic).
+ * User must have ALL listed permissions to proceed.
+ * Owner role bypasses all permission checks.
+ *
+ * Usage:
+ *   hasPermission('projects:create')
+ *   hasPermission('projects:create', 'projects:update')  // needs BOTH
+ */
+const hasPermission = (...requiredPermissions) => {
+  return (req, res, next) => {
+    if (req.isOwner) {
+      return next();
+    }
+
+    const userPerms = req.userPermissions || [];
+    const missing = requiredPermissions.filter((p) => !userPerms.includes(p));
+
+    if (missing.length > 0) {
+      res.status(403);
+      throw new Error(
+        `Missing required permission(s): ${missing.join(', ')}`
+      );
+    }
+
+    next();
+  };
+};
+
+/**
+ * @desc    Permission-based authorization middleware (OR logic).
+ * User must have at least ONE of the listed permissions.
+ * Owner role bypasses all permission checks.
+ *
+ * Usage:
+ *   hasAnyPermission('sales:view', 'sales:analytics')
+ */
+const hasAnyPermission = (...requiredPermissions) => {
+  return (req, res, next) => {
+    if (req.isOwner) {
+      return next();
+    }
+
+    const userPerms = req.userPermissions || [];
+    const hasAny = requiredPermissions.some((p) => userPerms.includes(p));
+
+    if (!hasAny) {
+      res.status(403);
+      throw new Error(
+        `Requires at least one of: ${requiredPermissions.join(', ')}`
+      );
+    }
+
+    next();
+  };
+};
+
+export { protect, authorize, hasPermission, hasAnyPermission };

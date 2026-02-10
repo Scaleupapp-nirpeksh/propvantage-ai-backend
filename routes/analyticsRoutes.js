@@ -10,40 +10,13 @@ import {
 } from '../controllers/analyticsController.js';
 
 // Import security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// Define roles that have access to basic analytics (broader access)
-const basicAnalyticsAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-// Define roles that have access to advanced analytics (management and finance roles)
-const advancedAnalyticsAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-// Define roles with access to detailed reports (senior management)
-const detailedReportsAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director'
-];
 
 // EXISTING ENDPOINTS - Maintained for backward compatibility
 // @route   GET /api/analytics/sales-summary
@@ -51,7 +24,7 @@ const detailedReportsAccess = [
 // @access  Private (Management/Finance roles)
 router.get(
   '/sales-summary',
-  authorize(...basicAnalyticsAccess),
+  hasPermission(PERMISSIONS.ANALYTICS.BASIC),
   getSalesSummary
 );
 
@@ -60,7 +33,7 @@ router.get(
 // @access  Private (Management/Sales roles)
 router.get(
   '/lead-funnel',
-  authorize(...basicAnalyticsAccess),
+  hasPermission(PERMISSIONS.ANALYTICS.BASIC),
   getLeadFunnel
 );
 
@@ -70,7 +43,7 @@ router.get(
 // @access  Private (Management roles)
 router.get(
   '/dashboard',
-  authorize(...advancedAnalyticsAccess),
+  hasPermission(PERMISSIONS.ANALYTICS.ADVANCED),
   getDashboardAnalytics
 );
 
@@ -79,7 +52,7 @@ router.get(
 // @access  Private (Senior Management roles)
 router.get(
   '/sales-report',
-  authorize(...detailedReportsAccess),
+  hasPermission(PERMISSIONS.ANALYTICS.REPORTS),
   getSalesReport
 );
 

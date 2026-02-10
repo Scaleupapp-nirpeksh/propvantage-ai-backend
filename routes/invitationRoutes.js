@@ -18,7 +18,8 @@ import {
 } from '../controllers/invitationController.js'; // FIXED: Correct import path
 
 // Import middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 import User from '../models/userModel.js'; // FIXED: Correct model import for analytics
 
 const router = express.Router();
@@ -138,18 +139,6 @@ router.get(
 // Apply authentication middleware to all routes below this point
 router.use(protect);
 
-// Define roles that can manage invitations
-const invitationManagementRoles = [
-  'Business Head',
-  'Project Director',
-  'Sales Head',
-  'Marketing Head',
-  'Finance Head',
-  'Sales Manager',
-  'Finance Manager',
-  'Channel Partner Manager',
-];
-
 /**
  * @route   POST /api/invitations/generate
  * @desc    Generate invitation link from UI (replaces email-based flow)
@@ -159,7 +148,7 @@ const invitationManagementRoles = [
  */
 router.post(
   '/generate',
-  authorize(...invitationManagementRoles),
+  hasPermission(PERMISSIONS.USERS.INVITE),
   invitationGenerationLimiter,
   generateInvitationLink
 );
@@ -173,7 +162,7 @@ router.post(
  */
 router.post(
   '/resend/:userId',
-  authorize(...invitationManagementRoles),
+  hasPermission(PERMISSIONS.USERS.INVITE),
   invitationManagementLimiter,
   resendInvitation
 );
@@ -187,7 +176,7 @@ router.post(
  */
 router.delete(
   '/revoke/:userId',
-  authorize(...invitationManagementRoles),
+  hasPermission(PERMISSIONS.USERS.INVITE),
   invitationManagementLimiter,
   revokeInvitation
 );
@@ -201,7 +190,7 @@ router.delete(
  */
 router.get(
   '/details/:userId',
-  authorize(...invitationManagementRoles),
+  hasPermission(PERMISSIONS.USERS.INVITE),
   getInvitationDetails
 );
 
@@ -214,16 +203,14 @@ router.get(
  */
 router.put(
   '/refresh/:userId',
-  authorize(...invitationManagementRoles),
+  hasPermission(PERMISSIONS.USERS.INVITE),
   invitationManagementLimiter,
   refreshInvitationToken
 );
 
 // =============================================================================
-// ADMIN-ONLY ROUTES - Business Head and Project Director only
+// ADMIN-ONLY ROUTES - Advanced analytics
 // =============================================================================
-
-const adminOnlyRoles = ['Business Head', 'Project Director'];
 
 /**
  * @route   GET /api/invitations/analytics
@@ -236,11 +223,11 @@ const adminOnlyRoles = ['Business Head', 'Project Director'];
  */
 router.get(
   '/analytics',
-  authorize(...adminOnlyRoles),
+  hasPermission(PERMISSIONS.ANALYTICS.ADVANCED),
   async (req, res) => {
     try {
       const { startDate, endDate, organizationId = req.user.organization } = req.query;
-      
+
       // Build date filter
       const dateFilter = {};
       if (startDate) {
@@ -249,13 +236,13 @@ router.get(
       if (endDate) {
         dateFilter.$lte = new Date(endDate);
       }
-      
+
       // Proper aggregation pipeline implementation
       const matchStage = {
         organization: new mongoose.Types.ObjectId(organizationId),
         ...(Object.keys(dateFilter).length > 0 && { invitedAt: dateFilter }),
       };
-      
+
       // Get invitation statistics
       const [statusStats, roleStats, timeStats] = await Promise.all([
         // Status distribution
@@ -282,7 +269,7 @@ router.get(
             },
           },
         ]),
-        
+
         // Role distribution
         User.aggregate([
           { $match: matchStage },
@@ -298,8 +285,8 @@ router.get(
             },
           },
         ]),
-        
-        // Time-based statistics  
+
+        // Time-based statistics
         User.aggregate([
           { $match: matchStage },
           {
@@ -319,19 +306,19 @@ router.get(
           { $sort: { '_id.year': 1, '_id.month': 1 } }
         ])
       ]);
-      
+
       // Calculate summary statistics
       const totalInvitations = statusStats.reduce((sum, stat) => sum + stat.count, 0);
       const acceptedInvitations = statusStats.find(s => s._id === 'accepted')?.count || 0;
       const pendingInvitations = statusStats.find(s => s._id === 'pending')?.count || 0;
       const expiredInvitations = statusStats.find(s => s._id === 'expired')?.count || 0;
       const revokedInvitations = statusStats.find(s => s._id === 'revoked')?.count || 0;
-      
+
       const acceptanceRate = totalInvitations > 0 ? (acceptedInvitations / totalInvitations * 100) : 0;
       const expiryRate = totalInvitations > 0 ? (expiredInvitations / totalInvitations * 100) : 0;
-      
+
       const avgDaysToAccept = statusStats.find(s => s._id === 'accepted')?.avgDaysToAccept || 0;
-      
+
       res.json({
         success: true,
         message: 'Invitation analytics retrieved successfully',
@@ -352,7 +339,7 @@ router.get(
           lastAnalyzed: new Date().toISOString(),
         },
       });
-      
+
     } catch (error) {
       console.error('❌ Error getting invitation analytics:', error);
       res.status(500).json({
@@ -453,7 +440,7 @@ router.use((error, req, res, next) => {
   if (error.code === 11000) {
     const field = Object.keys(error.keyValue)[0];
     const value = error.keyValue[field];
-    
+
     return res.status(400).json({
       success: false,
       message: `User with ${field} '${value}' already exists`,

@@ -17,80 +17,13 @@ import {
 } from '../controllers/invoiceController.js';
 
 // Import the security middleware
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, hasPermission } from '../middleware/authMiddleware.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 const router = express.Router();
 
 // Apply the 'protect' middleware to all routes in this file
 router.use(protect);
-
-// =============================================================================
-// ROLE-BASED ACCESS CONTROL DEFINITIONS
-// =============================================================================
-
-// Roles that can create invoices (Sales and Finance teams)
-const canCreateInvoiceAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager',
-  'Sales Executive'
-];
-
-// Roles that can view all invoices (Management and Finance teams)
-const canViewAllInvoicesAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-// Roles that can update invoices (Finance teams primarily)
-const canUpdateInvoiceAccess = [
-  'Business Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager'
-];
-
-// Roles that can record payments (Finance teams)
-const canRecordPaymentAccess = [
-  'Business Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager'
-];
-
-// Roles that can cancel invoices (Senior Management only)
-const canCancelInvoiceAccess = [
-  'Business Head',
-  'Finance Head',
-  'Project Director'
-];
-
-// Roles that can view financial statistics (Management roles)
-const canViewInvoiceStatsAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
-
-// Roles that can export data (Management and Finance)
-const canExportInvoicesAccess = [
-  'Business Head',
-  'Sales Head',
-  'Finance Head',
-  'Project Director',
-  'Finance Manager',
-  'Sales Manager'
-];
 
 // =============================================================================
 // STATISTICS AND REPORTING ROUTES (placed first to avoid conflicts)
@@ -101,7 +34,7 @@ const canExportInvoicesAccess = [
 // @access  Private (Management roles)
 router.get(
   '/statistics',
-  authorize(...canViewInvoiceStatsAccess),
+  hasPermission(PERMISSIONS.INVOICES.STATISTICS),
   getInvoiceStatistics
 );
 
@@ -110,7 +43,7 @@ router.get(
 // @access  Private (Management and Finance roles)
 router.get(
   '/overdue',
-  authorize(...canViewAllInvoicesAccess),
+  hasPermission(PERMISSIONS.INVOICES.VIEW),
   getOverdueInvoices
 );
 
@@ -119,7 +52,7 @@ router.get(
 // @access  Private (Management and Finance roles)
 router.get(
   '/export',
-  authorize(...canExportInvoicesAccess),
+  hasPermission(PERMISSIONS.INVOICES.EXPORT),
   exportInvoices
 );
 
@@ -132,7 +65,7 @@ router.get(
 // @access  Private (Sales and Finance roles)
 router.post(
   '/from-sale/:saleId',
-  authorize(...canCreateInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.CREATE),
   createInvoiceFromSale
 );
 
@@ -145,8 +78,8 @@ router.post(
 // @desc    Get all invoices with filtering and pagination
 // @access  Private (Management and Finance roles)
 router.route('/')
-  .get(authorize(...canViewAllInvoicesAccess), getInvoices);
-  // .post(authorize(...canCreateInvoiceAccess), createInvoice); // For future direct invoice creation
+  .get(hasPermission(PERMISSIONS.INVOICES.VIEW), getInvoices);
+  // .post(hasPermission(PERMISSIONS.INVOICES.CREATE), createInvoice); // For future direct invoice creation
 
 // =============================================================================
 // INDIVIDUAL INVOICE ROUTES
@@ -157,8 +90,8 @@ router.route('/')
 // @desc    Get, update a specific invoice by ID
 // @access  Private (View: Management/Finance, Update: Finance roles)
 router.route('/:id')
-  .get(authorize(...canViewAllInvoicesAccess), getInvoice)
-  .put(authorize(...canUpdateInvoiceAccess), updateInvoice);
+  .get(hasPermission(PERMISSIONS.INVOICES.VIEW), getInvoice)
+  .put(hasPermission(PERMISSIONS.INVOICES.UPDATE), updateInvoice);
 
 // =============================================================================
 // INVOICE ACTION ROUTES
@@ -169,7 +102,7 @@ router.route('/:id')
 // @access  Private (Finance roles)
 router.post(
   '/:id/payment',
-  authorize(...canRecordPaymentAccess),
+  hasPermission(PERMISSIONS.INVOICES.RECORD_PAYMENT),
   recordInvoicePayment
 );
 
@@ -178,7 +111,7 @@ router.post(
 // @access  Private (Senior Management roles only)
 router.put(
   '/:id/cancel',
-  authorize(...canCancelInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.CANCEL),
   cancelInvoice
 );
 
@@ -192,7 +125,7 @@ router.put(
 // @access  Private (Finance roles)
 router.post(
   '/:id/duplicate',
-  authorize(...canCreateInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.CREATE),
   duplicateInvoice
 );
 
@@ -201,7 +134,7 @@ router.post(
 // @access  Private (Sales and Finance roles)
 router.get(
   '/:id/pdf',
-  authorize(...canViewAllInvoicesAccess),
+  hasPermission(PERMISSIONS.INVOICES.VIEW),
   generateInvoicePDF
 );
 
@@ -210,7 +143,7 @@ router.get(
 // @access  Private (Sales and Finance roles)
 router.post(
   '/:id/send-email',
-  authorize(...canCreateInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.CREATE),
   sendInvoiceViaEmail
 );
 
@@ -219,7 +152,7 @@ router.post(
 // @access  Private (Sales and Finance roles)
 router.get(
   '/templates',
-  authorize(...canViewAllInvoicesAccess),
+  hasPermission(PERMISSIONS.INVOICES.VIEW),
   getInvoiceTemplates
 );
 
@@ -228,7 +161,7 @@ router.get(
 // @access  Private (Finance roles)
 router.post(
   '/bulk-create',
-  authorize(...canCreateInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.CREATE),
   bulkCreateInvoices
 );
 
@@ -237,7 +170,7 @@ router.post(
 // @access  Private (Finance roles)
 router.put(
   '/bulk-update',
-  authorize(...canUpdateInvoiceAccess),
+  hasPermission(PERMISSIONS.INVOICES.UPDATE),
   bulkUpdateInvoices
 );
 */
@@ -249,7 +182,7 @@ router.put(
 // Custom error handler for invoice routes (optional)
 router.use((error, req, res, next) => {
   console.error('Invoice Route Error:', error);
-  
+
   // Invoice-specific error handling
   if (error.name === 'ValidationError') {
     const message = Object.values(error.errors).map(val => val.message).join(', ');
@@ -258,14 +191,14 @@ router.use((error, req, res, next) => {
       message: `Invoice validation error: ${message}`
     });
   }
-  
+
   if (error.name === 'CastError') {
     return res.status(400).json({
       success: false,
       message: 'Invalid invoice ID format'
     });
   }
-  
+
   // Pass to global error handler
   next(error);
 });

@@ -6,6 +6,7 @@
 import asyncHandler from 'express-async-handler';
 import User from '../models/userModel.js';
 import Organization from '../models/organizationModel.js';
+import Role from '../models/roleModel.js';
 
 // =============================================================================
 // CONFIGURATION AND CONSTANTS
@@ -50,16 +51,31 @@ const USER_CONTROLLER_CONFIG = {
 // =============================================================================
 
 /**
- * Check if user can manage another user based on role hierarchy
- * @param {string} managerRole - Role of the user performing the action
- * @param {string} targetRole - Role of the user being managed
+ * Check if user can manage another user based on role hierarchy.
+ * Supports roleRef levels (from populated Role model) and legacy role strings.
+ * @param {Object|string} manager - Manager user object (with roleRef) or role string
+ * @param {Object|string} target - Target user object (with roleRef) or role string
  * @returns {boolean} - True if management is allowed
  */
-const canManageUser = (managerRole, targetRole) => {
-  const managerLevel = USER_CONTROLLER_CONFIG.ROLE_HIERARCHY[managerRole] || 10;
-  const targetLevel = USER_CONTROLLER_CONFIG.ROLE_HIERARCHY[targetRole] || 10;
-  
-  // Can only manage users with higher level number (lower in hierarchy)
+const canManageUser = (manager, target) => {
+  let managerLevel, targetLevel;
+
+  // Get manager level — support both user objects and role strings
+  if (typeof manager === 'object' && manager?.roleRef?.level !== undefined) {
+    managerLevel = manager.roleRef.level;
+  } else {
+    const roleName = typeof manager === 'string' ? manager : manager?.role;
+    managerLevel = USER_CONTROLLER_CONFIG.ROLE_HIERARCHY[roleName] || 10;
+  }
+
+  // Get target level
+  if (typeof target === 'object' && target?.roleRef?.level !== undefined) {
+    targetLevel = target.roleRef.level;
+  } else {
+    const roleName = typeof target === 'string' ? target : target?.role;
+    targetLevel = USER_CONTROLLER_CONFIG.ROLE_HIERARCHY[roleName] || 10;
+  }
+
   return managerLevel < targetLevel;
 };
 
@@ -241,7 +257,8 @@ export const getUsers = asyncHandler(async (req, res) => {
       User.find(finalQuery)
         .populate('invitedBy', 'firstName lastName email')
         .populate('revokedBy', 'firstName lastName email')
-        .select('-password -invitationToken -passwordResetToken') // Exclude sensitive fields
+        .populate('roleRef', 'name slug level permissions isOwnerRole')
+        .select('-password -invitationToken -passwordResetToken')
         .sort(sortOptions)
         .skip(skip)
         .limit(limitNum),
@@ -307,7 +324,10 @@ export const getUsers = asyncHandler(async (req, res) => {
             includeInactive: includeInactive === 'true',
           },
           available: {
-            roles: Object.keys(USER_CONTROLLER_CONFIG.ROLE_HIERARCHY),
+            roles: await Role.find({ organization: req.user.organization, isActive: true })
+              .select('name slug level')
+              .sort({ level: 1 })
+              .lean(),
             statuses: Object.values(USER_CONTROLLER_CONFIG.STATUS_TYPES),
           }
         },
@@ -356,6 +376,7 @@ export const getUserById = asyncHandler(async (req, res) => {
     .populate('invitedBy', 'firstName lastName email')
     .populate('revokedBy', 'firstName lastName email')
     .populate('organization', 'name type')
+    .populate('roleRef', 'name slug level permissions isOwnerRole')
     .select('-password -invitationToken -passwordResetToken');
     
     if (!user) {
@@ -372,8 +393,8 @@ export const getUserById = asyncHandler(async (req, res) => {
     
     // Users can always view their own profile
     // Managers can view users they can manage
-    if (userId !== requestingUser._id.toString() && 
-        !canManageUser(requestingUser.role, user.role)) {
+    if (userId !== requestingUser._id.toString() &&
+        !canManageUser(requestingUser, user)) {
       return res.status(403).json({
         success: false,
         message: 'You don\'t have permission to view this user',
@@ -388,12 +409,13 @@ export const getUserById = asyncHandler(async (req, res) => {
     const enhancedUser = enhanceUserData(user);
     
     // Add additional details for single user view
+    const canManage = canManageUser(requestingUser, user);
     enhancedUser.permissions = {
-      canEdit: canManageUser(requestingUser.role, user.role) || userId === requestingUser._id.toString(),
-      canDelete: canManageUser(requestingUser.role, user.role) && userId !== requestingUser._id.toString(),
-      canChangeRole: canManageUser(requestingUser.role, user.role),
-      canResendInvitation: user.invitationStatus === 'pending' && canManageUser(requestingUser.role, user.role),
-      canRevokeInvitation: user.invitationStatus === 'pending' && canManageUser(requestingUser.role, user.role),
+      canEdit: canManage || userId === requestingUser._id.toString(),
+      canDelete: canManage && userId !== requestingUser._id.toString(),
+      canChangeRole: canManage,
+      canResendInvitation: user.invitationStatus === 'pending' && canManage,
+      canRevokeInvitation: user.invitationStatus === 'pending' && canManage,
     };
     
     res.json({
@@ -462,7 +484,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     // =============================================================================
     
     const isSelfUpdate = userId === updaterUser._id.toString();
-    const canManageTarget = canManageUser(updaterUser.role, user.role);
+    const canManageTarget = canManageUser(updaterUser, user);
     
     // For role and status changes, need management permissions
     if ((role && role !== user.role) || (isActive !== undefined && isActive !== user.isActive)) {
@@ -498,6 +520,44 @@ export const updateUser = asyncHandler(async (req, res) => {
     // VALIDATE ROLE CHANGE
     // =============================================================================
     
+    // Role change via roleRef (ObjectId) — new permission system
+    const { roleRef: newRoleRefId } = req.body;
+    let targetRoleDoc = null;
+
+    if (newRoleRefId) {
+      targetRoleDoc = await Role.findOne({
+        _id: newRoleRefId,
+        organization: updaterUser.organization,
+        isActive: true,
+      });
+
+      if (!targetRoleDoc) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid role specified',
+          code: 'INVALID_ROLE',
+        });
+      }
+
+      // Cannot assign roles at same or higher level
+      if (targetRoleDoc.level <= req.userRoleLevel && !req.isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: `You don't have permission to assign this role`,
+          code: 'INSUFFICIENT_PERMISSIONS',
+        });
+      }
+
+      if (targetRoleDoc.isOwnerRole) {
+        return res.status(403).json({
+          success: false,
+          message: 'Owner role can only be transferred via the ownership transfer endpoint',
+          code: 'OWNER_ROLE_RESTRICTED',
+        });
+      }
+    }
+
+    // Legacy role string validation (backward compat)
     if (role && role !== user.role) {
       const validRoles = Object.keys(USER_CONTROLLER_CONFIG.ROLE_HIERARCHY);
       if (!validRoles.includes(role)) {
@@ -508,9 +568,8 @@ export const updateUser = asyncHandler(async (req, res) => {
           data: { validRoles }
         });
       }
-      
-      // Check if updater can assign this role
-      if (!canManageUser(updaterUser.role, role)) {
+
+      if (!canManageUser(updaterUser, role)) {
         return res.status(403).json({
           success: false,
           message: `You don't have permission to assign role: ${role}`,
@@ -526,13 +585,20 @@ export const updateUser = asyncHandler(async (req, res) => {
     let hasChanges = false;
     const changes = [];
     
-    // Update role if provided and different
-    if (role && role !== user.role) {
+    // Update roleRef if a new role document was found
+    if (targetRoleDoc && (!user.roleRef || user.roleRef.toString() !== targetRoleDoc._id.toString())) {
+      user.roleRef = targetRoleDoc._id;
+      user.role = targetRoleDoc.name; // Keep legacy field in sync
+      hasChanges = true;
+      changes.push(`Role: → ${targetRoleDoc.name}`);
+    }
+
+    // Legacy: Update role string if provided and different (and no roleRef update)
+    if (!targetRoleDoc && role && role !== user.role) {
       const oldRole = user.role;
       user.role = role;
       hasChanges = true;
       changes.push(`Role: ${oldRole} → ${role}`);
-      console.log(`🔄 Changing role from ${oldRole} to ${role}`);
     }
     
     // Update active status if provided and different
@@ -637,6 +703,7 @@ export const getCurrentUserProfile = asyncHandler(async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .populate('organization', 'name type')
+      .populate('roleRef', 'name slug level permissions isOwnerRole')
       .select('-password -invitationToken -passwordResetToken');
     
     if (!user) {
@@ -809,7 +876,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
     }
     
     // Check if deleter has permission to delete this user
-    if (!canManageUser(deleterUser.role, user.role)) {
+    if (!canManageUser(deleterUser, user)) {
       return res.status(403).json({
         success: false,
         message: 'You don\'t have permission to delete this user',
