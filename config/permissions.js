@@ -189,6 +189,20 @@ export const PERMISSIONS = {
     CONVERSATION: 'ai:conversation',
     COPILOT: 'ai:copilot',
   },
+
+  // ─── TASKS ────────────────────────────────────────────
+  TASKS: {
+    VIEW: 'tasks:view',
+    VIEW_TEAM: 'tasks:view_team',
+    VIEW_ALL: 'tasks:view_all',
+    CREATE: 'tasks:create',
+    UPDATE: 'tasks:update',
+    DELETE: 'tasks:delete',
+    ASSIGN: 'tasks:assign',
+    MANAGE_TEMPLATES: 'tasks:manage_templates',
+    ANALYTICS: 'tasks:analytics',
+    BULK_OPERATIONS: 'tasks:bulk_operations',
+  },
 };
 
 // Flat array of all permission strings for validation

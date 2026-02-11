@@ -36,6 +36,7 @@ import invoiceRoutes from './routes/invoiceRoutes.js';
 import budgetVarianceRoutes from './routes/budgetVarianceRoutes.js';
 import aiCopilotRoutes from './routes/aiCopilotRoutes.js';
 import roleRoutes from './routes/roleRoutes.js';
+import taskRoutes from './routes/taskRoutes.js';
 
 
 // Load environment variables
@@ -79,6 +80,7 @@ app.use('/api/towers', towerRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/ai/copilot', aiCopilotRoutes);
 app.use('/api/roles', roleRoutes);
+app.use('/api/tasks', taskRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -127,7 +129,11 @@ app.get('/api/health', (req, res) => {
       'Financial Forecasting',
       'AI Copilot Chat',
       'Custom Roles & Permissions',
-      'Permission-Based Access Control'
+      'Permission-Based Access Control',
+      'Task Management',
+      'Task Templates',
+      'Task Auto-Generation',
+      'Task Analytics'
     ]
   });
 });

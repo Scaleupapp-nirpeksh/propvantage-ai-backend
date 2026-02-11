@@ -146,6 +146,15 @@ class BackgroundJobService {
       case 'UPDATE_ENGAGEMENT_METRICS':
         await this.updateEngagementMetrics(job.data);
         break;
+      case 'TASK_AUTO_GENERATION':
+        await this.runTaskAutoGeneration(job.data);
+        break;
+      case 'TASK_RECURRING_GENERATION':
+        await this.runTaskRecurringGeneration(job.data);
+        break;
+      case 'TASK_ESCALATION_CHECK':
+        await this.runTaskEscalationCheck(job.data);
+        break;
       default:
         throw new Error(`Unknown job type: ${job.type}`);
     }
@@ -222,6 +231,33 @@ class BackgroundJobService {
   }
 
   /**
+   * Run task auto-generation checks across all orgs
+   */
+  async runTaskAutoGeneration(data) {
+    const module = await import('./taskAutoGenerationService.js');
+    const service = module.default;
+    await service.runAllChecks();
+  }
+
+  /**
+   * Generate recurring tasks
+   */
+  async runTaskRecurringGeneration(data) {
+    const module = await import('./taskAutoGenerationService.js');
+    const service = module.default;
+    await service.generateRecurringTasks();
+  }
+
+  /**
+   * Check and escalate overdue tasks
+   */
+  async runTaskEscalationCheck(data) {
+    const module = await import('./taskAutoGenerationService.js');
+    const service = module.default;
+    await service.checkEscalations();
+  }
+
+  /**
    * Add completed job to history
    */
   addToHistory(job) {
@@ -269,6 +305,11 @@ class BackgroundJobService {
       console.log('🧹 Scheduled job: Cleaning up job history');
       this.cleanupJobHistory();
     });
+
+    // Note: Task auto-generation, recurring generation, and escalation checks
+    // are scheduled by taskAutoGenerationService.js directly via its own cron schedules.
+    // The TASK_AUTO_GENERATION, TASK_RECURRING_GENERATION, and TASK_ESCALATION_CHECK
+    // job types are available for manual/on-demand triggering via addJob().
   }
 
   /**

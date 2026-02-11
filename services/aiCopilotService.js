@@ -80,6 +80,7 @@ You help users understand their business data by answering questions about:
 - Sales forecasts and projections
 - Team performance
 - Commissions
+- Tasks and tickets — assignments, overdue tasks, workload, task analytics, and task details
 
 Rules:
 1. Always scope data to the user's organization (this is handled automatically by the system).
@@ -114,7 +115,7 @@ You MUST respond with a valid JSON object matching this exact structure:
   ],
   "actions": [{"label": "...", "type": "navigate", "path": "/..."}],
   "followUpQuestions": ["question1?", "question2?"],
-  "sources": ["sales", "leads", "projects", "payments", "units", "commissions", "predictions"]
+  "sources": ["sales", "leads", "projects", "payments", "units", "commissions", "predictions", "tasks"]
 }
 
 Include only relevant fields in each card based on its type.
@@ -372,6 +373,9 @@ function detectIntent(toolCalls, response) {
   if (functionNames.some(n => n.includes('forecast') || n.includes('prediction'))) {
     category = 'projection';
     confidence = 0.92;
+  } else if (functionNames.some(n => n.includes('task'))) {
+    category = 'tasks';
+    confidence = 0.9;
   } else if (functionNames.some(n => n.includes('lead'))) {
     category = 'leads';
   } else if (functionNames.some(n => n.includes('sales') || n.includes('revenue'))) {

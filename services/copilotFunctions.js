@@ -13,6 +13,7 @@ import PaymentTransaction from '../models/paymentTransactionModel.js';
 import Installment from '../models/installmentModel.js';
 import PartnerCommission from '../models/partnerCommissionModel.js';
 import User from '../models/userModel.js';
+import Task from '../models/taskModel.js';
 
 // =============================================================================
 // HELPER UTILITIES
@@ -422,6 +423,94 @@ export const copilotTools = [
       parameters: {
         type: 'object',
         properties: {},
+      },
+    },
+  },
+
+  // 4.8 Task & Ticketing Functions
+  {
+    type: 'function',
+    function: {
+      name: 'get_task_summary',
+      description: 'Get task overview — counts by status, priority, and category. Includes overdue count and completion rate. Use for questions like "how many tasks are open", "task status breakdown", "what is the task workload".',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['Open', 'In Progress', 'Under Review', 'Completed', 'On Hold', 'Cancelled'] },
+          priority: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low'] },
+          category: { type: 'string', enum: ['Lead & Sales', 'Payment & Collection', 'Construction', 'Document & Compliance', 'Customer Service', 'Approval', 'General'] },
+          assigned_to: { type: 'string', description: 'Filter by assigned user ID' },
+          period: { type: 'string', enum: ['today', 'this_week', 'this_month', 'this_quarter', 'this_year', 'last_month'] },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_tasks',
+      description: 'Get the current user\'s tasks grouped by urgency — overdue, due today, due this week, in progress, and recently completed. Use for questions like "what are my tasks", "what do I need to do", "my pending work".',
+      parameters: {
+        type: 'object',
+        properties: {
+          include_completed: { type: 'boolean', description: 'Include recently completed tasks (last 7 days). Default false.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_team_task_workload',
+      description: 'Get task workload across team members — how many tasks each person has, broken down by status and priority. Use for questions like "team workload", "who has most tasks", "task distribution".',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: { type: 'string', enum: ['this_week', 'this_month', 'this_quarter'] },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_overdue_tasks',
+      description: 'Get overdue tasks with aging details — how many days overdue, assignee, priority. Use for questions like "overdue tasks", "delayed tasks", "what tasks are late".',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', enum: ['Lead & Sales', 'Payment & Collection', 'Construction', 'Document & Compliance', 'Customer Service', 'Approval', 'General'] },
+          priority: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low'] },
+          limit: { type: 'number', description: 'Max results to return, default 15' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_task_details',
+      description: 'Search for a specific task by task number (e.g. TASK-001) or by title keyword. Returns full task details including status, assignee, checklist progress, comments count, and activity.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_number: { type: 'string', description: 'Task number like TASK-001' },
+          search: { type: 'string', description: 'Search by title keyword' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_task_analytics',
+      description: 'Get task analytics — completion rate, average resolution time, SLA compliance, auto-generated task breakdown, category distribution, overdue aging buckets. Use for questions like "task performance", "task metrics", "how fast are tasks being completed".',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: { type: 'string', enum: ['this_week', 'this_month', 'this_quarter', 'this_year', 'last_month'] },
+          category: { type: 'string', enum: ['Lead & Sales', 'Payment & Collection', 'Construction', 'Document & Compliance', 'Customer Service', 'Approval', 'General'] },
+        },
       },
     },
   },
@@ -1340,6 +1429,422 @@ const functionImplementations = {
         sold: inventoryMap['sold'] || 0,
         blocked: inventoryMap['blocked'] || 0,
       },
+    };
+  },
+
+  // ---- 4.8 Task & Ticketing Functions ----
+
+  get_task_summary: async (params, user) => {
+    const filter = { organization: user.organization };
+    if (params.status) filter.status = params.status;
+    if (params.priority) filter.priority = params.priority;
+    if (params.category) filter.category = params.category;
+    if (params.assigned_to) filter.assignedTo = new mongoose.Types.ObjectId(params.assigned_to);
+
+    if (params.period) {
+      const { start, end } = getDateRange(params.period);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    const totalCount = await Task.countDocuments(filter);
+
+    // By status
+    const byStatus = await Task.aggregate([
+      { $match: filter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // By priority
+    const byPriority = await Task.aggregate([
+      { $match: filter },
+      { $group: { _id: '$priority', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // By category
+    const byCategory = await Task.aggregate([
+      { $match: filter },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Overdue count
+    const now = new Date();
+    const overdueCount = await Task.countDocuments({
+      ...filter,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      dueDate: { $lt: now },
+    });
+
+    // Completion rate
+    const completedCount = byStatus.find(s => s._id === 'Completed')?.count || 0;
+    const terminalStatuses = ['Completed', 'Cancelled'];
+    const nonTerminal = byStatus.filter(s => !terminalStatuses.includes(s._id)).reduce((sum, s) => sum + s.count, 0);
+    const completionRate = totalCount > 0 ? Number(((completedCount / totalCount) * 100).toFixed(1)) : 0;
+
+    return {
+      totalCount,
+      overdueCount,
+      completionRate,
+      activeCount: nonTerminal,
+      byStatus: byStatus.map(s => ({ status: s._id, count: s.count })),
+      byPriority: byPriority.map(p => ({ priority: p._id, count: p.count })),
+      byCategory: byCategory.map(c => ({ category: c._id, count: c.count })),
+    };
+  },
+
+  get_my_tasks: async (params, user) => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    const endOfWeek = new Date(startOfDay);
+    endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+    const baseFilter = { organization: user.organization, assignedTo: user._id };
+
+    // Overdue
+    const overdue = await Task.find({
+      ...baseFilter,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      dueDate: { $lt: startOfDay },
+    })
+      .sort({ dueDate: 1 })
+      .limit(10)
+      .select('taskNumber title status priority category dueDate')
+      .lean();
+
+    // Due today
+    const dueToday = await Task.find({
+      ...baseFilter,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      dueDate: { $gte: startOfDay, $lte: endOfDay },
+    })
+      .sort({ priority: 1 })
+      .limit(10)
+      .select('taskNumber title status priority category dueDate')
+      .lean();
+
+    // Due this week
+    const dueThisWeek = await Task.find({
+      ...baseFilter,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      dueDate: { $gt: endOfDay, $lte: endOfWeek },
+    })
+      .sort({ dueDate: 1 })
+      .limit(10)
+      .select('taskNumber title status priority category dueDate')
+      .lean();
+
+    // In progress
+    const inProgress = await Task.find({
+      ...baseFilter,
+      status: 'In Progress',
+    })
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .select('taskNumber title priority category dueDate')
+      .lean();
+
+    const formatTask = (t) => ({
+      taskNumber: t.taskNumber,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      category: t.category,
+      dueDate: t.dueDate,
+      daysOverdue: t.dueDate && t.dueDate < now ? Math.floor((now - new Date(t.dueDate)) / (1000 * 60 * 60 * 24)) : 0,
+    });
+
+    const result = {
+      overdue: { count: overdue.length, tasks: overdue.map(formatTask) },
+      dueToday: { count: dueToday.length, tasks: dueToday.map(formatTask) },
+      dueThisWeek: { count: dueThisWeek.length, tasks: dueThisWeek.map(formatTask) },
+      inProgress: { count: inProgress.length, tasks: inProgress.map(formatTask) },
+    };
+
+    if (params.include_completed) {
+      const sevenDaysAgo = new Date(now);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const recentlyCompleted = await Task.find({
+        ...baseFilter,
+        status: 'Completed',
+        completedAt: { $gte: sevenDaysAgo },
+      })
+        .sort({ completedAt: -1 })
+        .limit(10)
+        .select('taskNumber title priority category completedAt')
+        .lean();
+      result.recentlyCompleted = { count: recentlyCompleted.length, tasks: recentlyCompleted.map(formatTask) };
+    }
+
+    return result;
+  },
+
+  get_team_task_workload: async (params, user) => {
+    const filter = { organization: user.organization, status: { $nin: ['Completed', 'Cancelled'] } };
+
+    if (params.period) {
+      const { start, end } = getDateRange(params.period);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    const now = new Date();
+
+    const workload = await Task.aggregate([
+      { $match: filter },
+      {
+        $lookup: { from: 'users', localField: 'assignedTo', foreignField: '_id', as: 'assignee' },
+      },
+      { $unwind: { path: '$assignee', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: '$assignedTo',
+          name: { $first: { $concat: [{ $ifNull: ['$assignee.firstName', 'Unassigned'] }, ' ', { $ifNull: ['$assignee.lastName', ''] }] } },
+          role: { $first: '$assignee.role' },
+          totalTasks: { $sum: 1 },
+          open: { $sum: { $cond: [{ $eq: ['$status', 'Open'] }, 1, 0] } },
+          inProgress: { $sum: { $cond: [{ $eq: ['$status', 'In Progress'] }, 1, 0] } },
+          underReview: { $sum: { $cond: [{ $eq: ['$status', 'Under Review'] }, 1, 0] } },
+          onHold: { $sum: { $cond: [{ $eq: ['$status', 'On Hold'] }, 1, 0] } },
+          critical: { $sum: { $cond: [{ $eq: ['$priority', 'Critical'] }, 1, 0] } },
+          high: { $sum: { $cond: [{ $eq: ['$priority', 'High'] }, 1, 0] } },
+          overdue: { $sum: { $cond: [{ $and: [{ $lt: ['$dueDate', now] }, { $nin: ['$status', ['Completed', 'Cancelled']] }] }, 1, 0] } },
+        },
+      },
+      { $sort: { totalTasks: -1 } },
+      { $limit: 20 },
+    ]);
+
+    return {
+      period: params.period || 'all_time',
+      teamMembers: workload.map(w => ({
+        name: w.name?.trim() || 'Unassigned',
+        role: w.role,
+        totalTasks: w.totalTasks,
+        open: w.open,
+        inProgress: w.inProgress,
+        underReview: w.underReview,
+        onHold: w.onHold,
+        criticalCount: w.critical,
+        highCount: w.high,
+        overdueCount: w.overdue,
+      })),
+    };
+  },
+
+  get_overdue_tasks: async (params, user) => {
+    const now = new Date();
+    const filter = {
+      organization: user.organization,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      dueDate: { $lt: now },
+    };
+    if (params.category) filter.category = params.category;
+    if (params.priority) filter.priority = params.priority;
+
+    const limit = params.limit || 15;
+
+    const overdueTasks = await Task.find(filter)
+      .sort({ dueDate: 1 })
+      .limit(limit)
+      .select('taskNumber title status priority category dueDate assignedTo')
+      .populate('assignedTo', 'firstName lastName')
+      .lean();
+
+    // Aging buckets
+    const agingBuckets = { '1-7 days': 0, '8-14 days': 0, '15-30 days': 0, '30+ days': 0 };
+    const allOverdueCount = await Task.countDocuments(filter);
+
+    const tasks = overdueTasks.map(t => {
+      const daysOverdue = Math.floor((now - new Date(t.dueDate)) / (1000 * 60 * 60 * 24));
+      if (daysOverdue <= 7) agingBuckets['1-7 days']++;
+      else if (daysOverdue <= 14) agingBuckets['8-14 days']++;
+      else if (daysOverdue <= 30) agingBuckets['15-30 days']++;
+      else agingBuckets['30+ days']++;
+
+      return {
+        taskNumber: t.taskNumber,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        category: t.category,
+        dueDate: t.dueDate,
+        daysOverdue,
+        assignedTo: t.assignedTo ? `${t.assignedTo.firstName} ${t.assignedTo.lastName || ''}`.trim() : 'Unassigned',
+      };
+    });
+
+    return {
+      totalOverdue: allOverdueCount,
+      showing: tasks.length,
+      agingBuckets,
+      tasks,
+    };
+  },
+
+  get_task_details: async (params, user) => {
+    const filter = { organization: user.organization };
+
+    if (params.task_number) {
+      filter.taskNumber = params.task_number.toUpperCase();
+    } else if (params.search) {
+      filter.$or = [
+        { title: { $regex: params.search, $options: 'i' } },
+        { taskNumber: { $regex: params.search, $options: 'i' } },
+      ];
+    } else {
+      return { error: 'Please provide a task number or search keyword' };
+    }
+
+    const tasks = await Task.find(filter)
+      .limit(5)
+      .select('taskNumber title description status priority category dueDate startDate completedAt assignedTo assignedBy checklist comments linkedEntity tags sla autoGenerated createdAt')
+      .populate('assignedTo', 'firstName lastName email')
+      .populate('assignedBy', 'firstName lastName')
+      .lean();
+
+    if (tasks.length === 0) {
+      return { error: `No tasks found matching "${params.task_number || params.search}"` };
+    }
+
+    return {
+      count: tasks.length,
+      tasks: tasks.map(t => {
+        const checklistTotal = t.checklist?.length || 0;
+        const checklistDone = t.checklist?.filter(c => c.isCompleted).length || 0;
+
+        return {
+          taskNumber: t.taskNumber,
+          title: t.title,
+          description: t.description?.substring(0, 300),
+          status: t.status,
+          priority: t.priority,
+          category: t.category,
+          dueDate: t.dueDate,
+          startDate: t.startDate,
+          completedAt: t.completedAt,
+          assignedTo: t.assignedTo ? `${t.assignedTo.firstName} ${t.assignedTo.lastName || ''}`.trim() : 'Unassigned',
+          assignedBy: t.assignedBy ? `${t.assignedBy.firstName} ${t.assignedBy.lastName || ''}`.trim() : null,
+          checklistProgress: checklistTotal > 0 ? `${checklistDone}/${checklistTotal} (${Math.round((checklistDone / checklistTotal) * 100)}%)` : 'No checklist',
+          commentsCount: t.comments?.length || 0,
+          tags: t.tags,
+          isAutoGenerated: t.autoGenerated?.isAutoGenerated || false,
+          triggerType: t.autoGenerated?.triggerType,
+          linkedEntity: t.linkedEntity?.entityType ? `${t.linkedEntity.entityType}: ${t.linkedEntity.displayLabel || t.linkedEntity.entityId}` : null,
+          isOverdue: t.dueDate && new Date(t.dueDate) < new Date() && !['Completed', 'Cancelled'].includes(t.status),
+          slaTargetHours: t.sla?.targetResolutionHours,
+          createdAt: t.createdAt,
+        };
+      }),
+    };
+  },
+
+  get_task_analytics: async (params, user) => {
+    const filter = { organization: user.organization };
+
+    if (params.period) {
+      const { start, end } = getDateRange(params.period);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+    if (params.category) filter.category = params.category;
+
+    const now = new Date();
+
+    // Use $facet for multiple aggregations in one query
+    const analytics = await Task.aggregate([
+      { $match: filter },
+      {
+        $facet: {
+          statusDistribution: [
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          priorityDistribution: [
+            { $group: { _id: '$priority', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          categoryDistribution: [
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          completionMetrics: [
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                completed: { $sum: { $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0] } },
+                cancelled: { $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] } },
+                overdue: {
+                  $sum: {
+                    $cond: [
+                      { $and: [{ $lt: ['$dueDate', now] }, { $nin: ['$status', ['Completed', 'Cancelled']] }] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+          avgResolutionTime: [
+            { $match: { status: 'Completed', completedAt: { $exists: true } } },
+            {
+              $project: {
+                resolutionHours: {
+                  $divide: [{ $subtract: ['$completedAt', '$createdAt'] }, 3600000],
+                },
+              },
+            },
+            { $group: { _id: null, avgHours: { $avg: '$resolutionHours' }, minHours: { $min: '$resolutionHours' }, maxHours: { $max: '$resolutionHours' } } },
+          ],
+          autoGeneratedBreakdown: [
+            { $match: { 'autoGenerated.isAutoGenerated': true } },
+            { $group: { _id: '$autoGenerated.triggerType', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ],
+          overdueAging: [
+            { $match: { status: { $nin: ['Completed', 'Cancelled'] }, dueDate: { $lt: now } } },
+            {
+              $project: {
+                daysOverdue: { $divide: [{ $subtract: [now, '$dueDate'] }, 86400000] },
+              },
+            },
+            {
+              $bucket: {
+                groupBy: '$daysOverdue',
+                boundaries: [0, 8, 15, 31, 10000],
+                default: '30+',
+                output: { count: { $sum: 1 } },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = analytics[0];
+    const metrics = result.completionMetrics[0] || { total: 0, completed: 0, cancelled: 0, overdue: 0 };
+    const resTime = result.avgResolutionTime[0];
+
+    return {
+      period: params.period || 'all_time',
+      totalTasks: metrics.total,
+      completedTasks: metrics.completed,
+      completionRate: metrics.total > 0 ? Number(((metrics.completed / metrics.total) * 100).toFixed(1)) : 0,
+      overdueCount: metrics.overdue,
+      cancelledCount: metrics.cancelled,
+      avgResolutionTimeHours: resTime ? Number(resTime.avgHours.toFixed(1)) : null,
+      minResolutionTimeHours: resTime ? Number(resTime.minHours.toFixed(1)) : null,
+      maxResolutionTimeHours: resTime ? Number(resTime.maxHours.toFixed(1)) : null,
+      statusDistribution: result.statusDistribution.map(s => ({ status: s._id, count: s.count })),
+      priorityDistribution: result.priorityDistribution.map(p => ({ priority: p._id, count: p.count })),
+      categoryDistribution: result.categoryDistribution.map(c => ({ category: c._id, count: c.count })),
+      autoGeneratedBreakdown: result.autoGeneratedBreakdown.map(a => ({ triggerType: a._id, count: a.count })),
+      overdueAging: result.overdueAging.map(a => ({
+        bucket: a._id === 0 ? '1-7 days' : a._id === 8 ? '8-14 days' : a._id === 15 ? '15-30 days' : '30+ days',
+        count: a.count,
+      })),
     };
   },
 };

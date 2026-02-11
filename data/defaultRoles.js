@@ -82,6 +82,9 @@ const DEFAULT_ROLES = [
       'files:upload', 'files:view',
       // AI
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks — full (except delete, bulk)
+      'tasks:view', 'tasks:view_team', 'tasks:view_all', 'tasks:create',
+      'tasks:update', 'tasks:assign', 'tasks:manage_templates', 'tasks:analytics',
     ],
   },
   {
@@ -122,6 +125,9 @@ const DEFAULT_ROLES = [
       'roles:view',
       'files:upload', 'files:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
+      'tasks:assign', 'tasks:analytics',
     ],
   },
   {
@@ -147,6 +153,9 @@ const DEFAULT_ROLES = [
       'roles:view',
       'files:upload', 'files:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
+      'tasks:assign', 'tasks:analytics',
     ],
   },
   {
@@ -182,6 +191,9 @@ const DEFAULT_ROLES = [
       'roles:view',
       'files:upload', 'files:view',
       'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
+      'tasks:assign', 'tasks:analytics',
     ],
   },
   {
@@ -223,6 +235,8 @@ const DEFAULT_ROLES = [
       'roles:view',
       'files:upload', 'files:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
     ],
   },
   {
@@ -256,6 +270,8 @@ const DEFAULT_ROLES = [
       'roles:view',
       'files:upload', 'files:view',
       'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
     ],
   },
   {
@@ -286,6 +302,8 @@ const DEFAULT_ROLES = [
       'users:view', 'users:update', 'users:invite',
       'roles:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
     ],
   },
   {
@@ -316,6 +334,8 @@ const DEFAULT_ROLES = [
       'users:view',
       'files:upload', 'files:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:create', 'tasks:update',
     ],
   },
   {
@@ -336,6 +356,8 @@ const DEFAULT_ROLES = [
       'budgets:view',
       'users:view',
       'ai:insights', 'ai:conversation', 'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:create', 'tasks:update',
     ],
   },
   {
@@ -353,6 +375,8 @@ const DEFAULT_ROLES = [
       'construction:view', 'construction:timeline',
       'pricing:cost_sheet',
       'ai:copilot',
+      // Tasks
+      'tasks:view', 'tasks:create',
     ],
   },
 ];
