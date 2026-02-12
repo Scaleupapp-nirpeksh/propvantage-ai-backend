@@ -155,6 +155,12 @@ class BackgroundJobService {
       case 'TASK_ESCALATION_CHECK':
         await this.runTaskEscalationCheck(job.data);
         break;
+      case 'NOTIFICATION_DAILY_DIGEST':
+        await this.runNotificationDailyDigest(job.data);
+        break;
+      case 'NOTIFICATION_DUE_SOON':
+        await this.runNotificationDueSoon(job.data);
+        break;
       default:
         throw new Error(`Unknown job type: ${job.type}`);
     }
@@ -257,6 +263,16 @@ class BackgroundJobService {
     await service.checkEscalations();
   }
 
+  async runNotificationDailyDigest() {
+    const { generateDailyTaskDigest } = await import('./notificationService.js');
+    await generateDailyTaskDigest();
+  }
+
+  async runNotificationDueSoon() {
+    const { generateDueSoonNotifications } = await import('./notificationService.js');
+    await generateDueSoonNotifications();
+  }
+
   /**
    * Add completed job to history
    */
@@ -310,6 +326,18 @@ class BackgroundJobService {
     // are scheduled by taskAutoGenerationService.js directly via its own cron schedules.
     // The TASK_AUTO_GENERATION, TASK_RECURRING_GENERATION, and TASK_ESCALATION_CHECK
     // job types are available for manual/on-demand triggering via addJob().
+
+    // Daily task digest — 8:00 AM IST (2:30 UTC)
+    cron.schedule('30 2 * * *', () => {
+      console.log('🔔 Scheduled job: Daily task notification digest');
+      this.addJob('NOTIFICATION_DAILY_DIGEST', {});
+    });
+
+    // Due-soon notifications — every 4 hours
+    cron.schedule('0 */4 * * *', () => {
+      console.log('🔔 Scheduled job: Due-soon task notifications');
+      this.addJob('NOTIFICATION_DUE_SOON', {});
+    });
   }
 
   /**

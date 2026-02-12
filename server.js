@@ -37,6 +37,8 @@ import budgetVarianceRoutes from './routes/budgetVarianceRoutes.js';
 import aiCopilotRoutes from './routes/aiCopilotRoutes.js';
 import roleRoutes from './routes/roleRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
+import leadershipDashboardRoutes from './routes/leadershipDashboardRoutes.js';
 
 
 // Load environment variables
@@ -81,6 +83,8 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/ai/copilot', aiCopilotRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/leadership', leadershipDashboardRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -133,7 +137,8 @@ app.get('/api/health', (req, res) => {
       'Task Management',
       'Task Templates',
       'Task Auto-Generation',
-      'Task Analytics'
+      'Task Analytics',
+      'In-App Notifications'
     ]
   });
 });

@@ -85,6 +85,8 @@ const DEFAULT_ROLES = [
       // Tasks — full (except delete, bulk)
       'tasks:view', 'tasks:view_team', 'tasks:view_all', 'tasks:create',
       'tasks:update', 'tasks:assign', 'tasks:manage_templates', 'tasks:analytics',
+      // Dashboard
+      'dashboard:leadership',
     ],
   },
   {
@@ -128,6 +130,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Dashboard
+      'dashboard:leadership',
     ],
   },
   {
@@ -156,6 +160,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Dashboard
+      'dashboard:leadership',
     ],
   },
   {
@@ -194,6 +200,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Dashboard
+      'dashboard:leadership',
     ],
   },
   {

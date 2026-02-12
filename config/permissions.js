@@ -160,6 +160,11 @@ export const PERMISSIONS = {
     MARKETING_ROI: 'analytics:marketing_roi',
   },
 
+  // ─── DASHBOARD ────────────────────────────────────────
+  DASHBOARD: {
+    LEADERSHIP: 'dashboard:leadership',
+  },
+
   // ─── USERS ─────────────────────────────────────────────
   USERS: {
     VIEW: 'users:view',

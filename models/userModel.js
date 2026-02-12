@@ -283,6 +283,23 @@ const userSchema = new mongoose.Schema(
           default: false,
         },
       },
+      // In-app notification preferences — per notification type toggle
+      notificationPreferences: {
+        task_assigned: { type: Boolean, default: true },
+        task_status_changed: { type: Boolean, default: true },
+        task_completed: { type: Boolean, default: true },
+        task_comment: { type: Boolean, default: true },
+        task_mention: { type: Boolean, default: true },
+        task_due_today: { type: Boolean, default: true },
+        task_overdue: { type: Boolean, default: true },
+        task_due_soon: { type: Boolean, default: true },
+        task_escalated: { type: Boolean, default: true },
+        task_auto_generated: { type: Boolean, default: true },
+        payment_overdue: { type: Boolean, default: true },
+        lead_follow_up_due: { type: Boolean, default: true },
+        milestone_delayed: { type: Boolean, default: true },
+        sale_booked: { type: Boolean, default: true },
+      },
     },
   },
   {

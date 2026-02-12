@@ -8,6 +8,13 @@ import Task from '../models/taskModel.js';
 import TaskTemplate from '../models/taskTemplateModel.js';
 import User from '../models/userModel.js';
 import Role from '../models/roleModel.js';
+import {
+  notifyTaskAssigned,
+  notifyTaskStatusChanged,
+  notifyTaskCompleted,
+  notifyTaskComment,
+  notifyTaskMention,
+} from '../services/notificationService.js';
 
 // =============================================================================
 // CRUD OPERATIONS
@@ -115,6 +122,11 @@ const createTask = asyncHandler(async (req, res) => {
   const populated = await Task.findById(task._id)
     .populate('assignedTo', 'firstName lastName email')
     .populate('createdBy', 'firstName lastName email');
+
+  // Fire-and-forget: notify assignee
+  if (assignedTo && assignedTo !== req.user._id.toString()) {
+    notifyTaskAssigned({ task: populated, assignee: assignedTo, assigner: req.user }).catch(() => {});
+  }
 
   res.status(201).json({
     success: true,
@@ -391,6 +403,11 @@ const updateTask = asyncHandler(async (req, res) => {
     .populate('createdBy', 'firstName lastName email')
     .populate('watchers', 'firstName lastName email');
 
+  // Fire-and-forget: notify on reassignment
+  if (changes.some((c) => c.action === 'reassigned')) {
+    notifyTaskAssigned({ task: updated, assignee: req.body.assignedTo, assigner: req.user }).catch(() => {});
+  }
+
   res.json({
     success: true,
     message: 'Task updated successfully',
@@ -500,12 +517,19 @@ const updateTaskStatus = asyncHandler(async (req, res) => {
     }
   }
 
+  const oldStatus = task.status;
   task.transitionStatus(status, req.user._id, notes);
   await task.save();
 
   const updated = await Task.findById(task._id)
     .populate('assignedTo', 'firstName lastName email')
     .populate('createdBy', 'firstName lastName email');
+
+  // Fire-and-forget: notify on status change
+  notifyTaskStatusChanged({ task: updated, changedBy: req.user, oldStatus, newStatus: status }).catch(() => {});
+  if (status === 'Completed') {
+    notifyTaskCompleted({ task: updated, completedBy: req.user }).catch(() => {});
+  }
 
   res.json({
     success: true,
@@ -558,6 +582,12 @@ const addComment = asyncHandler(async (req, res) => {
   await task.populate('comments.author', 'firstName lastName email');
 
   const addedComment = task.comments[task.comments.length - 1];
+
+  // Fire-and-forget: notify watchers + assignee about comment
+  notifyTaskComment({ task, comment: addedComment, author: req.user }).catch(() => {});
+  if (mentions && mentions.length > 0) {
+    notifyTaskMention({ task, mentionedUsers: mentions, commenter: req.user, commentText: text }).catch(() => {});
+  }
 
   res.status(201).json({
     success: true,
@@ -1004,6 +1034,18 @@ const bulkAssign = asyncHandler(async (req, res) => {
       },
     }
   );
+
+  // Fire-and-forget: notify the assignee about the bulk assignment
+  if (result.modifiedCount > 0) {
+    const assignedTasks = await Task.find({
+      _id: { $in: taskIds },
+      organization: req.user.organization,
+      assignedTo,
+    }).select('organization taskNumber title priority category dueDate assignedTo createdBy watchers assignedBy').lean();
+    for (const t of assignedTasks) {
+      notifyTaskAssigned({ task: t, assignee: assignedTo, assigner: req.user }).catch(() => {});
+    }
+  }
 
   res.json({
     success: true,
