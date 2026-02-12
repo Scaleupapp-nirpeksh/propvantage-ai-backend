@@ -195,6 +195,15 @@ export const PERMISSIONS = {
     COPILOT: 'ai:copilot',
   },
 
+  // ─── CHAT ─────────────────────────────────────────────
+  CHAT: {
+    VIEW: 'chat:view',
+    SEND: 'chat:send',
+    CREATE_GROUP: 'chat:create_group',
+    DELETE_ANY: 'chat:delete_any',
+    MANAGE_GROUPS: 'chat:manage_groups',
+  },
+
   // ─── TASKS ────────────────────────────────────────────
   TASKS: {
     VIEW: 'tasks:view',

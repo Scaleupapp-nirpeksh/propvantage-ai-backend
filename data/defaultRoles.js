@@ -85,6 +85,8 @@ const DEFAULT_ROLES = [
       // Tasks — full (except delete, bulk)
       'tasks:view', 'tasks:view_team', 'tasks:view_all', 'tasks:create',
       'tasks:update', 'tasks:assign', 'tasks:manage_templates', 'tasks:analytics',
+      // Chat — full
+      'chat:view', 'chat:send', 'chat:create_group', 'chat:delete_any', 'chat:manage_groups',
       // Dashboard
       'dashboard:leadership',
     ],
@@ -130,6 +132,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
     ],
@@ -160,6 +164,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
     ],
@@ -200,6 +206,8 @@ const DEFAULT_ROLES = [
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update',
       'tasks:assign', 'tasks:analytics',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
     ],
@@ -245,6 +253,8 @@ const DEFAULT_ROLES = [
       'ai:insights', 'ai:conversation', 'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
     ],
   },
   {
@@ -280,6 +290,8 @@ const DEFAULT_ROLES = [
       'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
     ],
   },
   {
@@ -312,6 +324,8 @@ const DEFAULT_ROLES = [
       'ai:insights', 'ai:conversation', 'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
+      // Chat
+      'chat:view', 'chat:send', 'chat:create_group',
     ],
   },
   {
@@ -344,6 +358,8 @@ const DEFAULT_ROLES = [
       'ai:insights', 'ai:conversation', 'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:create', 'tasks:update',
+      // Chat
+      'chat:view', 'chat:send',
     ],
   },
   {
@@ -366,6 +382,8 @@ const DEFAULT_ROLES = [
       'ai:insights', 'ai:conversation', 'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:create', 'tasks:update',
+      // Chat
+      'chat:view', 'chat:send',
     ],
   },
   {
@@ -385,6 +403,8 @@ const DEFAULT_ROLES = [
       'ai:copilot',
       // Tasks
       'tasks:view', 'tasks:create',
+      // Chat
+      'chat:view', 'chat:send',
     ],
   },
 ];

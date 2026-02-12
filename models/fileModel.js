@@ -29,7 +29,7 @@ const fileSchema = new mongoose.Schema(
     resourceType: {
       type: String,
       required: true,
-      enum: ['Lead', 'Project', 'Sale', 'Unit', 'User', 'Organization', 'Commission', 'Payment'],
+      enum: ['Lead', 'Project', 'Sale', 'Unit', 'User', 'Organization', 'Commission', 'Payment', 'Message'],
     },
     // File metadata
     originalName: {

@@ -24,12 +24,16 @@ export const NOTIFICATION_TYPES = [
   'lead_follow_up_due',
   'milestone_delayed',
   'sale_booked',
+  // Chat
+  'chat_message',
+  'chat_mention',
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 
 export const RELATED_ENTITY_TYPES = [
   'Task', 'Lead', 'Sale', 'Installment', 'ConstructionMilestone', 'Invoice', 'Project',
+  'Conversation',
 ];
 
 // =============================================================================

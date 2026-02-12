@@ -26,6 +26,8 @@ import DocumentCategory from '../models/documentCategoryModel.js';
 import Task from '../models/taskModel.js';
 import TaskTemplate from '../models/taskTemplateModel.js';
 import Notification from '../models/notificationModel.js';
+import Conversation from '../models/conversationModel.js';
+import Message from '../models/messageModel.js';
 import { seedDefaultRoles } from './defaultRoles.js';
 
 dotenv.config();
@@ -2131,6 +2133,230 @@ async function seedDemoData() {
 
     console.log(`   ✅ Created ${notificationsToCreate.length} notifications\n`);
 
+    // ─── STEP 13: CREATE CHAT CONVERSATIONS & MESSAGES ────────────
+    console.log('1️⃣3️⃣ Creating chat conversations & messages...');
+
+    const businessHead = users['business-head'][0];
+    const marketingHead = users['marketing-head'][0];
+
+    // --- Direct Conversations ---
+
+    // 1. Rajesh (Owner) <-> Ananya (Business Head) — strategy discussion
+    const dmRajeshAnanya = await Conversation.findOrCreateDirect(org._id, owner._id, businessHead._id, owner._id);
+    const dmRAMessages = [
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: owner._id, type: 'text', content: { text: 'Ananya, have you reviewed the Q4 revenue projections for Horizon Heights?' }, createdAt: daysAgo(3) },
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: businessHead._id, type: 'text', content: { text: 'Yes, we are tracking at 85% of target. The 3BHK inventory is moving well but 2BHK Premium needs a push.' }, createdAt: daysAgo(3) },
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: owner._id, type: 'text', content: { text: 'Should we consider a limited-period early-bird offer on 2BHK Premium? Maybe 3% discount for bookings this month?' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: businessHead._id, type: 'text', content: { text: 'That could work. Let me run the numbers with Meera on the margin impact and get back to you by tomorrow.' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: businessHead._id, type: 'text', content: { text: 'Checked with finance. A 3% early-bird on 2BHK Premium still keeps us above 18% margin. I say we go for it.' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmRajeshAnanya._id, sender: owner._id, type: 'text', content: { text: 'Perfect. Ask Priya to brief the sales team and Arjun to prepare the campaign material.' }, createdAt: daysAgo(1) },
+    ];
+    const raCreated = await Message.insertMany(dmRAMessages.map(m => ({ organization: m.org, conversation: m.conversation, sender: m.sender, type: m.type, content: m.content, createdAt: m.createdAt })));
+    dmRajeshAnanya.updateLastMessage(raCreated[raCreated.length - 1], `${owner.firstName} ${owner.lastName}`);
+    await dmRajeshAnanya.save();
+
+    // 2. Priya (Sales Head) <-> Sanjay (Sales Manager) — pipeline discussion
+    const dmPriyaSanjay = await Conversation.findOrCreateDirect(org._id, salesHead._id, salesManager._id, salesHead._id);
+    const dmPSMessages = [
+      { org: org._id, conversation: dmPriyaSanjay._id, sender: salesHead._id, type: 'text', content: { text: 'Sanjay, what is the current pipeline status for this week? We have the leadership review on Friday.' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmPriyaSanjay._id, sender: salesManager._id, type: 'text', content: { text: '12 active leads in negotiation stage. 3 are likely to close this week — Amit Kulkarni, Sunita Bhosale, and one walk-in from the Baner event.' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmPriyaSanjay._id, sender: salesHead._id, type: 'text', content: { text: 'Great. Make sure Neha follows up with Amit today. He was comparing with a Wakad project last I heard.' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmPriyaSanjay._id, sender: salesManager._id, type: 'text', content: { text: 'Already on it. Neha sent him the revised cost sheet with the 3% early-bird discount. He seemed positive.' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmPriyaSanjay._id, sender: salesHead._id, type: 'text', content: { text: 'Good. Also, there is a new early-bird offer approved for 2BHK Premium. Brief the team in the morning standup.' }, createdAt: daysAgo(0) },
+    ];
+    const psCreated = await Message.insertMany(dmPSMessages.map(m => ({ organization: m.org, conversation: m.conversation, sender: m.sender, type: m.type, content: m.content, createdAt: m.createdAt })));
+    dmPriyaSanjay.updateLastMessage(psCreated[psCreated.length - 1], `${salesHead.firstName} ${salesHead.lastName}`);
+    await dmPriyaSanjay.save();
+
+    // 3. Neha (Sales Exec) <-> Sanjay (Sales Manager) — lead follow-up
+    const dmNehaSanjay = await Conversation.findOrCreateDirect(org._id, salesExec1._id, salesManager._id, salesExec1._id);
+    const dmNSMessages = [
+      { org: org._id, conversation: dmNehaSanjay._id, sender: salesExec1._id, type: 'text', content: { text: 'Sir, Amit Kulkarni just confirmed he wants to proceed with Unit HH-0503 (3BHK). He is ready to pay the booking amount this week!' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmNehaSanjay._id, sender: salesManager._id, type: 'text', content: { text: 'Excellent news! Send him the booking form and KYC checklist. Block the unit in the system immediately.' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmNehaSanjay._id, sender: salesExec1._id, type: 'text', content: { text: 'Done. Unit blocked. Booking form and KYC docs sent via email. He said he will submit everything by Wednesday.' }, createdAt: daysAgo(0) },
+      { org: org._id, conversation: dmNehaSanjay._id, sender: salesManager._id, type: 'text', content: { text: 'Great work Neha. Keep me posted. Also, how is Sunita Bhosale looking? Any update from the site visit?' }, createdAt: daysAgo(0) },
+    ];
+    const nsCreated = await Message.insertMany(dmNSMessages.map(m => ({ organization: m.org, conversation: m.conversation, sender: m.sender, type: m.type, content: m.content, createdAt: m.createdAt })));
+    dmNehaSanjay.updateLastMessage(nsCreated[nsCreated.length - 1], `${salesManager.firstName} ${salesManager.lastName}`);
+    await dmNehaSanjay.save();
+
+    // 4. Vikram (Project Director) <-> Meera (Finance Head) — budget discussion
+    const dmVikramMeera = await Conversation.findOrCreateDirect(org._id, projectDirector._id, financeHead._id, projectDirector._id);
+    const dmVMMessages = [
+      { org: org._id, conversation: dmVikramMeera._id, sender: projectDirector._id, type: 'text', content: { text: 'Meera, the Tower A structural work is running 6% over budget. Steel prices went up after we locked the contract.' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmVikramMeera._id, sender: financeHead._id, type: 'text', content: { text: 'How much are we talking about? I need exact numbers to flag in the variance report.' }, createdAt: daysAgo(2) },
+      { org: org._id, conversation: dmVikramMeera._id, sender: projectDirector._id, type: 'text', content: { text: 'Rs 5.2L over on steel alone for floors 1-5. I have asked the contractor for a revised BOQ. Will share by end of day.' }, createdAt: daysAgo(1) },
+      { org: org._id, conversation: dmVikramMeera._id, sender: financeHead._id, type: 'text', content: { text: 'Ok. We have some buffer in the contingency fund. But if floors 6-10 follow the same trend, we need to renegotiate.' }, createdAt: daysAgo(1) },
+    ];
+    const vmCreated = await Message.insertMany(dmVMMessages.map(m => ({ organization: m.org, conversation: m.conversation, sender: m.sender, type: m.type, content: m.content, createdAt: m.createdAt })));
+    dmVikramMeera.updateLastMessage(vmCreated[vmCreated.length - 1], `${financeHead.firstName} ${financeHead.lastName}`);
+    await dmVikramMeera.save();
+
+    let totalChatMessages = raCreated.length + psCreated.length + nsCreated.length + vmCreated.length;
+
+    // --- Group Conversations ---
+
+    // 1. Sales Leadership group
+    const salesLeadershipGroup = await Conversation.create({
+      organization: org._id,
+      type: 'group',
+      name: 'Sales Leadership',
+      description: 'Weekly sales pipeline sync and strategy discussions',
+      participants: [
+        { user: owner._id, role: 'admin', isActive: true },
+        { user: salesHead._id, role: 'admin', isActive: true },
+        { user: salesManager._id, role: 'member', isActive: true },
+        { user: businessHead._id, role: 'member', isActive: true },
+        { user: marketingHead._id, role: 'member', isActive: true },
+      ],
+      createdBy: owner._id,
+    });
+    const slgMessages = [
+      { sender: owner._id, text: 'Team, we have approved a 3% early-bird discount on 2BHK Premium at Horizon Heights. Valid for bookings this month only.', createdAt: daysAgo(1) },
+      { sender: salesHead._id, text: 'Great move. Our 2BHK inventory has been slow. This should help close at least 4-5 fence-sitters.', createdAt: daysAgo(1) },
+      { sender: marketingHead._id, text: 'I will prepare the digital campaign and emailers by tomorrow. Should we also do a WhatsApp blast to our lead database?', createdAt: daysAgo(1) },
+      { sender: owner._id, text: 'Yes, but only to leads that have shown interest in 2BHK. Do not spam the entire database.', createdAt: daysAgo(1) },
+      { sender: salesManager._id, text: 'We have 28 leads who specifically asked about 2BHK in the last 60 days. I will share the list with Arjun.', createdAt: daysAgo(0) },
+      { sender: salesHead._id, text: 'Perfect. Lets track conversions from this campaign separately. Sanjay, add a tag in CRM for attribution.', createdAt: daysAgo(0) },
+    ];
+    const slgCreated = await Message.insertMany(slgMessages.map(m => ({
+      organization: org._id, conversation: salesLeadershipGroup._id, sender: m.sender, type: 'text', content: { text: m.text }, createdAt: m.createdAt,
+    })));
+    salesLeadershipGroup.updateLastMessage(slgCreated[slgCreated.length - 1], `${salesHead.firstName} ${salesHead.lastName}`);
+    // Add unread counts for members who haven't "seen" the latest
+    salesLeadershipGroup.participants.forEach(p => {
+      if (p.user.toString() !== salesHead._id.toString()) p.unreadCount = 2;
+    });
+    await salesLeadershipGroup.save();
+    totalChatMessages += slgCreated.length;
+
+    // 2. Horizon Heights — Project Team group
+    const projectTeamGroup = await Conversation.create({
+      organization: org._id,
+      type: 'group',
+      name: 'Horizon Heights — Project Team',
+      description: 'Construction updates, issue tracking, and coordination for Horizon Heights',
+      participants: [
+        { user: projectDirector._id, role: 'admin', isActive: true },
+        { user: owner._id, role: 'member', isActive: true },
+        { user: financeHead._id, role: 'member', isActive: true },
+        { user: salesHead._id, role: 'member', isActive: true },
+      ],
+      createdBy: projectDirector._id,
+    });
+    const ptgMessages = [
+      { sender: projectDirector._id, text: 'Tower A update: Floors 1-5 column and beam casting is at 60%. On track for completion by end of month.', createdAt: daysAgo(2) },
+      { sender: owner._id, text: 'What about Tower B excavation? I noticed it is showing 75% — are we ahead of schedule there?', createdAt: daysAgo(2) },
+      { sender: projectDirector._id, text: 'Yes, Tower B excavation is actually 5 days ahead. Good soil conditions helped. We can start foundation by next week.', createdAt: daysAgo(2) },
+      { sender: financeHead._id, text: 'Budget note: Tower A structural work is running 6% over due to steel price increase. Vikram and I are working on a revised forecast.', createdAt: daysAgo(1) },
+      { sender: projectDirector._id, text: 'I have attached the updated progress photos from yesterday. Foundation inspection for Tower A is signed off.', createdAt: daysAgo(1) },
+      { sender: salesHead._id, text: 'From sales side — we are getting questions from booked customers about possession timeline. Can we share an updated construction timeline?', createdAt: daysAgo(0) },
+      { sender: projectDirector._id, text: 'Will prepare an updated Gantt chart by Friday. Current estimate: Tower A possession by Q3 2027, Tower B by Q4 2027.', createdAt: daysAgo(0) },
+    ];
+    const ptgCreated = await Message.insertMany(ptgMessages.map(m => ({
+      organization: org._id, conversation: projectTeamGroup._id, sender: m.sender, type: 'text', content: { text: m.text }, createdAt: m.createdAt,
+    })));
+    projectTeamGroup.updateLastMessage(ptgCreated[ptgCreated.length - 1], `${projectDirector.firstName} ${projectDirector.lastName}`);
+    projectTeamGroup.participants.forEach(p => {
+      if (p.user.toString() !== projectDirector._id.toString()) p.unreadCount = 1;
+    });
+    await projectTeamGroup.save();
+    totalChatMessages += ptgCreated.length;
+
+    // 3. Finance & Collections group
+    const financeGroup = await Conversation.create({
+      organization: org._id,
+      type: 'group',
+      name: 'Finance & Collections',
+      description: 'Payment tracking, overdue follow-ups, and financial updates',
+      participants: [
+        { user: financeHead._id, role: 'admin', isActive: true },
+        { user: users['finance-manager'][0]._id, role: 'member', isActive: true },
+        { user: salesManager._id, role: 'member', isActive: true },
+        { user: salesExec1._id, role: 'member', isActive: true },
+      ],
+      createdBy: financeHead._id,
+    });
+    const fgMessages = [
+      { sender: financeHead._id, text: 'Team, we have 3 overdue installments this week totalling Rs 45L. Neha, the HH-0101 customer has been unresponsive for 5 days now.', createdAt: daysAgo(1) },
+      { sender: salesExec1._id, text: 'I have called them twice and left voicemails. Will try reaching the spouse contact number today.', createdAt: daysAgo(1) },
+      { sender: users['finance-manager'][0]._id, text: 'Late fee policy kicks in after 15 days grace period. We still have 7 days before that. But we should send the formal reminder letter now.', createdAt: daysAgo(0) },
+      { sender: financeHead._id, text: 'Kavita, please generate the reminder letter. Neha, one more attempt today. If no response by Thursday, we escalate to Sanjay.', createdAt: daysAgo(0) },
+    ];
+    const fgCreated = await Message.insertMany(fgMessages.map(m => ({
+      organization: org._id, conversation: financeGroup._id, sender: m.sender, type: 'text', content: { text: m.text }, createdAt: m.createdAt,
+    })));
+    financeGroup.updateLastMessage(fgCreated[fgCreated.length - 1], `${financeHead.firstName} ${financeHead.lastName}`);
+    financeGroup.participants.forEach(p => {
+      if (p.user.toString() !== financeHead._id.toString()) p.unreadCount = 1;
+    });
+    await financeGroup.save();
+    totalChatMessages += fgCreated.length;
+
+    // --- Entity-Linked Conversations ---
+
+    // 1. Lead: Amit Kulkarni (first lead)
+    if (createdLeads.length > 0) {
+      const amitLead = createdLeads[0];
+      const amitConv = await Conversation.findOrCreateEntity(
+        org._id, 'Lead', amitLead._id,
+        `Lead: ${amitLead.firstName} ${amitLead.lastName}`,
+        salesExec1._id,
+        [salesExec1._id, salesManager._id]
+      );
+      const amitMessages = [
+        { sender: salesExec1._id, text: `Site visit completed with ${amitLead.firstName}. He loved the 5th floor view from Unit HH-0503. Very keen on 3BHK.`, createdAt: daysAgo(5) },
+        { sender: salesManager._id, text: 'Good. What is his budget range? And has he mentioned the timeline for decision?', createdAt: daysAgo(5) },
+        { sender: salesExec1._id, text: 'Budget is 1.2-1.5 Cr. He has a pre-approved home loan from HDFC. Wants to decide within 2 weeks. Only concern: he is comparing with a Wakad project.', createdAt: daysAgo(4) },
+        { sender: salesManager._id, text: 'Send him the comparison sheet highlighting our amenities and connectivity advantage over Wakad options. Also mention the early-bird discount.', createdAt: daysAgo(4) },
+        { sender: salesExec1._id, text: 'Update: Amit has confirmed booking for HH-0503! Booking amount payment expected this week. Sending KYC docs now.', createdAt: daysAgo(1) },
+        { sender: salesManager._id, text: 'Fantastic! Make sure the unit is blocked and payment plan is set up. Great job Neha!', createdAt: daysAgo(0) },
+      ];
+      const amitCreated = await Message.insertMany(amitMessages.map(m => ({
+        organization: org._id, conversation: amitConv._id, sender: m.sender, type: 'text', content: { text: m.text }, createdAt: m.createdAt,
+      })));
+      amitConv.updateLastMessage(amitCreated[amitCreated.length - 1], `${salesManager.firstName} ${salesManager.lastName}`);
+      await amitConv.save();
+      totalChatMessages += amitCreated.length;
+    }
+
+    // 2. Project: Horizon Heights
+    const hhConv = await Conversation.findOrCreateEntity(
+      org._id, 'Project', project1._id,
+      `Project: ${project1.name}`,
+      projectDirector._id,
+      [projectDirector._id, owner._id, salesHead._id]
+    );
+    const hhMessages = [
+      { sender: projectDirector._id, text: 'Weekly progress summary: Tower A structural 60%, Tower B excavation 75%, landscaping delayed by vendor.', createdAt: daysAgo(1) },
+      { sender: salesHead._id, text: 'Can we get updated construction photos for the sales team? Customers are asking during site visits.', createdAt: daysAgo(1) },
+      { sender: projectDirector._id, text: 'Will upload fresh photos by end of today. Also preparing the updated timeline chart Rajesh requested.', createdAt: daysAgo(0) },
+    ];
+    const hhCreated = await Message.insertMany(hhMessages.map(m => ({
+      organization: org._id, conversation: hhConv._id, sender: m.sender, type: 'text', content: { text: m.text }, createdAt: m.createdAt,
+    })));
+    hhConv.updateLastMessage(hhCreated[hhCreated.length - 1], `${projectDirector.firstName} ${projectDirector.lastName}`);
+    await hhConv.save();
+    totalChatMessages += hhCreated.length;
+
+    // Add a pinned message in the project group
+    if (ptgCreated.length > 0) {
+      const pinnedMsg = await Message.findById(ptgCreated[0]._id);
+      pinnedMsg.togglePin(projectDirector._id);
+      await pinnedMsg.save();
+    }
+
+    // Add a reaction to a message in the sales leadership group
+    if (slgCreated.length > 0) {
+      const reactMsg = await Message.findById(slgCreated[0]._id);
+      reactMsg.toggleReaction(salesHead._id, 'thumbsup');
+      reactMsg.toggleReaction(salesManager._id, 'thumbsup');
+      await reactMsg.save();
+    }
+
+    const totalConversations = 4 + 3 + 2; // 4 DMs + 3 groups + 2 entity
+    console.log(`   ✅ Created ${totalConversations} conversations, ${totalChatMessages} messages\n`);
+
     // ─── SUMMARY ───────────────────────────────────────────────────
     console.log('═══════════════════════════════════════════════════════════');
     console.log('  DEMO DATA SEED COMPLETE');
@@ -2160,6 +2386,8 @@ async function seedDemoData() {
     console.log(`    Tasks:                  ${createdTasks.length}`);
     console.log(`    Task Templates:         ${templates.length}`);
     console.log(`    Notifications:          ${notificationsToCreate.length}`);
+    console.log(`    Chat Conversations:     ${totalConversations}`);
+    console.log(`    Chat Messages:          ${totalChatMessages}`);
     console.log('');
     console.log('  PASSWORD FOR ALL USERS: Demo@1234');
     console.log('');
@@ -2186,6 +2414,10 @@ async function seedDemoData() {
 
 async function cleanDemoData(orgId) {
   // Delete in reverse dependency order
+  console.log('   Deleting chat messages...');
+  await Message.deleteMany({ organization: orgId });
+  console.log('   Deleting chat conversations...');
+  await Conversation.deleteMany({ organization: orgId });
   console.log('   Deleting notifications...');
   await Notification.deleteMany({ organization: orgId });
   console.log('   Deleting task templates...');

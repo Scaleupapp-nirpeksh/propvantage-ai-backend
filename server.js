@@ -3,10 +3,13 @@
 // Version: 1.7.0 - Added AI Conversation Intelligence
 
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
+import { initializeSocket } from './socket/socketHandler.js';
 
 // Import route files
 import authRoutes from './routes/authRoutes.js';
@@ -39,6 +42,7 @@ import roleRoutes from './routes/roleRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import leadershipDashboardRoutes from './routes/leadershipDashboardRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
 
 
 // Load environment variables
@@ -85,6 +89,7 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/leadership', leadershipDashboardRoutes);
+app.use('/api/chat', chatRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -138,7 +143,9 @@ app.get('/api/health', (req, res) => {
       'Task Templates',
       'Task Auto-Generation',
       'Task Analytics',
-      'In-App Notifications'
+      'In-App Notifications',
+      'Real-Time Chat & Messaging',
+      'Entity-Linked Conversations'
     ]
   });
 });
@@ -321,7 +328,21 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 PropVantage AI Server running on port ${PORT}`);
+// Create HTTP server and attach Socket.IO
+const httpServer = createServer(app);
 
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.CLIENT_URL || '*',
+    credentials: true,
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
+
+initializeSocket(io);
+app.set('io', io);
+
+httpServer.listen(PORT, () => {
+  console.log(`PropVantage AI Server running on port ${PORT}`);
 });
