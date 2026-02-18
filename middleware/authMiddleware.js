@@ -4,6 +4,7 @@
 import jwt from 'jsonwebtoken';
 import asyncHandler from 'express-async-handler';
 import User from '../models/userModel.js';
+import ProjectAssignment from '../models/projectAssignmentModel.js';
 
 /**
  * @desc    Middleware to protect routes by verifying JWT.
@@ -35,6 +36,22 @@ const protect = asyncHandler(async (req, res, next) => {
       req.userPermissions = req.user.roleRef?.permissions || [];
       req.userRoleLevel = req.user.roleRef?.level ?? 100;
       req.isOwner = req.user.roleRef?.isOwnerRole || false;
+
+      // Load project-level access (which projects this user can see)
+      // Org Owner bypasses project access — they can see all projects
+      if (req.isOwner) {
+        req.hasFullProjectAccess = true;
+        req.accessibleProjectIds = null; // null signals "all projects"
+      } else {
+        req.hasFullProjectAccess = false;
+        const assignments = await ProjectAssignment.find({
+          organization: req.user.organization,
+          user: req.user._id,
+        })
+          .select('project')
+          .lean();
+        req.accessibleProjectIds = assignments.map((a) => a.project.toString());
+      }
 
       next();
     } catch (error) {
@@ -131,4 +148,43 @@ const hasAnyPermission = (...requiredPermissions) => {
   };
 };
 
-export { protect, authorize, hasPermission, hasAnyPermission };
+/**
+ * @desc    Route-level middleware to verify the user has access to a specific project.
+ * Extracts the project ID from the specified request location.
+ *
+ * Usage:
+ *   checkProjectAccess('params.id')       — for /api/projects/:id
+ *   checkProjectAccess('params.projectId') — for /api/project-access/projects/:projectId/users
+ *   checkProjectAccess('body.project')     — for POST endpoints with project in body
+ */
+const checkProjectAccess = (projectIdSource = 'params.id') => {
+  return (req, res, next) => {
+    let projectId;
+    const [location, field] = projectIdSource.split('.');
+
+    if (location === 'params') projectId = req.params[field];
+    else if (location === 'body') projectId = req.body[field];
+    else if (location === 'query') projectId = req.query[field];
+
+    if (!projectId) {
+      return next();
+    }
+
+    // Org Owner bypasses project access checks
+    if (req.hasFullProjectAccess) {
+      return next();
+    }
+
+    if (
+      !req.accessibleProjectIds ||
+      !req.accessibleProjectIds.includes(projectId.toString())
+    ) {
+      res.status(403);
+      throw new Error('You do not have access to this project');
+    }
+
+    next();
+  };
+};
+
+export { protect, authorize, hasPermission, hasAnyPermission, checkProjectAccess };

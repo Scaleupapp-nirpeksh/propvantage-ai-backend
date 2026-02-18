@@ -6,6 +6,7 @@ import asyncHandler from 'express-async-handler';
 import Unit from '../models/unitModel.js';
 import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
+import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
 
 // Import Tower model with error handling for backward compatibility
 let Tower;
@@ -42,7 +43,7 @@ const getUnits = asyncHandler(async (req, res) => {
   } = req.query;
 
   // Build query
-  let query = { organization: req.user.organization };
+  let query = { organization: req.user.organization, ...projectAccessFilter(req) };
 
   if (projectId) {
     query.project = projectId;
@@ -376,7 +377,7 @@ const handleGroupByQuery = async (req, res, baseQuery, groupBy) => {
 const getUnitStatistics = asyncHandler(async (req, res) => {
   const { projectId, towerId } = req.query;
 
-  let matchQuery = { organization: req.user.organization };
+  let matchQuery = { organization: req.user.organization, ...projectAccessFilter(req) };
   
   if (projectId) {
     matchQuery.project = mongoose.Types.ObjectId(projectId);
@@ -481,6 +482,8 @@ const createUnit = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found or access denied');
   }
+
+  verifyProjectAccess(req, res, project);
 
   // Verify tower if provided and Tower model exists
   if (tower && Tower) {
@@ -591,6 +594,8 @@ const getUnitById = asyncHandler(async (req, res) => {
     throw new Error('Unit not found');
   }
 
+  verifyProjectAccess(req, res, unit.project);
+
   res.json({
     success: true,
     data: unit,
@@ -626,6 +631,8 @@ const updateUnit = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Unit not found');
   }
+
+  verifyProjectAccess(req, res, unit.project);
 
   // Validate tower change if provided
   if (updateData.tower && Tower) {
@@ -691,6 +698,8 @@ const deleteUnit = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Unit not found');
   }
+
+  verifyProjectAccess(req, res, unit.project);
 
   // Check if unit has any sales or bookings
   try {

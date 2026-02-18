@@ -22,7 +22,7 @@ const getOverview = asyncHandler(async (req, res) => {
     throw new Error('Both startDate and endDate must be provided together');
   }
 
-  const data = await getLeadershipOverview(orgId, period, startDate, endDate);
+  const data = await getLeadershipOverview(orgId, period, startDate, endDate, req.accessibleProjectIds);
 
   res.json({
     success: true,
@@ -59,12 +59,24 @@ const getProjectComparison = asyncHandler(async (req, res) => {
     ? projectIds.split(',').map((id) => id.trim())
     : null;
 
+  // Intersect requested projectIds with accessible ones
+  // Org Owner (hasFullProjectAccess) can see all — pass requested IDs as-is or null for all
+  let filteredProjectIds;
+  if (req.hasFullProjectAccess) {
+    filteredProjectIds = projectIdArray || null;
+  } else {
+    const accessibleSet = new Set(req.accessibleProjectIds || []);
+    filteredProjectIds = projectIdArray
+      ? projectIdArray.filter((id) => accessibleSet.has(id))
+      : [...accessibleSet];
+  }
+
   const data = await getLeadershipProjectComparison(
     orgId,
     period,
     startDate,
     endDate,
-    projectIdArray,
+    filteredProjectIds || [],
     sortBy
   );
 

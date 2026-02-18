@@ -131,6 +131,28 @@ async function resolveProject(orgId, projectId, projectName) {
   return null;
 }
 
+/**
+ * Get a project scope filter for queries on models with a `project` field
+ */
+function getProjectScopeFilter(accessibleProjectIds) {
+  // null means full access (Org Owner) — match all documents
+  if (accessibleProjectIds === null) return { $exists: true };
+  if (!accessibleProjectIds || accessibleProjectIds.length === 0) {
+    return { $in: [] };
+  }
+  return { $in: accessibleProjectIds.map(id => new mongoose.Types.ObjectId(id)) };
+}
+
+/**
+ * Check if a specific project is accessible
+ */
+function isProjectAccessible(accessibleProjectIds, projectId) {
+  // null means full access (Org Owner)
+  if (accessibleProjectIds === null) return true;
+  if (!accessibleProjectIds || accessibleProjectIds.length === 0) return false;
+  return accessibleProjectIds.includes(projectId.toString());
+}
+
 // =============================================================================
 // GPT-4 TOOL DEFINITIONS
 // =============================================================================
@@ -523,11 +545,12 @@ export const copilotTools = [
 const functionImplementations = {
   // ---- 4.1 Project Functions ----
 
-  get_projects: async (params, user) => {
+  get_projects: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'project');
     if (params.status) filter.status = params.status;
     if (params.type) filter.type = params.type;
     if (params.name_search) filter.name = { $regex: params.name_search, $options: 'i' };
+    filter._id = getProjectScopeFilter(accessibleProjectIds);
 
     const projects = await Project.find(filter)
       .select('name status type location totalUnits priceRange targetRevenue launchDate')
@@ -551,9 +574,10 @@ const functionImplementations = {
     };
   },
 
-  get_project_details: async (params, user) => {
+  get_project_details: async (params, user, accessibleProjectIds) => {
     const project = await resolveProject(user.organization, params.project_id, params.project_name);
     if (!project) return { error: 'Project not found' };
+    if (project && !isProjectAccessible(accessibleProjectIds, project._id)) return { error: 'You do not have access to this project' };
 
     // Get unit breakdown
     const unitStats = await Unit.aggregate([
@@ -597,9 +621,10 @@ const functionImplementations = {
     };
   },
 
-  get_project_budget_variance: async (params, user) => {
+  get_project_budget_variance: async (params, user, accessibleProjectIds) => {
     const project = await resolveProject(user.organization, params.project_id, params.project_name);
     if (!project) return { error: 'Project not found' };
+    if (project && !isProjectAccessible(accessibleProjectIds, project._id)) return { error: 'You do not have access to this project' };
 
     // Collected revenue from completed/cleared transactions
     const revenueData = await PaymentTransaction.aggregate([
@@ -640,11 +665,16 @@ const functionImplementations = {
 
   // ---- 4.2 Sales & Revenue Functions ----
 
-  get_sales_summary: async (params, user) => {
+  get_sales_summary: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'sale');
     filter.status = { $ne: 'Cancelled' };
 
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     if (params.salesperson_id) filter.salesPerson = new mongoose.Types.ObjectId(params.salesperson_id);
 
     if (params.period || params.start_date) {
@@ -681,11 +711,12 @@ const functionImplementations = {
     };
   },
 
-  get_sales_forecast: async (params, user) => {
+  get_sales_forecast: async (params, user, accessibleProjectIds) => {
     let project = null;
     if (params.project_id || params.project_name) {
       project = await resolveProject(user.organization, params.project_id, params.project_name);
       if (!project) return { error: 'Project not found' };
+      if (!isProjectAccessible(accessibleProjectIds, project._id)) return { error: 'You do not have access to this project' };
     }
 
     const months = params.period === '3_months' ? 3 : params.period === '12_months' ? 12 : 6;
@@ -699,7 +730,11 @@ const functionImplementations = {
       status: { $ne: 'Cancelled' },
       bookingDate: { $gte: sixMonthsAgo },
     };
-    if (project) matchFilter.project = project._id;
+    if (project) {
+      matchFilter.project = project._id;
+    } else {
+      matchFilter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
 
     const monthlySales = await Sale.aggregate([
       { $match: matchFilter },
@@ -735,7 +770,11 @@ const functionImplementations = {
 
     // Available inventory
     const inventoryFilter = { organization: user.organization, status: 'available' };
-    if (project) inventoryFilter.project = project._id;
+    if (project) {
+      inventoryFilter.project = project._id;
+    } else {
+      inventoryFilter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     const availableUnits = await Unit.countDocuments(inventoryFilter);
 
     return {
@@ -755,9 +794,14 @@ const functionImplementations = {
     };
   },
 
-  get_revenue_analysis: async (params, user) => {
+  get_revenue_analysis: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization };
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
 
     const { start, end } = getDateRange(params.period || 'this_month');
 
@@ -790,9 +834,14 @@ const functionImplementations = {
 
   // ---- 4.3 Lead Functions ----
 
-  get_leads_summary: async (params, user) => {
+  get_leads_summary: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'lead');
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     if (params.status) filter.status = params.status;
     if (params.priority) filter.priority = params.priority;
     if (params.assigned_to) filter.assignedTo = new mongoose.Types.ObjectId(params.assigned_to);
@@ -846,9 +895,14 @@ const functionImplementations = {
     };
   },
 
-  get_lead_funnel: async (params, user) => {
+  get_lead_funnel: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'lead');
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
 
     if (params.period) {
       const { start, end } = getDateRange(params.period);
@@ -882,10 +936,11 @@ const functionImplementations = {
     };
   },
 
-  get_high_priority_leads: async (params, user) => {
+  get_high_priority_leads: async (params, user, accessibleProjectIds) => {
     const limit = params.limit || 10;
     const filter = applyRoleScope({}, user, 'lead');
     filter.status = { $nin: ['Booked', 'Lost', 'Unqualified'] };
+    filter.project = getProjectScopeFilter(accessibleProjectIds);
 
     // High/Critical priority leads
     const highPriorityLeads = await Lead.find({ ...filter, priority: { $in: ['Critical', 'High'] } })
@@ -937,8 +992,9 @@ const functionImplementations = {
     };
   },
 
-  get_lead_details: async (params, user) => {
+  get_lead_details: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'lead');
+    filter.project = getProjectScopeFilter(accessibleProjectIds);
     const search = params.search;
 
     filter.$or = [
@@ -982,9 +1038,14 @@ const functionImplementations = {
 
   // ---- 4.4 Unit/Inventory Functions ----
 
-  get_inventory_summary: async (params, user) => {
+  get_inventory_summary: async (params, user, accessibleProjectIds) => {
     const matchFilter = { organization: user.organization };
-    if (params.project_id) matchFilter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      matchFilter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      matchFilter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     if (params.tower_id) matchFilter.tower = new mongoose.Types.ObjectId(params.tower_id);
     if (params.status) matchFilter.status = params.status;
     if (params.type) matchFilter.type = { $regex: params.type, $options: 'i' };
@@ -1019,9 +1080,14 @@ const functionImplementations = {
     };
   },
 
-  get_available_units: async (params, user) => {
+  get_available_units: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization, status: 'available' };
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     if (params.tower_id) filter.tower = new mongoose.Types.ObjectId(params.tower_id);
     if (params.unit_type) filter.type = { $regex: params.unit_type, $options: 'i' };
     if (params.facing) filter.facing = params.facing;
@@ -1069,9 +1135,14 @@ const functionImplementations = {
 
   // ---- 4.5 Payment Functions ----
 
-  get_payment_summary: async (params, user) => {
+  get_payment_summary: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization };
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
 
     const { start, end } = getDateRange(params.period || 'this_month');
 
@@ -1100,7 +1171,7 @@ const functionImplementations = {
         $match: {
           organization: user.organization,
           status: 'overdue',
-          ...(params.project_id ? { project: new mongoose.Types.ObjectId(params.project_id) } : {}),
+          project: params.project_id ? new mongoose.Types.ObjectId(params.project_id) : getProjectScopeFilter(accessibleProjectIds),
         },
       },
       { $group: { _id: null, totalOverdue: { $sum: '$pendingAmount' }, count: { $sum: 1 } } },
@@ -1115,7 +1186,7 @@ const functionImplementations = {
     };
   },
 
-  get_overdue_payments: async (params, user) => {
+  get_overdue_payments: async (params, user, accessibleProjectIds) => {
     const limit = params.limit || 20;
     const now = new Date();
 
@@ -1123,7 +1194,12 @@ const functionImplementations = {
       organization: user.organization,
       status: 'overdue',
     };
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
 
     const overdueInstallments = await Installment.find(filter)
       .sort({ currentDueDate: 1 })
@@ -1162,7 +1238,7 @@ const functionImplementations = {
     };
   },
 
-  get_payments_due_today: async (params, user) => {
+  get_payments_due_today: async (params, user, accessibleProjectIds) => {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfWeek = new Date(startOfDay);
@@ -1175,6 +1251,7 @@ const functionImplementations = {
       organization: user.organization,
       status: { $in: ['due', 'pending'] },
       currentDueDate: { $gte: startOfDay, $lte: endOfDay },
+      project: getProjectScopeFilter(accessibleProjectIds),
     })
       .select('installmentNumber description currentAmount pendingAmount currentDueDate customer project')
       .populate('customer', 'firstName lastName phone')
@@ -1186,6 +1263,7 @@ const functionImplementations = {
       organization: user.organization,
       status: { $in: ['due', 'pending'] },
       currentDueDate: { $gt: endOfDay, $lte: endOfWeek },
+      project: getProjectScopeFilter(accessibleProjectIds),
     })
       .select('installmentNumber description currentAmount pendingAmount currentDueDate customer project')
       .populate('customer', 'firstName lastName phone')
@@ -1211,8 +1289,9 @@ const functionImplementations = {
 
   // ---- 4.6 Team & Performance Functions ----
 
-  get_team_performance: async (params, user) => {
+  get_team_performance: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization, status: { $ne: 'Cancelled' } };
+    filter.project = getProjectScopeFilter(accessibleProjectIds);
 
     if (params.period) {
       const { start, end } = getDateRange(params.period);
@@ -1243,7 +1322,7 @@ const functionImplementations = {
 
     // Lead conversion by salesperson
     const leadsByPerson = await Lead.aggregate([
-      { $match: { organization: user.organization, assignedTo: { $exists: true } } },
+      { $match: { organization: user.organization, assignedTo: { $exists: true }, project: getProjectScopeFilter(accessibleProjectIds) } },
       {
         $group: {
           _id: '$assignedTo',
@@ -1274,10 +1353,15 @@ const functionImplementations = {
     };
   },
 
-  get_commission_summary: async (params, user) => {
+  get_commission_summary: async (params, user, accessibleProjectIds) => {
     const filter = applyRoleScope({}, user, 'commission');
     if (params.partner_id) filter.partner = new mongoose.Types.ObjectId(params.partner_id);
-    if (params.project_id) filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
+      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    } else {
+      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    }
     if (params.status) filter.status = params.status;
 
     const summary = await PartnerCommission.aggregate([
@@ -1312,7 +1396,7 @@ const functionImplementations = {
 
   // ---- 4.7 Comparison & Analytics Functions ----
 
-  compare_projects: async (params, user) => {
+  compare_projects: async (params, user, accessibleProjectIds) => {
     let projectIds = [];
 
     if (params.project_ids && params.project_ids.length > 0) {
@@ -1323,6 +1407,10 @@ const functionImplementations = {
         name: { $in: params.project_names.map(n => new RegExp(n, 'i')) },
       }).lean();
       projectIds = projects.map(p => p._id);
+    }
+
+    if (accessibleProjectIds && accessibleProjectIds.length > 0) {
+      projectIds = projectIds.filter(pid => accessibleProjectIds.includes(pid.toString()));
     }
 
     if (projectIds.length === 0) return { error: 'No projects found to compare' };
@@ -1378,40 +1466,43 @@ const functionImplementations = {
     return { projectsCompared: comparison.length, comparison };
   },
 
-  get_dashboard_overview: async (params, user) => {
+  get_dashboard_overview: async (params, user, accessibleProjectIds) => {
     const orgFilter = { organization: user.organization };
+    const projectScopeFilter = getProjectScopeFilter(accessibleProjectIds);
 
     // Projects
-    const projectCount = await Project.countDocuments(orgFilter);
-    const activeProjects = await Project.countDocuments({ ...orgFilter, status: { $in: ['launched', 'under-construction'] } });
+    const projectCount = await Project.countDocuments({ ...orgFilter, _id: projectScopeFilter });
+    const activeProjects = await Project.countDocuments({ ...orgFilter, _id: projectScopeFilter, status: { $in: ['launched', 'under-construction'] } });
 
     // Leads
-    const totalLeads = await Lead.countDocuments(applyRoleScope({}, user, 'lead'));
-    const activeLeads = await Lead.countDocuments(applyRoleScope({ status: { $nin: ['Booked', 'Lost', 'Unqualified'] } }, user, 'lead'));
-    const hotLeads = await Lead.countDocuments(applyRoleScope({ priority: { $in: ['Critical', 'High'] }, status: { $nin: ['Booked', 'Lost', 'Unqualified'] } }, user, 'lead'));
+    const leadBaseFilter = applyRoleScope({}, user, 'lead');
+    leadBaseFilter.project = projectScopeFilter;
+    const totalLeads = await Lead.countDocuments(leadBaseFilter);
+    const activeLeads = await Lead.countDocuments({ ...leadBaseFilter, status: { $nin: ['Booked', 'Lost', 'Unqualified'] } });
+    const hotLeads = await Lead.countDocuments({ ...leadBaseFilter, priority: { $in: ['Critical', 'High'] }, status: { $nin: ['Booked', 'Lost', 'Unqualified'] } });
 
     // Sales this month
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const salesThisMonth = await Sale.aggregate([
-      { $match: { ...orgFilter, status: { $ne: 'Cancelled' }, bookingDate: { $gte: monthStart } } },
+      { $match: { ...orgFilter, project: projectScopeFilter, status: { $ne: 'Cancelled' }, bookingDate: { $gte: monthStart } } },
       { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: '$salePrice' } } },
     ]);
 
     // Total revenue collected
     const totalCollected = await PaymentTransaction.aggregate([
-      { $match: { ...orgFilter, status: { $in: ['completed', 'cleared'] } } },
+      { $match: { ...orgFilter, project: projectScopeFilter, status: { $in: ['completed', 'cleared'] } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]);
 
     // Overdue
     const overdueData = await Installment.aggregate([
-      { $match: { ...orgFilter, status: 'overdue' } },
+      { $match: { ...orgFilter, project: projectScopeFilter, status: 'overdue' } },
       { $group: { _id: null, total: { $sum: '$pendingAmount' }, count: { $sum: 1 } } },
     ]);
 
     // Inventory
     const inventoryStats = await Unit.aggregate([
-      { $match: orgFilter },
+      { $match: { ...orgFilter, project: projectScopeFilter } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
     const inventoryMap = {};
@@ -1434,7 +1525,7 @@ const functionImplementations = {
 
   // ---- 4.8 Task & Ticketing Functions ----
 
-  get_task_summary: async (params, user) => {
+  get_task_summary: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization };
     if (params.status) filter.status = params.status;
     if (params.priority) filter.priority = params.priority;
@@ -1494,7 +1585,7 @@ const functionImplementations = {
     };
   },
 
-  get_my_tasks: async (params, user) => {
+  get_my_tasks: async (params, user, accessibleProjectIds) => {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -1581,7 +1672,7 @@ const functionImplementations = {
     return result;
   },
 
-  get_team_task_workload: async (params, user) => {
+  get_team_task_workload: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization, status: { $nin: ['Completed', 'Cancelled'] } };
 
     if (params.period) {
@@ -1633,7 +1724,7 @@ const functionImplementations = {
     };
   },
 
-  get_overdue_tasks: async (params, user) => {
+  get_overdue_tasks: async (params, user, accessibleProjectIds) => {
     const now = new Date();
     const filter = {
       organization: user.organization,
@@ -1683,7 +1774,7 @@ const functionImplementations = {
     };
   },
 
-  get_task_details: async (params, user) => {
+  get_task_details: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization };
 
     if (params.task_number) {
@@ -1740,7 +1831,7 @@ const functionImplementations = {
     };
   },
 
-  get_task_analytics: async (params, user) => {
+  get_task_analytics: async (params, user, accessibleProjectIds) => {
     const filter = { organization: user.organization };
 
     if (params.period) {
@@ -1860,14 +1951,14 @@ const functionImplementations = {
  * @param {object} user - Authenticated user object (from req.user)
  * @returns {object} - Query result
  */
-export const executeCopilotFunction = async (functionName, params, user) => {
+export const executeCopilotFunction = async (functionName, params, user, accessibleProjectIds) => {
   const fn = functionImplementations[functionName];
   if (!fn) {
     return { error: `Unknown function: ${functionName}` };
   }
 
   try {
-    const result = await fn(params, user);
+    const result = await fn(params, user, accessibleProjectIds);
     return result;
   } catch (error) {
     console.error(`❌ Copilot function ${functionName} failed:`, error.message);

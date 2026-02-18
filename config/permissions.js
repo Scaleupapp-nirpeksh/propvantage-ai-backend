@@ -11,6 +11,12 @@ export const PERMISSIONS = {
     DELETE: 'projects:delete',
   },
 
+  // ─── PROJECT ACCESS ─────────────────────────────────────
+  PROJECT_ACCESS: {
+    VIEW: 'project_access:view',
+    MANAGE: 'project_access:manage',
+  },
+
   // ─── TOWERS ────────────────────────────────────────────
   TOWERS: {
     VIEW: 'towers:view',

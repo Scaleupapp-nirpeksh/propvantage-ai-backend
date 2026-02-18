@@ -157,6 +157,7 @@ function isRoleAllowedForFunction(user, functionName) {
 export const processCopilotMessage = async (message, user, conversationId, context = {}) => {
   const convId = conversationId || generateId('conv');
   const msgId = generateId('msg');
+  const { accessibleProjectIds, ...frontendContext } = context;
 
   try {
     // Step 1: Build messages array with conversation history
@@ -170,9 +171,9 @@ export const processCopilotMessage = async (message, user, conversationId, conte
 
     // Add context if provided
     let userMessage = message;
-    if (context.currentPage || context.projectId) {
-      userMessage += `\n\n[Context: User is on page "${context.currentPage || 'unknown'}"`;
-      if (context.projectId) userMessage += `, viewing project ID: ${context.projectId}`;
+    if (frontendContext.currentPage || frontendContext.projectId) {
+      userMessage += `\n\n[Context: User is on page "${frontendContext.currentPage || 'unknown'}"`;
+      if (frontendContext.projectId) userMessage += `, viewing project ID: ${frontendContext.projectId}`;
       userMessage += ']';
     }
 
@@ -215,7 +216,7 @@ export const processCopilotMessage = async (message, user, conversationId, conte
             };
           }
 
-          const result = await executeCopilotFunction(functionName, functionArgs, user);
+          const result = await executeCopilotFunction(functionName, functionArgs, user, accessibleProjectIds);
 
           return {
             tool_call_id: toolCall.id,

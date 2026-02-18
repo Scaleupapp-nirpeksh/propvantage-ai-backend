@@ -29,7 +29,7 @@ const copilotChat = asyncHandler(async (req, res) => {
       message.trim(),
       req.user,
       conversationId || null,
-      context || {}
+      { ...(context || {}), accessibleProjectIds: req.accessibleProjectIds }
     );
 
     res.json({

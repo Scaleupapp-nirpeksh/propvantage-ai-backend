@@ -4,6 +4,7 @@
 import asyncHandler from 'express-async-handler';
 import CommissionStructure from '../models/commissionStructureModel.js';
 import PartnerCommission from '../models/partnerCommissionModel.js';
+import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
 import {
   createCommissionForSale,
   processCommissionPayments,
@@ -77,6 +78,12 @@ const getCommissionStructures = asyncHandler(async (req, res) => {
           { project: projectId },
           { project: null }
         ];
+      } else if (req.accessibleProjectIds) {
+        // Show org-wide structures (project: null) plus structures for accessible projects
+        query.$or = [
+          { project: null },
+          projectAccessFilter(req)
+        ];
       }
       structures = await CommissionStructure.find(query)
         .populate('project', 'name')
@@ -116,6 +123,11 @@ const getCommissionStructureById = asyncHandler(async (req, res) => {
     throw new Error('Commission structure not found');
   }
 
+  // Verify project access if structure is project-scoped
+  if (structure.project) {
+    verifyProjectAccess(req, res, structure.project);
+  }
+
   res.json({
     success: true,
     data: structure
@@ -139,6 +151,11 @@ const updateCommissionStructure = asyncHandler(async (req, res) => {
   if (!structure) {
     res.status(404);
     throw new Error('Commission structure not found');
+  }
+
+  // Verify project access if structure is project-scoped
+  if (structure.project) {
+    verifyProjectAccess(req, res, structure.project);
   }
 
   // Validate update data
@@ -192,6 +209,11 @@ const deactivateCommissionStructure = asyncHandler(async (req, res) => {
   if (!structure) {
     res.status(404);
     throw new Error('Commission structure not found');
+  }
+
+  // Verify project access if structure is project-scoped
+  if (structure.project) {
+    verifyProjectAccess(req, res, structure.project);
   }
 
   structure.validityPeriod.isActive = false;
@@ -265,16 +287,16 @@ const getCommissions = asyncHandler(async (req, res) => {
   } = req.query;
 
   // Build filters
-  const filters = { organization: req.user.organization };
-  
+  const filters = { organization: req.user.organization, ...projectAccessFilter(req) };
+
   if (status) {
     filters.status = status;
   }
-  
+
   if (partnerId) {
     filters.partner = partnerId;
   }
-  
+
   if (projectId) {
     filters.project = projectId;
   }
@@ -334,6 +356,8 @@ const getCommissionById = asyncHandler(async (req, res) => {
     throw new Error('Commission not found');
   }
 
+  verifyProjectAccess(req, res, commission.project);
+
   res.json({
     success: true,
     data: commission
@@ -358,6 +382,8 @@ const approveCommission = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Commission not found');
   }
+
+  verifyProjectAccess(req, res, commission.project);
 
   try {
     await commission.approveCommission(req.user._id, notes);
@@ -397,6 +423,8 @@ const rejectCommission = asyncHandler(async (req, res) => {
     throw new Error('Commission not found');
   }
 
+  verifyProjectAccess(req, res, commission.project);
+
   try {
     await commission.rejectCommission(req.user._id, reason);
 
@@ -434,6 +462,8 @@ const putCommissionOnHold = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Commission not found');
   }
+
+  verifyProjectAccess(req, res, commission.project);
 
   try {
     await commission.putOnHold(req.user._id, reason, holdDays);
@@ -473,6 +503,8 @@ const releaseCommissionHold = asyncHandler(async (req, res) => {
     throw new Error('Commission not found');
   }
 
+  verifyProjectAccess(req, res, commission.project);
+
   try {
     await commission.releaseHold(req.user._id, reason);
 
@@ -500,6 +532,7 @@ const bulkApproveCommissionsEndpoint = asyncHandler(async (req, res) => {
     throw new Error('Commission IDs array is required');
   }
 
+  // TODO: Add project access filter via service layer — bulk operations need per-commission project verification
   try {
     const results = await bulkApproveCommissions(commissionIds, req.user._id, notes);
 
@@ -542,6 +575,8 @@ const recordCommissionPayment = asyncHandler(async (req, res) => {
     throw new Error('Commission not found');
   }
 
+  verifyProjectAccess(req, res, commission.project);
+
   try {
     await commission.recordPayment({
       amount,
@@ -579,6 +614,7 @@ const processBulkCommissionPayments = asyncHandler(async (req, res) => {
     throw new Error('Payment data with payment method is required');
   }
 
+  // TODO: Add project access filter via service layer — bulk operations need per-commission project verification
   try {
     const results = await processCommissionPayments(commissionIds, paymentData, req.user._id);
 
@@ -605,6 +641,7 @@ const processBulkCommissionPayments = asyncHandler(async (req, res) => {
 const getCommissionReport = asyncHandler(async (req, res) => {
   const { startDate, endDate, partnerId, projectId, status } = req.query;
 
+  // TODO: Add project access filter via service layer — generateCommissionReport needs accessibleProjectIds
   try {
     const report = await generateCommissionReport(req.user.organization, {
       startDate,
@@ -632,6 +669,7 @@ const getCommissionReport = asyncHandler(async (req, res) => {
 const getCommissionAnalyticsEndpoint = asyncHandler(async (req, res) => {
   const { period, partnerId, projectId } = req.query;
 
+  // TODO: Add project access filter via service layer — getCommissionAnalytics needs accessibleProjectIds
   try {
     const analytics = await getCommissionAnalytics(req.user.organization, {
       period,
@@ -655,6 +693,7 @@ const getCommissionAnalyticsEndpoint = asyncHandler(async (req, res) => {
  * @access  Private (Management roles)
  */
 const getOverdueCommissions = asyncHandler(async (req, res) => {
+  // TODO: Add project access filter via static method — getOverdueCommissions needs accessibleProjectIds
   try {
     const overdueCommissions = await PartnerCommission.getOverdueCommissions(req.user.organization);
 
@@ -677,6 +716,7 @@ const getOverdueCommissions = asyncHandler(async (req, res) => {
 const getPartnerPerformanceEndpoint = asyncHandler(async (req, res) => {
   const { partnerId } = req.params;
 
+  // TODO: Add project access filter via service layer — getPartnerPerformanceData needs accessibleProjectIds
   try {
     const performance = await getPartnerPerformanceData(partnerId, req.user.organization);
 
@@ -698,6 +738,7 @@ const getPartnerPerformanceEndpoint = asyncHandler(async (req, res) => {
 const recalculateCommissionEndpoint = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
+  // TODO: Add project access filter — recalculateCommission needs project verification via sale lookup
   try {
     const result = await recalculateCommission(id, req.user._id);
 

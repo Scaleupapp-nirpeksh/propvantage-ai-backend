@@ -6,6 +6,11 @@ import Project from '../models/projectModel.js';
 import Unit from '../models/unitModel.js';
 import Lead from '../models/leadModel.js';
 import Sale from '../models/salesModel.js';
+import ProjectAssignment from '../models/projectAssignmentModel.js';
+import {
+  verifyProjectAccess,
+  projectIdAccessFilter,
+} from '../utils/projectAccessHelper.js';
 
 /**
  * @desc    Create a new project
@@ -27,6 +32,21 @@ const createProject = asyncHandler(async (req, res) => {
   });
 
   const createdProject = await project.save();
+
+  // Auto-assign the creator to this project
+  await ProjectAssignment.create({
+    organization: req.user.organization,
+    user: req.user._id,
+    project: createdProject._id,
+    assignedBy: req.user._id,
+    notes: 'Auto-assigned as project creator',
+  });
+
+  // Update accessible list for this request cycle
+  if (req.accessibleProjectIds) {
+    req.accessibleProjectIds.push(createdProject._id.toString());
+  }
+
   res.status(201).json({
     success: true,
     data: createdProject,
@@ -40,7 +60,10 @@ const createProject = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const getProjects = asyncHandler(async (req, res) => {
-  const projects = await Project.find({ organization: req.user.organization });
+  const projects = await Project.find({
+    organization: req.user.organization,
+    ...projectIdAccessFilter(req),
+  });
   
   res.json({
     success: true,
@@ -64,6 +87,8 @@ const getProjectById = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found');
   }
+
+  verifyProjectAccess(req, res, project._id);
 
   // Get units for this project
   const units = await Unit.find({ project: req.params.id });
@@ -101,6 +126,8 @@ const updateProject = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found');
   }
+
+  verifyProjectAccess(req, res, project._id);
 
   // Validate required fields if they are being updated
   const { name, type, totalUnits, targetRevenue } = req.body;
@@ -172,6 +199,8 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  verifyProjectAccess(req, res, project._id);
+
   // Check for dependencies before deletion
   const dependencies = {
     units: await Unit.countDocuments({ project: req.params.id }),
@@ -199,6 +228,9 @@ const deleteProject = asyncHandler(async (req, res) => {
     
     console.log(`Force deleted project ${project.name} with ${totalDependencies} related records`);
   }
+
+  // Clean up all project assignments
+  await ProjectAssignment.deleteMany({ project: req.params.id });
 
   // Delete the project
   await Project.findByIdAndDelete(req.params.id);

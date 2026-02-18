@@ -8,6 +8,10 @@ import Lead from '../models/leadModel.js';
 import Interaction from '../models/interactionModel.js';
 import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
+import {
+  verifyProjectAccess,
+  projectAccessFilter,
+} from '../utils/projectAccessHelper.js';
 
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
@@ -55,6 +59,8 @@ const createLead = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found or you do not have permission to access it.');
   }
+
+  verifyProjectAccess(req, res, project);
 
   // Create the lead with enhanced fields
   const lead = new Lead({
@@ -114,7 +120,7 @@ const getLeads = asyncHandler(async (req, res) => {
   } = req.query;
 
   // --- V1.1 Enhancement: Advanced RBAC Filtering ---
-  const query = { organization: req.user.organization };
+  const query = { organization: req.user.organization, ...projectAccessFilter(req) };
 
   // Apply filters
   if (status) query.status = status;
@@ -202,6 +208,8 @@ const getLeadById = asyncHandler(async (req, res) => {
     throw new Error('Lead not found');
   }
 
+  verifyProjectAccess(req, res, lead.project?._id || lead.project);
+
   // Add logic here to ensure a Sales Executive can only view their own lead details
   if (
     req.user.role === 'Sales Executive' &&
@@ -248,6 +256,8 @@ const updateLead = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Lead not found');
   }
+
+  verifyProjectAccess(req, res, lead.project);
 
   // Add logic here to ensure a Sales Executive can only update their own lead
   if (
@@ -300,6 +310,8 @@ const deleteLead = asyncHandler(async (req, res) => {
     throw new Error('Lead not found');
   }
 
+  verifyProjectAccess(req, res, lead.project);
+
   // Only allow deletion if lead is not booked
   if (lead.status === 'Booked') {
     res.status(400);
@@ -342,6 +354,8 @@ const addInteractionToLead = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Lead not found');
   }
+
+  verifyProjectAccess(req, res, lead.project);
 
   // Check if Sales Executive can add interactions to this lead
   if (
@@ -413,6 +427,8 @@ const getLeadInteractions = asyncHandler(async (req, res) => {
     throw new Error('Lead not found');
   }
 
+  verifyProjectAccess(req, res, lead.project);
+
   // Check if Sales Executive can view interactions for this lead
   if (
     req.user.role === 'Sales Executive' &&
@@ -480,6 +496,8 @@ const assignLead = asyncHandler(async (req, res) => {
     throw new Error('Lead not found');
   }
 
+  verifyProjectAccess(req, res, lead.project);
+
   // Update the assignment
   lead.assignedTo = assignedTo;
   await lead.save();
@@ -516,10 +534,11 @@ const bulkUpdateLeads = asyncHandler(async (req, res) => {
     throw new Error('Update data is required');
   }
 
-  // Ensure leads belong to user's organization
+  // Ensure leads belong to user's organization and accessible projects
   const leads = await Lead.find({
     _id: { $in: leadIds },
-    organization: req.user.organization
+    organization: req.user.organization,
+    ...projectAccessFilter(req),
   });
 
   if (leads.length !== leadIds.length) {
@@ -574,8 +593,9 @@ const getLeadStats = asyncHandler(async (req, res) => {
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - parseInt(period));
   
-  const query = { 
+  const query = {
     organization: req.user.organization,
+    ...projectAccessFilter(req),
     createdAt: { $gte: startDate }
   };
 

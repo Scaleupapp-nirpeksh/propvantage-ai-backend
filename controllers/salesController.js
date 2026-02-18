@@ -10,6 +10,10 @@ import Project from '../models/projectModel.js';
 import User from '../models/userModel.js';
 import { generateCostSheetForUnit } from '../services/pricingService.js';
 import { createPaymentPlan } from '../services/paymentService.js';
+import {
+  verifyProjectAccess,
+  projectAccessFilter,
+} from '../utils/projectAccessHelper.js';
 
 /**
  * @desc    Create a new sale (book a unit) - UPDATED for frontend compatibility
@@ -63,6 +67,8 @@ const createSale = asyncHandler(async (req, res) => {
     if (unit.status !== 'available') {
       throw new Error(`Unit is not available. Current status: ${unit.status}`);
     }
+
+    verifyProjectAccess(req, res, unit.project._id);
 
     // 3. Verify the lead exists
     const lead = await Lead.findOne({
@@ -234,7 +240,8 @@ const getSales = asyncHandler(async (req, res) => {
 
     // Build base query filters
     const baseFilters = {
-      organization: req.user.organization
+      organization: req.user.organization,
+      ...projectAccessFilter(req),
     };
 
     // Add status filter
@@ -450,6 +457,8 @@ const getSale = asyncHandler(async (req, res) => {
       throw new Error('Sale not found');
     }
 
+    verifyProjectAccess(req, res, sale.project?._id || sale.project);
+
     res.json({
       success: true,
       data: sale
@@ -480,6 +489,8 @@ const updateSale = asyncHandler(async (req, res) => {
       res.status(404);
       throw new Error('Sale not found');
     }
+
+    verifyProjectAccess(req, res, sale.project);
 
     // Update the sale
     Object.assign(sale, updateData);
@@ -524,6 +535,8 @@ const cancelSale = asyncHandler(async (req, res) => {
       throw new Error('Sale not found');
     }
 
+    verifyProjectAccess(req, res, sale.project);
+
     // Update sale status
     sale.status = 'cancelled';
     sale.cancellationReason = reason || 'No reason provided';
@@ -567,7 +580,7 @@ const getSalesAnalytics = asyncHandler(async (req, res) => {
     const { period = '30', projectId, salespersonId } = req.query;
     
     // Build filters
-    const filters = { organization: req.user.organization };
+    const filters = { organization: req.user.organization, ...projectAccessFilter(req) };
     if (projectId) filters.project = projectId;
     if (salespersonId) filters.salesPerson = salespersonId;
     
@@ -606,7 +619,7 @@ const getSalesAnalytics = asyncHandler(async (req, res) => {
 const getSalesPipeline = asyncHandler(async (req, res) => {
   try {
     const pipeline = await Sale.aggregate([
-      { $match: { organization: req.user.organization } },
+      { $match: { organization: req.user.organization, ...projectAccessFilter(req) } },
       {
         $group: {
           _id: '$status',

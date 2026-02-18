@@ -89,6 +89,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group', 'chat:delete_any', 'chat:manage_groups',
       // Dashboard
       'dashboard:leadership',
+      // Project Access
+      'project_access:view', 'project_access:manage',
     ],
   },
   {
@@ -136,6 +138,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
+      // Project Access
+      'project_access:view', 'project_access:manage',
     ],
   },
   {
@@ -168,6 +172,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
+      // Project Access
+      'project_access:view', 'project_access:manage',
     ],
   },
   {
@@ -210,6 +216,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Dashboard
       'dashboard:leadership',
+      // Project Access
+      'project_access:view', 'project_access:manage',
     ],
   },
   {
@@ -255,6 +263,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
       // Chat
       'chat:view', 'chat:send', 'chat:create_group',
+      // Project Access
+      'project_access:view', 'project_access:manage',
     ],
   },
   {
@@ -292,6 +302,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
       // Chat
       'chat:view', 'chat:send', 'chat:create_group',
+      // Project Access
+      'project_access:view',
     ],
   },
   {
@@ -326,6 +338,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
       // Chat
       'chat:view', 'chat:send', 'chat:create_group',
+      // Project Access
+      'project_access:view',
     ],
   },
   {
@@ -360,6 +374,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:create', 'tasks:update',
       // Chat
       'chat:view', 'chat:send',
+      // Project Access
+      'project_access:view',
     ],
   },
   {
@@ -384,6 +400,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:create', 'tasks:update',
       // Chat
       'chat:view', 'chat:send',
+      // Project Access
+      'project_access:view',
     ],
   },
   {
@@ -405,6 +423,8 @@ const DEFAULT_ROLES = [
       'tasks:view', 'tasks:create',
       // Chat
       'chat:view', 'chat:send',
+      // Project Access
+      'project_access:view',
     ],
   },
 ];

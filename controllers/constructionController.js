@@ -8,6 +8,7 @@ import Project from '../models/projectModel.js';
 import File from '../models/fileModel.js';
 import { uploadFileToS3 } from '../services/s3Service.js';
 import mongoose from 'mongoose';
+import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
 
 // =============================================================================
 // CONSTRUCTION MILESTONE MANAGEMENT
@@ -51,6 +52,9 @@ const createMilestone = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found or access denied');
   }
+
+  // Verify project-level access
+  verifyProjectAccess(req, res, project);
 
   // Validate date ranges
   if (new Date(plannedStartDate) >= new Date(plannedEndDate)) {
@@ -123,7 +127,7 @@ const getMilestones = asyncHandler(async (req, res) => {
     sortOrder = 'asc'
   } = req.query;
 
-  const query = { organization: req.user.organization };
+  const query = { organization: req.user.organization, ...projectAccessFilter(req) };
 
   // Apply filters
   if (project) query.project = project;
@@ -187,6 +191,9 @@ const getMilestoneById = asyncHandler(async (req, res) => {
     throw new Error('Milestone not found');
   }
 
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
+
   res.json({
     success: true,
     data: {
@@ -217,6 +224,9 @@ const updateMilestone = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Milestone not found');
   }
+
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
 
   // Validate date ranges if being updated
   if (req.body.plannedStartDate && req.body.plannedEndDate) {
@@ -261,6 +271,9 @@ const updateMilestoneProgress = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Milestone not found');
   }
+
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
 
   // Check if user has permission to update this milestone
   if (milestone.assignedTo.toString() !== req.user._id.toString() && 
@@ -312,6 +325,9 @@ const addQualityCheck = asyncHandler(async (req, res) => {
     throw new Error('Milestone not found');
   }
 
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
+
   const qualityCheck = milestone.addQualityCheck({
     checkName,
     description,
@@ -350,6 +366,9 @@ const updateQualityCheck = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Milestone not found');
   }
+
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
 
   const qualityCheck = milestone.qualityChecks.id(req.params.checkId);
   if (!qualityCheck) {
@@ -394,6 +413,9 @@ const addIssue = asyncHandler(async (req, res) => {
     throw new Error('Milestone not found');
   }
 
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
+
   const issue = milestone.addIssue({
     issueType,
     severity,
@@ -433,6 +455,9 @@ const uploadProgressPhotos = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Milestone not found');
   }
+
+  // Verify project-level access
+  verifyProjectAccess(req, res, milestone.project?._id || milestone.project);
 
   const uploadedPhotos = [];
 
@@ -512,6 +537,9 @@ const getProjectTimeline = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  // Verify project-level access
+  verifyProjectAccess(req, res, projectId);
+
   const query = { project: projectId };
   if (phase) query.phase = phase;
   if (status) query.status = status;
@@ -551,7 +579,16 @@ const getProjectTimeline = asyncHandler(async (req, res) => {
  * @access  Private (Management roles)
  */
 const getOverdueMilestones = asyncHandler(async (req, res) => {
-  const overdueMilestones = await ConstructionMilestone.getOverdueMilestones(req.user.organization);
+  let overdueMilestones = await ConstructionMilestone.getOverdueMilestones(req.user.organization);
+
+  // Filter by accessible projects
+  if (req.accessibleProjectIds) {
+    const accessibleIds = req.accessibleProjectIds.map(id => id.toString());
+    overdueMilestones = overdueMilestones.filter(m => {
+      const pid = (m.project?._id || m.project)?.toString();
+      return pid && accessibleIds.includes(pid);
+    });
+  }
 
   const milestoneDetails = overdueMilestones.map(milestone => ({
     _id: milestone._id,
@@ -588,10 +625,12 @@ const getConstructionAnalytics = asyncHandler(async (req, res) => {
   
   const matchConditions = {
     organization: req.user.organization,
-    createdAt: { $gte: startDate }
+    createdAt: { $gte: startDate },
+    ...projectAccessFilter(req)
   };
-  
+
   if (projectId) {
+    verifyProjectAccess(req, res, projectId);
     matchConditions.project = new mongoose.Types.ObjectId(projectId);
   }
 

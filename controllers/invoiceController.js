@@ -11,6 +11,7 @@ import Unit from '../models/unitModel.js';
 import Lead from '../models/leadModel.js';
 import Project from '../models/projectModel.js';
 import Organization from '../models/organizationModel.js';
+import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
 
 /**
  * Helper function to convert number to words for Indian currency
@@ -105,6 +106,9 @@ const createInvoiceFromSale = asyncHandler(async (req, res) => {
       res.status(404);
       throw new Error('Sale not found or not accessible');
     }
+
+    // Verify project-level access
+    verifyProjectAccess(req, res, sale.project?._id || sale.project);
 
     // Check if invoice already exists for this sale and type
     const existingInvoice = await Invoice.findOne({
@@ -279,7 +283,8 @@ const getInvoices = asyncHandler(async (req, res) => {
 
     // Build base query filters
     const baseFilters = {
-      organization: req.user.organization
+      organization: req.user.organization,
+      ...projectAccessFilter(req)
     };
 
     // Add status filter
@@ -475,6 +480,9 @@ const getInvoice = asyncHandler(async (req, res) => {
       throw new Error('Invoice not found');
     }
 
+    // Verify project-level access
+    verifyProjectAccess(req, res, invoice.project?._id || invoice.project);
+
     console.log('✅ Invoice fetched successfully:', invoice.invoiceNumber);
 
     res.json({
@@ -509,6 +517,9 @@ const updateInvoice = asyncHandler(async (req, res) => {
       res.status(404);
       throw new Error('Invoice not found');
     }
+
+    // Verify project-level access
+    verifyProjectAccess(req, res, invoice.project?._id || invoice.project);
 
     // Check if invoice can be updated
     if (invoice.status === 'paid') {
@@ -620,6 +631,9 @@ const recordInvoicePayment = asyncHandler(async (req, res) => {
       throw new Error('Invoice not found');
     }
 
+    // Verify project-level access
+    verifyProjectAccess(req, res, invoice.project?._id || invoice.project);
+
     if (invoice.status === 'cancelled') {
       res.status(400);
       throw new Error('Cannot record payment for cancelled invoice');
@@ -679,6 +693,9 @@ const cancelInvoice = asyncHandler(async (req, res) => {
       throw new Error('Invoice not found');
     }
 
+    // Verify project-level access
+    verifyProjectAccess(req, res, invoice.project?._id || invoice.project);
+
     // Cancel invoice
     await invoice.cancelInvoice({ reason }, req.user._id);
 
@@ -711,12 +728,14 @@ const getInvoiceStatistics = asyncHandler(async (req, res) => {
     const { period = '30', type = '' } = req.query;
     
     // Build filters
-    const filters = {};
-    
+    const filters = {
+      ...projectAccessFilter(req)
+    };
+
     if (type && type !== 'all') {
       filters.type = type;
     }
-    
+
     if (period !== 'all') {
       const days = parseInt(period);
       const startDate = new Date();
@@ -738,7 +757,16 @@ const getInvoiceStatistics = asyncHandler(async (req, res) => {
     .limit(10);
 
     // Get overdue invoices
-    const overdueInvoices = await Invoice.getOverdueInvoices(req.user.organization);
+    let overdueInvoices = await Invoice.getOverdueInvoices(req.user.organization);
+
+    // Filter by accessible projects
+    if (req.accessibleProjectIds) {
+      const accessibleIds = req.accessibleProjectIds.map(id => id.toString());
+      overdueInvoices = overdueInvoices.filter(inv => {
+        const pid = (inv.project?._id || inv.project)?.toString();
+        return pid && accessibleIds.includes(pid);
+      });
+    }
 
     console.log('✅ Invoice statistics fetched successfully');
 
@@ -766,7 +794,16 @@ const getInvoiceStatistics = asyncHandler(async (req, res) => {
  */
 const getOverdueInvoices = asyncHandler(async (req, res) => {
   try {
-    const overdueInvoices = await Invoice.getOverdueInvoices(req.user.organization);
+    let overdueInvoices = await Invoice.getOverdueInvoices(req.user.organization);
+
+    // Filter by accessible projects
+    if (req.accessibleProjectIds) {
+      const accessibleIds = req.accessibleProjectIds.map(id => id.toString());
+      overdueInvoices = overdueInvoices.filter(inv => {
+        const pid = (inv.project?._id || inv.project)?.toString();
+        return pid && accessibleIds.includes(pid);
+      });
+    }
 
     console.log('✅ Overdue invoices fetched successfully:', overdueInvoices.length);
 
@@ -801,8 +838,8 @@ const exportInvoices = asyncHandler(async (req, res) => {
     console.log('📊 Exporting invoices with filters:', req.query);
 
     // Build filters
-    const filters = { organization: req.user.organization };
-    
+    const filters = { organization: req.user.organization, ...projectAccessFilter(req) };
+
     if (status && status !== 'all') filters.status = status;
     if (type && type !== 'all') filters.type = type;
     if (project && project !== 'all') filters.project = project;

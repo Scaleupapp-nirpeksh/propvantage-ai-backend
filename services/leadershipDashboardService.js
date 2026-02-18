@@ -96,18 +96,36 @@ const arrayToMap = (arr, keyField = '_id') => {
   return map;
 };
 
+/**
+ * Build project-scope filter objects from an array of accessible project ID strings.
+ * Returns two filters:
+ *   - `pf`  → { project: { $in: [...] } }  for models with a `project` field
+ *   - `pidf` → { _id: { $in: [...] } }     for querying the Project model directly
+ * If accessibleProjectIds is null/empty, returns empty objects (no filtering).
+ */
+const buildProjectFilter = (accessibleProjectIds) => {
+  if (!accessibleProjectIds || accessibleProjectIds.length === 0) {
+    return { pf: {}, pidf: {} };
+  }
+  const ids = accessibleProjectIds.map(id => toObjectId(id));
+  return {
+    pf: { project: { $in: ids } },
+    pidf: { _id: { $in: ids } },
+  };
+};
+
 // ─── OVERVIEW: 8 PARALLEL SUB-FUNCTIONS ─────────────────────────────────────────
 
 /**
  * 1. Portfolio summary — current snapshot (no date filter)
  */
-const aggregatePortfolio = async (orgId) => {
+const aggregatePortfolio = async (orgId, pidf = {}, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
     const [projectStats, unitStats] = await Promise.all([
       Project.aggregate([
-        { $match: { organization: orgObjectId } },
+        { $match: { organization: orgObjectId, ...pidf } },
         {
           $facet: {
             byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
@@ -125,7 +143,7 @@ const aggregatePortfolio = async (orgId) => {
         },
       ]),
       Unit.aggregate([
-        { $match: { organization: orgObjectId } },
+        { $match: { organization: orgObjectId, ...pf } },
         {
           $facet: {
             byStatus: [
@@ -179,14 +197,14 @@ const aggregatePortfolio = async (orgId) => {
 /**
  * 2. Revenue & Collections — mixed snapshot + period
  */
-const aggregateRevenue = async (orgId, dateRange) => {
+const aggregateRevenue = async (orgId, dateRange, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
     const [allSales, periodSales, collections, periodCollections, overdueInstallments, outstandingPlans] = await Promise.all([
       // Total sales value (all time, exclude cancelled)
       Sale.aggregate([
-        { $match: { organization: orgObjectId, status: { $ne: 'Cancelled' } } },
+        { $match: { organization: orgObjectId, status: { $ne: 'Cancelled' }, ...pf } },
         { $group: { _id: null, total: { $sum: '$salePrice' }, count: { $sum: 1 } } },
       ]),
       // Period sales value
@@ -196,13 +214,14 @@ const aggregateRevenue = async (orgId, dateRange) => {
             organization: orgObjectId,
             status: { $ne: 'Cancelled' },
             bookingDate: { $gte: dateRange.start, $lte: dateRange.end },
+            ...pf,
           },
         },
         { $group: { _id: null, total: { $sum: '$salePrice' }, count: { $sum: 1 } } },
       ]),
       // Total collected (all time)
       PaymentTransaction.aggregate([
-        { $match: { organization: orgObjectId, status: { $in: ['completed', 'cleared'] } } },
+        { $match: { organization: orgObjectId, status: { $in: ['completed', 'cleared'] }, ...pf } },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       // Period collected
@@ -212,18 +231,19 @@ const aggregateRevenue = async (orgId, dateRange) => {
             organization: orgObjectId,
             status: { $in: ['completed', 'cleared'] },
             paymentDate: { $gte: dateRange.start, $lte: dateRange.end },
+            ...pf,
           },
         },
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]),
       // Overdue installments
       Installment.aggregate([
-        { $match: { organization: orgObjectId, status: 'overdue' } },
+        { $match: { organization: orgObjectId, status: 'overdue', ...pf } },
         { $group: { _id: null, total: { $sum: '$pendingAmount' }, count: { $sum: 1 } } },
       ]),
       // Outstanding from payment plans
       PaymentPlan.aggregate([
-        { $match: { organization: orgObjectId, status: { $in: ['active', 'defaulted'] } } },
+        { $match: { organization: orgObjectId, status: { $in: ['active', 'defaulted'] }, ...pf } },
         {
           $group: {
             _id: null,
@@ -260,14 +280,14 @@ const aggregateRevenue = async (orgId, dateRange) => {
 /**
  * 3. Sales pipeline — period filtered
  */
-const aggregateSalesPipeline = async (orgId, dateRange) => {
+const aggregateSalesPipeline = async (orgId, dateRange, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
     const [leadStats, periodLeads, saleStats] = await Promise.all([
       // All leads (current snapshot)
       Lead.aggregate([
-        { $match: { organization: orgObjectId } },
+        { $match: { organization: orgObjectId, ...pf } },
         {
           $facet: {
             byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
@@ -300,6 +320,7 @@ const aggregateSalesPipeline = async (orgId, dateRange) => {
           $match: {
             organization: orgObjectId,
             createdAt: { $gte: dateRange.start, $lte: dateRange.end },
+            ...pf,
           },
         },
         { $group: { _id: null, count: { $sum: 1 } } },
@@ -311,6 +332,7 @@ const aggregateSalesPipeline = async (orgId, dateRange) => {
             organization: orgObjectId,
             status: { $ne: 'Cancelled' },
             bookingDate: { $gte: dateRange.start, $lte: dateRange.end },
+            ...pf,
           },
         },
         {
@@ -350,14 +372,14 @@ const aggregateSalesPipeline = async (orgId, dateRange) => {
 /**
  * 4. Construction progress — current snapshot
  */
-const aggregateConstruction = async (orgId) => {
+const aggregateConstruction = async (orgId, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
     const now = new Date();
 
     const [milestoneStats, contractorStats] = await Promise.all([
       ConstructionMilestone.aggregate([
-        { $match: { organization: orgObjectId } },
+        { $match: { organization: orgObjectId, ...pf } },
         {
           $facet: {
             byPhase: [
@@ -459,12 +481,12 @@ const aggregateConstruction = async (orgId) => {
 /**
  * 5. Invoicing summary — mixed snapshot + period
  */
-const aggregateInvoicing = async (orgId, dateRange) => {
+const aggregateInvoicing = async (orgId, dateRange, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
     const result = await Invoice.aggregate([
-      { $match: { organization: orgObjectId } },
+      { $match: { organization: orgObjectId, ...pf } },
       {
         $facet: {
           byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
@@ -524,12 +546,12 @@ const aggregateInvoicing = async (orgId, dateRange) => {
 /**
  * 6. Channel partner summary — current snapshot
  */
-const aggregateChannelPartner = async (orgId) => {
+const aggregateChannelPartner = async (orgId, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
     const result = await PartnerCommission.aggregate([
-      { $match: { organization: orgObjectId } },
+      { $match: { organization: orgObjectId, ...pf } },
       {
         $facet: {
           byStatus: [
@@ -579,7 +601,7 @@ const aggregateChannelPartner = async (orgId) => {
 /**
  * 7. Operations / Tasks summary — mixed
  */
-const aggregateOperations = async (orgId, dateRange) => {
+const aggregateOperations = async (orgId, dateRange, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
     const now = new Date();
@@ -641,7 +663,7 @@ const aggregateOperations = async (orgId, dateRange) => {
 /**
  * 8. Team / User summary — snapshot
  */
-const aggregateTeam = async (orgId) => {
+const aggregateTeam = async (orgId, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
@@ -718,9 +740,10 @@ const aggregateTeam = async (orgId) => {
 
 // ─── OVERVIEW ORCHESTRATOR ──────────────────────────────────────────────────────
 
-const getLeadershipOverview = async (orgId, period, startDate, endDate) => {
+const getLeadershipOverview = async (orgId, period, startDate, endDate, accessibleProjectIds) => {
   await initializeModels();
   const dateRange = buildDateRange(period, startDate, endDate);
+  const { pf, pidf } = buildProjectFilter(accessibleProjectIds);
 
   console.log('👔 Generating leadership overview...', { orgId, period, dateRange });
 
@@ -734,14 +757,14 @@ const getLeadershipOverview = async (orgId, period, startDate, endDate) => {
     operations,
     team,
   ] = await Promise.all([
-    aggregatePortfolio(orgId),
-    aggregateRevenue(orgId, dateRange),
-    aggregateSalesPipeline(orgId, dateRange),
-    aggregateConstruction(orgId),
-    aggregateInvoicing(orgId, dateRange),
-    aggregateChannelPartner(orgId),
-    aggregateOperations(orgId, dateRange),
-    aggregateTeam(orgId),
+    aggregatePortfolio(orgId, pidf, pf),
+    aggregateRevenue(orgId, dateRange, pf),
+    aggregateSalesPipeline(orgId, dateRange, pf),
+    aggregateConstruction(orgId, pf),
+    aggregateInvoicing(orgId, dateRange, pf),
+    aggregateChannelPartner(orgId, pf),
+    aggregateOperations(orgId, dateRange, pf),
+    aggregateTeam(orgId, pf),
   ]);
 
   console.log('✅ Leadership overview generated');

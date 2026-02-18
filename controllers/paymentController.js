@@ -7,6 +7,7 @@ import Installment from '../models/installmentModel.js';
 import PaymentTransaction from '../models/paymentTransactionModel.js';
 import Project from '../models/projectModel.js';
 import Sale from '../models/salesModel.js';
+import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
 import {
   createPaymentPlan,
   updatePaymentTransaction,
@@ -40,6 +41,8 @@ const createNewPaymentPlan = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Sale not found or access denied.');
   }
+
+  verifyProjectAccess(req, res, sale.project);
 
   // Check if payment plan already exists
   const existingPlan = await PaymentPlan.findOne({ sale: saleId });
@@ -105,6 +108,8 @@ const getPaymentPlanDetails = asyncHandler(async (req, res) => {
     throw new Error('Payment plan not found.');
   }
 
+  verifyProjectAccess(req, res, paymentPlan.project);
+
   try {
     const summary = await getPaymentSummary(paymentPlan._id);
 
@@ -136,6 +141,8 @@ const updatePaymentPlan = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Payment plan not found.');
   }
+
+  verifyProjectAccess(req, res, paymentPlan.project);
 
   // Update payment terms if provided
   if (paymentTerms) {
@@ -188,6 +195,8 @@ const getInstallments = asyncHandler(async (req, res) => {
     throw new Error('Payment plan not found.');
   }
 
+  verifyProjectAccess(req, res, paymentPlan.project);
+
   // Build query filters
   const filters = { paymentPlan: planId };
   
@@ -226,6 +235,8 @@ const updateInstallment = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Installment not found.');
   }
+
+  verifyProjectAccess(req, res, installment.project);
 
   try {
     let result = { installment };
@@ -284,6 +295,8 @@ const waiveInstallment = asyncHandler(async (req, res) => {
     throw new Error('Installment not found.');
   }
 
+  verifyProjectAccess(req, res, installment.project);
+
   try {
     await installment.waiveInstallment(req.user._id, reason);
     
@@ -333,6 +346,8 @@ const recordPayment = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Payment plan not found.');
   }
+
+  verifyProjectAccess(req, res, paymentPlan.project);
 
   const generateTransactionNumber = () => {
     const timestamp = Date.now().toString();
@@ -392,6 +407,8 @@ const updatePaymentTransactionAmount = asyncHandler(async (req, res) => {
     throw new Error('Payment transaction not found.');
   }
 
+  verifyProjectAccess(req, res, transaction.project);
+
   try {
     const result = await updatePaymentTransaction(transactionId, amount, req.user._id, reason);
 
@@ -425,6 +442,8 @@ const getPaymentTransactions = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Payment plan not found.');
   }
+
+  verifyProjectAccess(req, res, paymentPlan.project);
 
   // Build query filters
   const filters = { paymentPlan: planId };
@@ -477,6 +496,8 @@ const verifyPaymentTransaction = asyncHandler(async (req, res) => {
     throw new Error('Payment transaction not found.');
   }
 
+  verifyProjectAccess(req, res, transaction.project);
+
   const verificationData = {
     verificationStatus,
     verificationNotes,
@@ -506,6 +527,17 @@ const getOverduePayments = asyncHandler(async (req, res) => {
   try {
     const report = await getOverduePaymentsReport(req.user.organization);
 
+    // Filter report by accessible projects
+    if (req.accessibleProjectIds && req.accessibleProjectIds.length > 0) {
+      const accessibleSet = new Set(req.accessibleProjectIds.map(id => id.toString()));
+      report.overdueByCustomer = report.overdueByCustomer.filter(entry =>
+        entry.project && accessibleSet.has(entry.project._id?.toString())
+      );
+      report.totalOverdueAmount = report.overdueByCustomer.reduce(
+        (sum, entry) => sum + entry.totalOverdue, 0
+      );
+    }
+
     res.json({
       success: true,
       data: report
@@ -523,7 +555,15 @@ const getOverduePayments = asyncHandler(async (req, res) => {
  */
 const getPaymentsDueToday = asyncHandler(async (req, res) => {
   try {
-    const dueToday = await Installment.getDueInstallments(req.user.organization);
+    let dueToday = await Installment.getDueInstallments(req.user.organization);
+
+    // Filter by accessible projects
+    if (req.accessibleProjectIds && req.accessibleProjectIds.length > 0) {
+      const accessibleSet = new Set(req.accessibleProjectIds.map(id => id.toString()));
+      dueToday = dueToday.filter(inst =>
+        inst.project && accessibleSet.has(inst.project._id?.toString())
+      );
+    }
 
     res.json({
       success: true,
@@ -552,12 +592,13 @@ const getPaymentStatistics = asyncHandler(async (req, res) => {
   try {
     // Get payment statistics
     const stats = await PaymentTransaction.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           organization: orgId,
+          ...projectAccessFilter(req),
           status: { $in: ['completed', 'cleared'] },
           paymentDate: { $gte: startDate }
-        } 
+        }
       },
       {
         $group: {
@@ -571,11 +612,12 @@ const getPaymentStatistics = asyncHandler(async (req, res) => {
 
     // Get overdue statistics
     const overdueStats = await Installment.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           organization: orgId,
+          ...projectAccessFilter(req),
           status: 'overdue'
-        } 
+        }
       },
       {
         $group: {
@@ -588,12 +630,13 @@ const getPaymentStatistics = asyncHandler(async (req, res) => {
 
     // Get payment method breakdown
     const methodBreakdown = await PaymentTransaction.aggregate([
-      { 
-        $match: { 
+      {
+        $match: {
           organization: orgId,
+          ...projectAccessFilter(req),
           status: { $in: ['completed', 'cleared'] },
           paymentDate: { $gte: startDate }
-        } 
+        }
       },
       {
         $group: {

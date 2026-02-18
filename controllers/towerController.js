@@ -7,6 +7,10 @@ import Tower from '../models/towerModel.js';
 import Unit from '../models/unitModel.js';
 import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
+import {
+  verifyProjectAccess,
+  projectAccessFilter,
+} from '../utils/projectAccessHelper.js';
 
 /**
  * @desc    Get all towers for a project - FIXED VERSION
@@ -16,7 +20,7 @@ import mongoose from 'mongoose';
 const getTowers = asyncHandler(async (req, res) => {
   const { projectId, status, includeInactive } = req.query;
 
-  let query = { organization: req.user.organization };
+  let query = { organization: req.user.organization, ...projectAccessFilter(req) };
 
   if (projectId) {
     query.project = projectId;
@@ -100,6 +104,8 @@ const getTowerById = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Tower not found');
   }
+
+  verifyProjectAccess(req, res, tower.project?._id || tower.project);
 
   const result = { tower };
 
@@ -196,6 +202,8 @@ const createTower = asyncHandler(async (req, res) => {
     throw new Error('Project not found or access denied');
   }
 
+  verifyProjectAccess(req, res, project);
+
   // Check if tower code already exists in the project
   const existingTower = await Tower.findOne({
     project,
@@ -272,6 +280,8 @@ const updateTower = asyncHandler(async (req, res) => {
     throw new Error('Tower not found');
   }
 
+  verifyProjectAccess(req, res, tower.project);
+
   // Set updatedBy
   updateData.updatedBy = req.user._id;
 
@@ -330,6 +340,8 @@ const getTowerAnalytics = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Tower not found');
   }
+
+  verifyProjectAccess(req, res, tower.project?._id || tower.project);
 
   try {
     // Manual analytics calculation
@@ -411,6 +423,8 @@ const bulkCreateUnits = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Tower not found');
   }
+
+  verifyProjectAccess(req, res, tower.project);
 
   const project = await Project.findById(tower.project);
   if (!project) {
@@ -537,6 +551,8 @@ const deleteTower = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Tower not found');
   }
+
+  verifyProjectAccess(req, res, tower.project);
 
   // Check if tower has any units
   const unitCount = await Unit.countDocuments({ tower: tower._id });

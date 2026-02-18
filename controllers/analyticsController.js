@@ -9,6 +9,7 @@ import Project from '../models/projectModel.js';
 import User from '../models/userModel.js';
 import Interaction from '../models/interactionModel.js';
 import mongoose from 'mongoose';
+import { projectAccessFilter } from '../utils/projectAccessHelper.js';
 
 /**
  * @desc    Get a high-level sales summary for the entire organization or a specific project
@@ -21,6 +22,7 @@ const getSalesSummary = asyncHandler(async (req, res) => {
   const query = {
     organization: req.user.organization,
     status: { $ne: 'Cancelled' }, // Exclude cancelled sales
+    ...projectAccessFilter(req),
   };
 
   if (projectId) {
@@ -40,7 +42,7 @@ const getSalesSummary = asyncHandler(async (req, res) => {
   ]);
 
   // 2. Get total available units
-  const unitQuery = { organization: req.user.organization };
+  const unitQuery = { organization: req.user.organization, ...projectAccessFilter(req) };
   if (projectId) {
     unitQuery.project = projectId;
   }
@@ -64,7 +66,7 @@ const getSalesSummary = asyncHandler(async (req, res) => {
 const getLeadFunnel = asyncHandler(async (req, res) => {
   const { projectId } = req.query;
 
-  const query = { organization: req.user.organization };
+  const query = { organization: req.user.organization, ...projectAccessFilter(req) };
   if (projectId) {
     query.project = projectId;
   }
@@ -107,9 +109,10 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
   // Build match conditions
   const matchConditions = {
     organization: orgId,
-    createdAt: { $gte: startDate }
+    createdAt: { $gte: startDate },
+    ...projectAccessFilter(req),
   };
-  
+
   if (projectId) {
     matchConditions.project = new mongoose.Types.ObjectId(projectId);
   }
@@ -153,7 +156,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 3. Lead Conversion Funnel
     const conversionFunnel = await Lead.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $group: {
           _id: '$status',
@@ -165,7 +168,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 4. Sales by Project
     const salesByProject = await Sale.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $lookup: {
           from: 'projects',
@@ -189,7 +192,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 5. Monthly Sales Trend
     const monthlySalesTrend = await Sale.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $group: {
           _id: {
@@ -206,7 +209,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 6. Lead Sources Performance
     const leadSourcesPerformance = await Lead.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $group: {
           _id: '$source',
@@ -239,7 +242,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 7. Sales Team Performance
     const teamPerformance = await Sale.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $lookup: {
           from: 'users',
@@ -267,7 +270,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
 
     // 8. Project Inventory Status
     const inventoryStatus = await Unit.aggregate([
-      { $match: { organization: orgId } },
+      { $match: { organization: orgId, ...projectAccessFilter(req) } },
       {
         $lookup: {
           from: 'projects',
@@ -344,8 +347,8 @@ const getSalesReport = asyncHandler(async (req, res) => {
   const orgId = req.user.organization;
   
   // Build match conditions
-  const matchConditions = { organization: orgId };
-  
+  const matchConditions = { organization: orgId, ...projectAccessFilter(req) };
+
   if (startDate && endDate) {
     matchConditions.bookingDate = {
       $gte: new Date(startDate),

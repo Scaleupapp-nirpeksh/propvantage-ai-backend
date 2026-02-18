@@ -8,6 +8,7 @@ import {
 } from '../services/pricingService.js';
 import Unit from '../models/unitModel.js';
 import Project from '../models/projectModel.js';
+import { verifyProjectAccess } from '../utils/projectAccessHelper.js';
 
 /**
  * @desc    Generate a cost sheet for a specific unit
@@ -24,6 +25,8 @@ const getCostSheet = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Unit not found or you do not have permission to access it.');
   }
+
+  verifyProjectAccess(req, res, unit.project);
 
   // 2. Call the service to generate the cost sheet
   const costSheet = await generateCostSheetForUnit(unitId, { discountPercentage });
@@ -45,6 +48,8 @@ const getDynamicPricing = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Project not found or you do not have permission to access it.');
   }
+
+  verifyProjectAccess(req, res, projectId);
 
   // 2. Call the service to calculate suggestions
   const pricingData = await calculateDynamicPricingForProject(projectId);

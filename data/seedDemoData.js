@@ -28,6 +28,7 @@ import TaskTemplate from '../models/taskTemplateModel.js';
 import Notification from '../models/notificationModel.js';
 import Conversation from '../models/conversationModel.js';
 import Message from '../models/messageModel.js';
+import ProjectAssignment from '../models/projectAssignmentModel.js';
 import { seedDefaultRoles } from './defaultRoles.js';
 
 dotenv.config();
@@ -401,6 +402,26 @@ async function seedDemoData() {
     console.log(`   ✅ ${project1.name} (${project1.type}, ${project1.status})`);
     console.log(`   ✅ ${project2.name} (${project2.type}, ${project2.status})`);
     console.log(`   ✅ ${project3.name} (${project3.type}, ${project3.status})\n`);
+
+    // ─── STEP 4a: ASSIGN ALL USERS TO ALL PROJECTS ────────────────
+    console.log('🔑  Assigning all users to all projects...');
+    const allProjects = [project1, project2, project3];
+    const allUsers = Object.values(users).flat();
+    const assignmentDocs = [];
+    for (const proj of allProjects) {
+      for (const u of allUsers) {
+        assignmentDocs.push({
+          organization: org._id,
+          user: u._id,
+          project: proj._id,
+          assignedBy: owner._id,
+          assignedAt: new Date(),
+          notes: 'Auto-assigned during demo data seeding',
+        });
+      }
+    }
+    await ProjectAssignment.insertMany(assignmentDocs);
+    console.log(`   ✅ Created ${assignmentDocs.length} project assignments (${allUsers.length} users × ${allProjects.length} projects)\n`);
 
     // ─── STEP 4b: CREATE TOWERS ──────────────────────────────────
     console.log('🏗️  Creating towers...');
@@ -2452,6 +2473,8 @@ async function cleanDemoData(orgId) {
   await DocumentCategory.deleteMany({ organization: orgId });
   console.log('   Deleting towers...');
   await Tower.deleteMany({ organization: orgId });
+  console.log('   Deleting project assignments...');
+  await ProjectAssignment.deleteMany({ organization: orgId });
   console.log('   Deleting projects...');
   await Project.deleteMany({ organization: orgId });
   console.log('   Deleting users...');
