@@ -301,6 +301,8 @@ const generateAnalysis = async ({
   userId,
   forceRefresh = false,
 }) => {
+  console.log(`[Competitive AI] Generating ${analysisType} analysis for project ${projectId}...`);
+
   // Dynamically import Project to avoid circular dependencies
   const { default: Project } = await import('../models/projectModel.js');
 
@@ -434,6 +436,7 @@ const generateAnalysis = async ({
       parsed = JSON.parse(content);
       break;
     } catch (err) {
+      console.error(`[Competitive AI] Attempt ${attempt} failed:`, err.message);
       if (attempt === 2) {
         throw new Error(`AI analysis failed after 2 attempts: ${err.message}`);
       }
