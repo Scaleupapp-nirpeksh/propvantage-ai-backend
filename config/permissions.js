@@ -219,6 +219,15 @@ export const PERMISSIONS = {
     MANAGE_POLICIES: 'approvals:manage_policies',
   },
 
+  // ─── COMPETITIVE ANALYSIS ────────────────────────────
+  COMPETITIVE_ANALYSIS: {
+    VIEW: 'competitive_analysis:view',
+    MANAGE_DATA: 'competitive_analysis:manage_data',
+    AI_RESEARCH: 'competitive_analysis:ai_research',
+    AI_RECOMMENDATIONS: 'competitive_analysis:ai_recommendations',
+    MANAGE_PROVIDERS: 'competitive_analysis:manage_providers',
+  },
+
   // ─── TASKS ────────────────────────────────────────────
   TASKS: {
     VIEW: 'tasks:view',

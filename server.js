@@ -50,7 +50,7 @@ import leadershipDashboardRoutes from './routes/leadershipDashboardRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import projectAccessRoutes from './routes/projectAccessRoutes.js';
 import approvalRoutes from './routes/approvalRoutes.js';
-
+import competitiveAnalysisRoutes from './routes/competitiveAnalysisRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -137,6 +137,8 @@ app.use('/api/leadership', leadershipDashboardRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/project-access', projectAccessRoutes);
 app.use('/api/approvals', approvalRoutes);
+app.use('/api/competitive-analysis', competitiveAnalysisRoutes);
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -194,7 +196,11 @@ app.get('/api/health', (req, res) => {
       'In-App Notifications',
       'Real-Time Chat & Messaging',
       'Entity-Linked Conversations',
-      'Project-Level Access Control'
+      'Project-Level Access Control',
+      'Competitive Market Analysis',
+      'AI Pricing Recommendations',
+      'AI Web Research',
+      'CSV Competitor Data Import'
     ]
   });
 });

@@ -61,7 +61,7 @@ const generateSalesForecast = async (options = {}) => {
     const baselineForecast = await calculateBaselineForecast(historicalData, pipelineData, forecastPeriod);
     
     // Apply AI-enhanced adjustments
-    const enhancedForecast = await applyAIEnhancements(baselineForecast, pipelineData, historicalData);
+    const enhancedForecast = await applyAIEnhancements(baselineForecast, pipelineData, historicalData, organizationId, projectId);
     
     // Generate different scenarios if requested
     const scenarios = includeScenarios ? await generateForecastScenarios(enhancedForecast, historicalData) : null;
@@ -276,7 +276,7 @@ const calculateBaselineForecast = async (historicalData, pipelineData, forecastP
  * @param {Object} historicalData - Historical data
  * @returns {Object} Enhanced forecast
  */
-const applyAIEnhancements = async (baselineForecast, pipelineData, historicalData) => {
+const applyAIEnhancements = async (baselineForecast, pipelineData, historicalData, organizationId, projectId) => {
   try {
     console.log('🤖 Applying AI enhancements to forecast...');
     
@@ -286,8 +286,8 @@ const applyAIEnhancements = async (baselineForecast, pipelineData, historicalDat
     // Lead quality factor (based on current lead scores)
     const qualityFactor = calculateLeadQualityFactor(pipelineData);
     
-    // External factors (market conditions, seasonality, etc.)
-    const externalFactors = await calculateExternalFactors();
+    // External factors (market conditions, seasonality, competitive data)
+    const externalFactors = await calculateExternalFactors(organizationId, projectId);
     
     // Apply AI adjustments to each month
     const enhancedMonthly = baselineForecast.monthlyBreakdown.map(month => {
@@ -439,19 +439,63 @@ const calculateLeadQualityFactor = (pipelineData) => {
 /**
  * Calculate external factors
  */
-const calculateExternalFactors = async () => {
-  // Placeholder for external factors
-  // In a real implementation, this could include:
-  // - Market conditions
-  // - Economic indicators
-  // - Competitor analysis
-  // - Seasonal factors
-  
+const calculateExternalFactors = async (organizationId, projectId) => {
+  let competitorFactor = 0;
+  let competitorContext = null;
+
+  try {
+    // Pull competitive data if available
+    if (organizationId && projectId) {
+      const project = await Project.findById(projectId).select('location priceRange').lean();
+      if (project?.location?.city && project?.location?.area) {
+        const { default: CompetitorProject } = await import('../models/competitorProjectModel.js');
+        const competitors = await CompetitorProject.find({
+          organization: organizationId,
+          'location.city': new RegExp(`^${project.location.city.trim()}$`, 'i'),
+          'location.area': new RegExp(`^${project.location.area.trim()}$`, 'i'),
+          isActive: true,
+          'pricing.pricePerSqft.avg': { $gt: 0 },
+        })
+          .select('pricing.pricePerSqft.avg projectStatus')
+          .lean();
+
+        if (competitors.length >= 3) {
+          const avgMarketPrice = competitors.reduce((s, c) => s + c.pricing.pricePerSqft.avg, 0) / competitors.length;
+          const ourAvgPrice = project.priceRange ? (project.priceRange.min + project.priceRange.max) / 2 : 0;
+
+          // If our price is lower than market avg, positive factor (competitive advantage)
+          // If higher, negative factor (price resistance)
+          if (ourAvgPrice > 0 && avgMarketPrice > 0) {
+            const priceDiff = (avgMarketPrice - ourAvgPrice) / avgMarketPrice;
+            competitorFactor = Math.max(-0.1, Math.min(0.1, priceDiff * 0.5));
+          }
+
+          // Supply pressure: more pre-launch/newly-launched projects = negative
+          const newSupply = competitors.filter(c =>
+            c.projectStatus === 'pre_launch' || c.projectStatus === 'newly_launched'
+          ).length;
+          const supplyPressure = newSupply > competitors.length * 0.4 ? -0.03 : 0;
+          competitorFactor += supplyPressure;
+
+          competitorContext = {
+            competitorCount: competitors.length,
+            marketAvgPrice: Math.round(avgMarketPrice),
+            ourAvgPrice: Math.round(ourAvgPrice),
+            newSupplyProjects: newSupply,
+          };
+        }
+      }
+    }
+  } catch {
+    // Silently continue if competitive data unavailable
+  }
+
   return {
-    marketCondition: 0.05, // Slightly positive market
+    marketCondition: 0.05,
     economicIndicator: 0.02,
-    competitorActivity: -0.01,
-    seasonalFactor: 0.03
+    competitorActivity: competitorFactor,
+    seasonalFactor: 0.03,
+    competitorContext,
   };
 };
 

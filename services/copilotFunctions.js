@@ -14,6 +14,7 @@ import Installment from '../models/installmentModel.js';
 import PartnerCommission from '../models/partnerCommissionModel.js';
 import User from '../models/userModel.js';
 import Task from '../models/taskModel.js';
+import CompetitorProject from '../models/competitorProjectModel.js';
 
 // =============================================================================
 // HELPER UTILITIES
@@ -533,6 +534,55 @@ export const copilotTools = [
           period: { type: 'string', enum: ['this_week', 'this_month', 'this_quarter', 'this_year', 'last_month'] },
           category: { type: 'string', enum: ['Lead & Sales', 'Payment & Collection', 'Construction', 'Document & Compliance', 'Customer Service', 'Approval', 'General'] },
         },
+      },
+    },
+  },
+  // ---- Competitive Analysis Functions ----
+  {
+    type: 'function',
+    function: {
+      name: 'get_market_comparison',
+      description: 'Compare our project pricing against competitor projects in the same locality. Use for questions like "how does our pricing compare", "are we competitive", "what are competitors charging", "market rate comparison".',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: { type: 'string', description: 'City name' },
+          area: { type: 'string', description: 'Locality/area name' },
+          project_id: { type: 'string', description: 'Our project ID to compare against' },
+        },
+        required: ['city', 'area'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_competitive_positioning',
+      description: 'Get our competitive position in the market — segment, percentile ranking, advantages, disadvantages. Use for questions like "market position", "where do we stand", "competitive advantage", "pricing position".',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: { type: 'string', description: 'City name' },
+          area: { type: 'string', description: 'Locality/area name' },
+          project_id: { type: 'string', description: 'Our project ID' },
+        },
+        required: ['city', 'area'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_pricing_recommendations',
+      description: 'Get AI-driven pricing recommendations based on competitive data. Use for questions like "should we change price", "optimal pricing", "pricing strategy", "what price should we set".',
+      parameters: {
+        type: 'object',
+        properties: {
+          city: { type: 'string', description: 'City name' },
+          area: { type: 'string', description: 'Locality/area name' },
+          project_id: { type: 'string', description: 'Our project ID' },
+        },
+        required: ['city', 'area'],
       },
     },
   },
@@ -1936,6 +1986,124 @@ const functionImplementations = {
         bucket: a._id === 0 ? '1-7 days' : a._id === 8 ? '8-14 days' : a._id === 15 ? '15-30 days' : '30+ days',
         count: a.count,
       })),
+    };
+  },
+
+  // ---- Competitive Analysis Functions ----
+
+  get_market_comparison: async (params, user) => {
+    const filter = {
+      organization: user.organization,
+      'location.city': new RegExp(params.city, 'i'),
+      'location.area': new RegExp(params.area, 'i'),
+      isActive: true,
+    };
+
+    const competitors = await CompetitorProject.find(filter)
+      .select('projectName developerName pricing.pricePerSqft projectStatus totalUnits dataCollectionDate confidenceScore')
+      .sort({ 'pricing.pricePerSqft.avg': -1 })
+      .limit(15)
+      .lean();
+
+    let ourProject = null;
+    if (params.project_id) {
+      ourProject = await Project.findOne({ _id: params.project_id, organization: user.organization })
+        .select('name priceRange totalUnits')
+        .lean();
+    }
+
+    const prices = competitors.map(c => c.pricing?.pricePerSqft?.avg).filter(Boolean);
+    const avgMarketRate = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null;
+
+    return {
+      locality: `${params.area}, ${params.city}`,
+      competitorCount: competitors.length,
+      marketAvgPricePerSqft: avgMarketRate,
+      marketMinPricePerSqft: prices.length > 0 ? Math.min(...prices) : null,
+      marketMaxPricePerSqft: prices.length > 0 ? Math.max(...prices) : null,
+      ourProject: ourProject ? { name: ourProject.name, priceRange: ourProject.priceRange } : null,
+      competitors: competitors.map(c => ({
+        name: c.projectName,
+        developer: c.developerName,
+        pricePerSqft: c.pricing?.pricePerSqft,
+        status: c.projectStatus,
+        totalUnits: c.totalUnits,
+        confidence: c.confidenceScore,
+      })),
+    };
+  },
+
+  get_competitive_positioning: async (params, user) => {
+    const competitors = await CompetitorProject.find({
+      organization: user.organization,
+      'location.city': new RegExp(params.city, 'i'),
+      'location.area': new RegExp(params.area, 'i'),
+      isActive: true,
+    })
+      .select('projectName pricing.pricePerSqft.avg amenities')
+      .lean();
+
+    let ourProject = null;
+    if (params.project_id) {
+      ourProject = await Project.findOne({ _id: params.project_id, organization: user.organization })
+        .select('name priceRange amenities')
+        .lean();
+    }
+
+    const prices = competitors.map(c => c.pricing?.pricePerSqft?.avg).filter(Boolean).sort((a, b) => a - b);
+    const avgPrice = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+
+    let percentile = null;
+    let segment = 'unknown';
+    if (ourProject?.priceRange?.min && prices.length > 0) {
+      const ourAvg = (ourProject.priceRange.min + ourProject.priceRange.max) / 2;
+      const below = prices.filter(p => p < ourAvg).length;
+      percentile = Math.round((below / prices.length) * 100);
+      if (percentile < 20) segment = 'budget';
+      else if (percentile < 40) segment = 'affordable';
+      else if (percentile < 60) segment = 'mid_segment';
+      else if (percentile < 80) segment = 'premium';
+      else segment = 'luxury';
+    }
+
+    return {
+      locality: `${params.area}, ${params.city}`,
+      totalCompetitors: competitors.length,
+      marketAvgPricePerSqft: avgPrice,
+      ourProject: ourProject?.name || null,
+      positioning: { segment, pricePercentile: percentile },
+    };
+  },
+
+  get_pricing_recommendations: async (params, user) => {
+    const competitors = await CompetitorProject.find({
+      organization: user.organization,
+      'location.city': new RegExp(params.city, 'i'),
+      'location.area': new RegExp(params.area, 'i'),
+      isActive: true,
+    })
+      .select('projectName pricing confidenceScore')
+      .sort({ confidenceScore: -1 })
+      .limit(10)
+      .lean();
+
+    const prices = competitors.map(c => c.pricing?.pricePerSqft?.avg).filter(Boolean);
+    const floorRises = competitors.map(c => c.pricing?.floorRiseCharge).filter(Boolean);
+    const parkingCovered = competitors.map(c => c.pricing?.parkingCharges?.covered).filter(Boolean);
+
+    const avg = (arr) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+    return {
+      locality: `${params.area}, ${params.city}`,
+      basedOnCompetitors: competitors.length,
+      recommendations: {
+        pricePerSqft: { avg: avg(prices), min: prices.length ? Math.min(...prices) : null, max: prices.length ? Math.max(...prices) : null },
+        floorRiseCharge: { avg: avg(floorRises), min: floorRises.length ? Math.min(...floorRises) : null, max: floorRises.length ? Math.max(...floorRises) : null },
+        coveredParking: { avg: avg(parkingCovered) },
+      },
+      note: competitors.length < 3
+        ? 'Limited competitive data. Add more competitors or run AI Research for better recommendations.'
+        : `Based on ${competitors.length} competitor projects in ${params.area}, ${params.city}.`,
     };
   },
 };

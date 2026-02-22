@@ -93,6 +93,9 @@ const DEFAULT_ROLES = [
       'project_access:view', 'project_access:manage',
       // Approvals — full (including policy management)
       'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject', 'approvals:manage_policies',
+      // Competitive Analysis — full
+      'competitive_analysis:view', 'competitive_analysis:manage_data', 'competitive_analysis:ai_research',
+      'competitive_analysis:ai_recommendations', 'competitive_analysis:manage_providers',
     ],
   },
   {
@@ -144,6 +147,9 @@ const DEFAULT_ROLES = [
       'project_access:view', 'project_access:manage',
       // Approvals — view, approve, reject (no policy management)
       'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view, manage data, research, recommendations
+      'competitive_analysis:view', 'competitive_analysis:manage_data',
+      'competitive_analysis:ai_research', 'competitive_analysis:ai_recommendations',
     ],
   },
   {
@@ -180,6 +186,9 @@ const DEFAULT_ROLES = [
       'project_access:view', 'project_access:manage',
       // Approvals — view, approve, reject
       'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view, manage data, research, recommendations
+      'competitive_analysis:view', 'competitive_analysis:manage_data',
+      'competitive_analysis:ai_research', 'competitive_analysis:ai_recommendations',
     ],
   },
   {
@@ -226,6 +235,9 @@ const DEFAULT_ROLES = [
       'project_access:view', 'project_access:manage',
       // Approvals — view, approve, reject
       'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view, research, recommendations (no manage_data)
+      'competitive_analysis:view', 'competitive_analysis:ai_research',
+      'competitive_analysis:ai_recommendations',
     ],
   },
   {
@@ -275,6 +287,8 @@ const DEFAULT_ROLES = [
       'project_access:view', 'project_access:manage',
       // Approvals — view, approve, reject
       'approvals:view', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view, manage data
+      'competitive_analysis:view', 'competitive_analysis:manage_data',
     ],
   },
   {
@@ -316,6 +330,8 @@ const DEFAULT_ROLES = [
       'project_access:view',
       // Approvals — view, approve, reject
       'approvals:view', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view only
+      'competitive_analysis:view',
     ],
   },
   {
@@ -354,6 +370,8 @@ const DEFAULT_ROLES = [
       'project_access:view',
       // Approvals — view, approve, reject
       'approvals:view', 'approvals:approve', 'approvals:reject',
+      // Competitive Analysis — view only
+      'competitive_analysis:view',
     ],
   },
   {

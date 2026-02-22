@@ -11,6 +11,7 @@ import {
   verifyProjectAccess,
   projectIdAccessFilter,
 } from '../utils/projectAccessHelper.js';
+import CompetitorProject from '../models/competitorProjectModel.js';
 
 /**
  * @desc    Create a new project
@@ -101,12 +102,53 @@ const getProjectById = asyncHandler(async (req, res) => {
     soldUnits: units.filter(unit => unit.status === 'Sold').length,
   };
 
+  // Lightweight competitive summary (if data exists for this locality)
+  let competitiveData = null;
+  if (project.location?.city && project.location?.area) {
+    const competitorCount = await CompetitorProject.countDocuments({
+      organization: req.user.organization,
+      'location.city': new RegExp(`^${project.location.city.trim()}$`, 'i'),
+      'location.area': new RegExp(`^${project.location.area.trim()}$`, 'i'),
+      isActive: true,
+    });
+
+    if (competitorCount > 0) {
+      const avgResult = await CompetitorProject.aggregate([
+        {
+          $match: {
+            organization: project.organization,
+            'location.city': { $regex: new RegExp(`^${project.location.city.trim()}$`, 'i') },
+            'location.area': { $regex: new RegExp(`^${project.location.area.trim()}$`, 'i') },
+            isActive: true,
+            'pricing.pricePerSqft.avg': { $gt: 0 },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            avgPricePerSqft: { $avg: '$pricing.pricePerSqft.avg' },
+            minPricePerSqft: { $min: '$pricing.pricePerSqft.min' },
+            maxPricePerSqft: { $max: '$pricing.pricePerSqft.max' },
+          },
+        },
+      ]);
+
+      competitiveData = {
+        competitorCount,
+        marketAvgPricePerSqft: avgResult[0] ? Math.round(avgResult[0].avgPricePerSqft) : null,
+        marketMinPricePerSqft: avgResult[0] ? Math.round(avgResult[0].minPricePerSqft) : null,
+        marketMaxPricePerSqft: avgResult[0] ? Math.round(avgResult[0].maxPricePerSqft) : null,
+      };
+    }
+  }
+
   res.json({
     success: true,
     data: {
       ...project.toObject(),
       units,
-      statistics: projectStats
+      statistics: projectStats,
+      competitiveData,
     }
   });
 });
