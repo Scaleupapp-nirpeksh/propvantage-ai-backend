@@ -198,8 +198,6 @@ const executeResearch = async ({
     const searchResponse = await openai.chat.completions.create({
       model: SEARCH_MODEL,
       messages: [{ role: 'user', content: searchPrompt }],
-      temperature: 0.3,
-      max_tokens: 4000,
     });
 
     rawResearch = searchResponse.choices[0].message.content;
