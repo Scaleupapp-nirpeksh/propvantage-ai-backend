@@ -1,18 +1,24 @@
 // File: services/aiResearchService.js
-// Description: AI Web Research service using OpenAI GPT-4o Search Preview
-// to automatically research competitor real estate pricing data from the web.
+// Description: AI Web Research service — hybrid approach:
+//   Step 1 (Web Search): OpenAI gpt-4o-search-preview (unique web browsing capability)
+//   Step 2 (Extraction): Anthropic Claude Sonnet (superior analytical reasoning + JSON output)
 
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import mongoose from 'mongoose';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Model for web search — has built-in web browsing capability
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Model for web search — has built-in web browsing capability (OpenAI only)
 const SEARCH_MODEL = 'gpt-4o-search-preview';
-// Model for structured extraction — reliable JSON output
-const EXTRACTION_MODEL = 'gpt-4o';
+// Model for structured extraction — Claude Sonnet for better analytical precision
+const EXTRACTION_MODEL = 'claude-sonnet-4-20250514';
 
 // ─── Research Prompts ─────────────────────────────────────────
 
@@ -223,18 +229,18 @@ const executeResearch = async ({
   let parsedProjects;
   const extractionPrompt = buildExtractionPrompt(rawResearch, city, area);
 
-  // Try extraction with retry on JSON parse failure
+  // Try extraction with retry on JSON parse failure (using Claude)
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const extractionResponse = await openai.chat.completions.create({
+      const extractionResponse = await anthropic.messages.create({
         model: EXTRACTION_MODEL,
-        messages: [{ role: 'user', content: extractionPrompt }],
+        max_tokens: 8000,
         temperature: attempt === 1 ? 0.2 : 0.1,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' },
+        system: 'You are a data extraction specialist. You always respond with valid JSON only — no markdown fences, no comments, no explanation outside the JSON.',
+        messages: [{ role: 'user', content: extractionPrompt }],
       });
 
-      const content = extractionResponse.choices[0].message.content;
+      const content = extractionResponse.content[0].text;
       const parsed = JSON.parse(content);
       parsedProjects = parsed.projects || parsed;
 
@@ -243,7 +249,7 @@ const executeResearch = async ({
       }
 
       console.log(
-        `[AI Research] Extracted ${parsedProjects.length} projects (attempt ${attempt})`
+        `[AI Research] Extracted ${parsedProjects.length} projects via Claude (attempt ${attempt})`
       );
       break;
     } catch (err) {
@@ -365,7 +371,7 @@ const executeResearch = async ({
               collectedAt: new Date(),
               collectedBy: userId,
               confidence: 'estimated',
-              notes: `Auto-researched via GPT-4 web search for ${area}, ${city}`,
+              notes: `Auto-researched via OpenAI web search + Claude extraction for ${area}, ${city}`,
             },
           ],
           createdBy: userId,

@@ -1,8 +1,8 @@
 // File: services/competitiveAIService.js
 // Description: AI Recommendation Engine for competitive analysis.
-// Uses GPT-4 to generate 7 analysis types based on project data + market data.
+// Uses Anthropic Claude for superior analytical reasoning on 7 analysis types.
 
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import CompetitorProject from '../models/competitorProjectModel.js';
 import CompetitiveAnalysis from '../models/competitiveAnalysisModel.js';
 import {
@@ -11,9 +11,9 @@ import {
   computeDataHash,
 } from './competitiveDataService.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const AI_MODEL = 'gpt-4o';
+const AI_MODEL = 'claude-sonnet-4-20250514';
 
 // ─── System Prompt ───────────────────────────────────────────
 
@@ -411,7 +411,7 @@ const generateAnalysis = async ({
     pricingRules: project.pricingRules,
   };
 
-  // ── Step 5: Call GPT-4 ───────────────────────────────────
+  // ── Step 5: Call Claude for analysis ─────────────────────
   const promptBuilder = ANALYSIS_PROMPTS[analysisType];
   if (!promptBuilder) {
     throw new Error(`Unknown analysis type: ${analysisType}`);
@@ -422,18 +422,15 @@ const generateAnalysis = async ({
   let parsed;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await openai.chat.completions.create({
+      const response = await anthropic.messages.create({
         model: AI_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
+        max_tokens: 8000,
         temperature: attempt === 1 ? 0.3 : 0.2,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' },
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
       });
 
-      const content = response.choices[0].message.content;
+      const content = response.content[0].text;
       parsed = JSON.parse(content);
       break;
     } catch (err) {
