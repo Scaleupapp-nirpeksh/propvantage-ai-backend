@@ -12,7 +12,7 @@ const openai = new OpenAI({
 // Model for web search — has built-in web browsing capability
 const SEARCH_MODEL = 'gpt-4o-search-preview';
 // Model for structured extraction — reliable JSON output
-const EXTRACTION_MODEL = 'gpt-4';
+const EXTRACTION_MODEL = 'gpt-4o';
 
 // ─── Research Prompts ─────────────────────────────────────────
 

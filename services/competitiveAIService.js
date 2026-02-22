@@ -13,7 +13,7 @@ import {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const AI_MODEL = 'gpt-4';
+const AI_MODEL = 'gpt-4o';
 
 // ─── System Prompt ───────────────────────────────────────────
 
