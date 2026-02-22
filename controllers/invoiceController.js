@@ -112,6 +112,7 @@ const createInvoiceFromSale = asyncHandler(async (req, res) => {
 
     // Check if invoice already exists for this sale and type
     const existingInvoice = await Invoice.findOne({
+      organization: req.user.organization,
       sale: saleId,
       type: type,
       status: { $ne: 'cancelled' }
@@ -729,6 +730,7 @@ const getInvoiceStatistics = asyncHandler(async (req, res) => {
     
     // Build filters
     const filters = {
+      organization: req.user.organization,
       ...projectAccessFilter(req)
     };
 

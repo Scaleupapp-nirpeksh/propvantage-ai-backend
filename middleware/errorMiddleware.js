@@ -27,13 +27,24 @@ const notFound = (req, res, next) => {
     // Sometimes an error might come in with a 200 status code, so we set it to 500 if it's not an error status.
     let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
     let message = err.message;
-  
+
     // Specific check for Mongoose CastError (e.g., invalid ObjectId)
     if (err.name === 'CastError' && err.kind === 'ObjectId') {
       statusCode = 404;
       message = 'Resource not found';
     }
-  
+
+    // Mongoose validation errors — return field-level details without internals
+    if (err.name === 'ValidationError') {
+      statusCode = 400;
+      message = Object.values(err.errors).map(e => e.message).join('; ');
+    }
+
+    // Never expose internal error details in production
+    if (process.env.NODE_ENV === 'production' && statusCode === 500) {
+      message = 'Internal server error';
+    }
+
     res.status(statusCode).json({
       message: message,
       stack: process.env.NODE_ENV === 'production' ? null : err.stack,

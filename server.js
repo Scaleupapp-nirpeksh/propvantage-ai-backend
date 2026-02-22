@@ -7,6 +7,10 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import helmet from 'helmet';
+import mongoSanitize from 'express-mongo-sanitize';
+import xss from 'xss-clean';
+import hpp from 'hpp';
 import connectDB from './config/db.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { initializeSocket } from './socket/socketHandler.js';
@@ -54,10 +58,45 @@ connectDB();
 
 const app = express();
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased limit for AI conversation analysis
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// ─── Security Middleware (order matters) ───────────────────────────────────────
+
+// 1. Security headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.)
+app.use(helmet());
+
+// 2. CORS — restrict to allowed origins only
+const allowedOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map(o => o.trim())
+  : ['http://localhost:3000', 'http://localhost:3001'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman in dev)
+    if (!origin && process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// 3. Body parsing with reduced limits
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// 4. NoSQL injection prevention — strips $ and . from req.body/query/params
+app.use(mongoSanitize());
+
+// 5. XSS prevention — sanitizes user input in body/query/params
+app.use(xss());
+
+// 6. HTTP Parameter Pollution prevention
+app.use(hpp());
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -336,7 +375,7 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || '*',
+    origin: allowedOrigins,
     credentials: true,
   },
   pingTimeout: 60000,

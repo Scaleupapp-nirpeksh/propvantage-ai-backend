@@ -20,7 +20,9 @@ const protect = asyncHandler(async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
+      });
 
       // Populate roleRef to get permissions in a single query
       req.user = await User.findById(decoded.userId)
@@ -55,7 +57,6 @@ const protect = asyncHandler(async (req, res, next) => {
 
       next();
     } catch (error) {
-      console.error(error);
       res.status(401);
       throw new Error('Not authorized, token failed');
     }

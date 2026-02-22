@@ -27,8 +27,8 @@ router.get(
   getPermissionCatalog
 );
 
-// Ownership transfer
-router.post('/transfer-ownership', transferOwnership);
+// Ownership transfer — requires roles:assign permission (defense-in-depth; controller also checks isOwner)
+router.post('/transfer-ownership', hasPermission(PERMISSIONS.ROLES.ASSIGN), transferOwnership);
 
 // Role CRUD
 router

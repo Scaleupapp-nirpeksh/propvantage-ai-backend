@@ -6,6 +6,11 @@ import User from '../models/userModel.js';
 import Organization from '../models/organizationModel.js';
 import generateToken from '../utils/generateToken.js';
 import { seedDefaultRoles } from '../data/defaultRoles.js';
+import { logAuditEvent } from '../utils/auditLogger.js';
+
+// Account lockout configuration
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCK_DURATION_MINUTES = 15;
 
 /**
  * @desc    Register a new user and their organization
@@ -72,6 +77,16 @@ const registerUser = asyncHandler(async (req, res) => {
       // Populate roleRef for the response
       await user.populate('roleRef', 'name slug level permissions isOwnerRole');
 
+      // Audit: successful registration
+      logAuditEvent({
+        action: 'REGISTER',
+        severity: 'info',
+        message: `New organization "${orgName}" registered by ${email}`,
+        actor: { userId: user._id, email },
+        organization: organization._id,
+        req,
+      });
+
       res.status(201).json({
         _id: user._id,
         firstName: user.firstName,
@@ -116,40 +131,118 @@ const loginUser = asyncHandler(async (req, res) => {
 
   // 1. Find user by email with roleRef populated
   const user = await User.findOne({ email })
-    .select('+password')
+    .select('+password +loginAttempts +lockUntil')
     .populate('roleRef', 'name slug level permissions isOwnerRole');
 
-  // 2. Check if user exists and password matches
-  if (user && (await user.matchPassword(password))) {
-    const token = generateToken(res, user._id);
-
-    // Update last login timestamp
-    user.lastLogin = Date.now();
-    await user.save();
-
-    res.json({
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      role: user.roleRef?.name || user.role,
-      roleRef: user.roleRef
-        ? {
-            _id: user.roleRef._id,
-            name: user.roleRef.name,
-            slug: user.roleRef.slug,
-            level: user.roleRef.level,
-            permissions: user.roleRef.permissions,
-            isOwnerRole: user.roleRef.isOwnerRole,
-          }
-        : null,
-      organization: user.organization,
-      token,
+  // 2. If user not found, log and reject (generic message to prevent enumeration)
+  if (!user) {
+    logAuditEvent({
+      action: 'LOGIN_FAILED',
+      severity: 'warn',
+      message: `Login attempt for non-existent email: ${email}`,
+      actor: { email },
+      req,
     });
-  } else {
     res.status(401);
     throw new Error('Invalid email or password');
   }
+
+  // 3. Check if account is locked
+  if (user.isLocked) {
+    const remainingMs = user.lockUntil - Date.now();
+    const remainingMin = Math.ceil(remainingMs / 60000);
+
+    logAuditEvent({
+      action: 'LOGIN_LOCKED',
+      severity: 'warn',
+      message: `Login attempt on locked account: ${email}`,
+      actor: { userId: user._id, email },
+      organization: user.organization,
+      metadata: { remainingMinutes: remainingMin },
+      req,
+    });
+
+    res.status(423);
+    throw new Error(
+      `Account is temporarily locked due to too many failed attempts. Try again in ${remainingMin} minute(s).`
+    );
+  }
+
+  // 4. Verify password
+  const isMatch = await user.matchPassword(password);
+
+  if (!isMatch) {
+    // Increment failed attempts
+    user.loginAttempts = (user.loginAttempts || 0) + 1;
+
+    // Lock account if max attempts exceeded
+    if (user.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+      user.lockUntil = new Date(Date.now() + LOCK_DURATION_MINUTES * 60 * 1000);
+
+      logAuditEvent({
+        action: 'LOGIN_LOCKED',
+        severity: 'critical',
+        message: `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts: ${email}`,
+        actor: { userId: user._id, email },
+        organization: user.organization,
+        metadata: { attempts: user.loginAttempts, lockDurationMinutes: LOCK_DURATION_MINUTES },
+        req,
+      });
+    } else {
+      logAuditEvent({
+        action: 'LOGIN_FAILED',
+        severity: 'warn',
+        message: `Failed login attempt ${user.loginAttempts}/${MAX_LOGIN_ATTEMPTS} for: ${email}`,
+        actor: { userId: user._id, email },
+        organization: user.organization,
+        metadata: { attempt: user.loginAttempts },
+        req,
+      });
+    }
+
+    await user.save({ validateBeforeSave: false });
+
+    res.status(401);
+    throw new Error('Invalid email or password');
+  }
+
+  // 5. Successful login — reset lockout counters
+  user.loginAttempts = 0;
+  user.lockUntil = null;
+  user.lastLogin = Date.now();
+  await user.save({ validateBeforeSave: false });
+
+  const token = generateToken(res, user._id);
+
+  // Audit: successful login
+  logAuditEvent({
+    action: 'LOGIN_SUCCESS',
+    severity: 'info',
+    message: `Successful login: ${email}`,
+    actor: { userId: user._id, email },
+    organization: user.organization,
+    req,
+  });
+
+  res.json({
+    _id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    role: user.roleRef?.name || user.role,
+    roleRef: user.roleRef
+      ? {
+          _id: user.roleRef._id,
+          name: user.roleRef.name,
+          slug: user.roleRef.slug,
+          level: user.roleRef.level,
+          permissions: user.roleRef.permissions,
+          isOwnerRole: user.roleRef.isOwnerRole,
+        }
+      : null,
+    organization: user.organization,
+    token,
+  });
 });
 
 export { registerUser, loginUser };
