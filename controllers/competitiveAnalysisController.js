@@ -580,20 +580,30 @@ const getAnalysis = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await generateAnalysis({
-    organizationId: req.user.organization,
-    projectId: req.params.projectId,
-    analysisType: type,
-    userId: req.user._id,
-  });
+  try {
+    const result = await generateAnalysis({
+      organizationId: req.user.organization,
+      projectId: req.params.projectId,
+      analysisType: type,
+      userId: req.user._id,
+    });
 
-  res.json({
-    success: true,
-    data: result,
-    message: result.fromCache
-      ? 'Returning cached analysis (data unchanged since last generation)'
-      : `${type} analysis generated successfully`,
-  });
+    res.json({
+      success: true,
+      data: result,
+      message: result.fromCache
+        ? 'Returning cached analysis (data unchanged since last generation)'
+        : `${type} analysis generated successfully`,
+    });
+  } catch (err) {
+    // Map known service errors to proper HTTP status codes
+    if (err.message.includes('not found') || err.message.includes('No competitor data')) {
+      res.status(404);
+    } else if (err.message.includes('must have location')) {
+      res.status(400);
+    }
+    throw err;
+  }
 });
 
 /**
@@ -611,19 +621,28 @@ const refreshAnalysis = asyncHandler(async (req, res) => {
     );
   }
 
-  const result = await generateAnalysis({
-    organizationId: req.user.organization,
-    projectId: req.params.projectId,
-    analysisType: type,
-    userId: req.user._id,
-    forceRefresh: true,
-  });
+  try {
+    const result = await generateAnalysis({
+      organizationId: req.user.organization,
+      projectId: req.params.projectId,
+      analysisType: type,
+      userId: req.user._id,
+      forceRefresh: true,
+    });
 
-  res.json({
-    success: true,
-    data: result,
-    message: `${type} analysis refreshed successfully`,
-  });
+    res.json({
+      success: true,
+      data: result,
+      message: `${type} analysis refreshed successfully`,
+    });
+  } catch (err) {
+    if (err.message.includes('not found') || err.message.includes('No competitor data')) {
+      res.status(404);
+    } else if (err.message.includes('must have location')) {
+      res.status(400);
+    }
+    throw err;
+  }
 });
 
 export {
