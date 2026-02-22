@@ -62,9 +62,10 @@ class TaskAutoGenerationService {
       this.generateRecurringTasks();
     });
 
-    // Escalation checks every 30 minutes
+    // Escalation checks every 30 minutes (tasks + approvals)
     cron.schedule('*/30 * * * *', () => {
       this.checkEscalations();
+      this.checkApprovalEscalations();
     });
 
     console.log('✅ [TaskAutoGen] Service started with cron schedules');
@@ -624,6 +625,20 @@ class TaskAutoGenerationService {
     } catch (err) {
       console.error(
         `❌ [TaskAutoGen] checkEscalations error: ${err.message}`
+      );
+    }
+  }
+  /**
+   * Check for pending approval requests that have exceeded their SLA deadline.
+   * Delegates to approvalService.checkApprovalEscalations().
+   */
+  async checkApprovalEscalations() {
+    try {
+      const { checkApprovalEscalations } = await import('./approvalService.js');
+      await checkApprovalEscalations();
+    } catch (err) {
+      console.error(
+        `❌ [TaskAutoGen] checkApprovalEscalations error: ${err.message}`
       );
     }
   }

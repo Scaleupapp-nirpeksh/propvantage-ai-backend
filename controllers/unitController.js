@@ -7,6 +7,10 @@ import Unit from '../models/unitModel.js';
 import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
 import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
+import {
+  checkApprovalRequired,
+  createApprovalRequest,
+} from '../services/approvalService.js';
 
 // Import Tower model with error handling for backward compatibility
 let Tower;
@@ -652,6 +656,52 @@ const updateUnit = asyncHandler(async (req, res) => {
     if (floor > towerExists.totalFloors) {
       res.status(400);
       throw new Error(`Floor ${floor} exceeds tower's total floors (${towerExists.totalFloors})`);
+    }
+  }
+
+  // Check if price override approval is needed
+  if (updateData.currentPrice !== undefined && unit.basePrice > 0) {
+    const deviationPercent =
+      Math.abs(updateData.currentPrice - unit.basePrice) / unit.basePrice * 100;
+
+    const priceCheck = await checkApprovalRequired(
+      req.user.organization,
+      'PRICE_OVERRIDE',
+      { deviationPercent, requestedBy: req.user._id },
+      unit.project
+    );
+
+    if (priceCheck.required) {
+      await createApprovalRequest({
+        organizationId: req.user.organization,
+        projectId: unit.project,
+        approvalType: 'PRICE_OVERRIDE',
+        entityType: 'Unit',
+        entityId: unit._id,
+        requestedBy: req.user._id,
+        requestData: {
+          currentPrice: unit.currentPrice,
+          proposedPrice: updateData.currentPrice,
+          basePrice: unit.basePrice,
+          deviationPercentage: deviationPercent,
+        },
+        priority: deviationPercent > 20 ? 'High' : 'Medium',
+        title: `Price override on ${unit.unitNumber}`,
+        description: `Price change from ₹${unit.currentPrice.toLocaleString('en-IN')} to ₹${updateData.currentPrice.toLocaleString('en-IN')} (${deviationPercent.toFixed(1)}% deviation from base ₹${unit.basePrice.toLocaleString('en-IN')})`,
+      });
+
+      // Remove currentPrice from update — don't apply until approved
+      delete updateData.currentPrice;
+
+      // If price was the only update, return early
+      if (Object.keys(updateData).length === 0) {
+        return res.json({
+          success: true,
+          pendingApproval: true,
+          data: unit,
+          message: `Price change submitted for approval (${deviationPercent.toFixed(1)}% deviation exceeds threshold)`,
+        });
+      }
     }
   }
 

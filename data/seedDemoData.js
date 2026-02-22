@@ -29,7 +29,10 @@ import Notification from '../models/notificationModel.js';
 import Conversation from '../models/conversationModel.js';
 import Message from '../models/messageModel.js';
 import ProjectAssignment from '../models/projectAssignmentModel.js';
+import ApprovalPolicy from '../models/approvalPolicyModel.js';
+import ApprovalRequest from '../models/approvalRequestModel.js';
 import { seedDefaultRoles } from './defaultRoles.js';
+import { seedDefaultApprovalPolicies } from './seedDefaultApprovalPolicies.js';
 
 dotenv.config();
 
@@ -114,6 +117,11 @@ async function seedDemoData() {
       roleMap[r.slug] = r;
     });
     console.log(`   ✅ Created ${roles.length} roles\n`);
+
+    // ─── STEP 2b: SEED DEFAULT APPROVAL POLICIES ─────────────────────
+    console.log('2️⃣b Seeding default approval policies...');
+    const approvalPolicies = await seedDefaultApprovalPolicies(org._id, tempUserId);
+    console.log(`   ✅ Created ${approvalPolicies.length} approval policies\n`);
 
     // ─── STEP 3: CREATE USERS ──────────────────────────────────────
     console.log('3️⃣  Creating users...');
@@ -2407,6 +2415,7 @@ async function seedDemoData() {
     console.log(`    Tasks:                  ${createdTasks.length}`);
     console.log(`    Task Templates:         ${templates.length}`);
     console.log(`    Notifications:          ${notificationsToCreate.length}`);
+    console.log(`    Approval Policies:      ${approvalPolicies.length}`);
     console.log(`    Chat Conversations:     ${totalConversations}`);
     console.log(`    Chat Messages:          ${totalChatMessages}`);
     console.log('');
@@ -2439,6 +2448,10 @@ async function cleanDemoData(orgId) {
   await Message.deleteMany({ organization: orgId });
   console.log('   Deleting chat conversations...');
   await Conversation.deleteMany({ organization: orgId });
+  console.log('   Deleting approval requests...');
+  await ApprovalRequest.deleteMany({ organization: orgId });
+  console.log('   Deleting approval policies...');
+  await ApprovalPolicy.deleteMany({ organization: orgId });
   console.log('   Deleting notifications...');
   await Notification.deleteMany({ organization: orgId });
   console.log('   Deleting task templates...');

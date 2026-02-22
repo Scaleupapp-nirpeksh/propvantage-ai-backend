@@ -14,6 +14,10 @@ import {
   verifyProjectAccess,
   projectAccessFilter,
 } from '../utils/projectAccessHelper.js';
+import {
+  checkApprovalRequired,
+  createApprovalRequest,
+} from '../services/approvalService.js';
 
 /**
  * @desc    Create a new sale (book a unit) - UPDATED for frontend compatibility
@@ -107,6 +111,92 @@ const createSale = asyncHandler(async (req, res) => {
     // 6. Create the sale record with proper discount amount
     const calculatedDiscountAmount = discountAmount || (finalSalePrice * discountPercentage / 100);
 
+    // 6a. Check if discount approval is required
+    const effectiveDiscountPercent = unit.currentPrice > 0
+      ? (calculatedDiscountAmount / unit.currentPrice) * 100
+      : discountPercentage;
+
+    if (effectiveDiscountPercent > 0) {
+      const approvalCheck = await checkApprovalRequired(
+        req.user.organization,
+        'DISCOUNT_APPROVAL',
+        {
+          discountPercentage: effectiveDiscountPercent,
+          userRoleLevel: req.user.roleRef?.level ?? 5,
+          userRoleSlug: req.user.roleRef?.slug,
+          requestedBy: req.user._id,
+        },
+        unit.project._id
+      );
+
+      if (approvalCheck.required) {
+        // Create sale in Pending Approval status — unit blocked, NOT sold
+        const pendingSale = new Sale({
+          project: unit.project._id,
+          unit: unitId,
+          lead: leadId,
+          organization: req.user.organization,
+          salesPerson: req.user._id,
+          salePrice: finalSalePrice,
+          discountAmount: calculatedDiscountAmount,
+          costSheetSnapshot: costSheet,
+          status: 'Pending Approval',
+          bookingDate: new Date(),
+          paymentPlanSnapshot: paymentPlanSnapshot,
+        });
+        const createdPendingSale = await pendingSale.save({ session });
+
+        // Block the unit (not sold yet)
+        unit.status = 'blocked';
+        await unit.save({ session });
+
+        // Do NOT update lead status yet
+        // Do NOT create payment plan yet
+
+        await session.commitTransaction();
+        session.endSession();
+
+        // Create approval request (outside transaction to avoid rollback on failure)
+        const approvalResult = await createApprovalRequest({
+          organizationId: req.user.organization,
+          projectId: unit.project._id,
+          approvalType: 'DISCOUNT_APPROVAL',
+          entityType: 'Sale',
+          entityId: createdPendingSale._id,
+          requestedBy: req.user._id,
+          requestData: {
+            discountPercentage: effectiveDiscountPercent,
+            discountAmount: calculatedDiscountAmount,
+            salePrice: finalSalePrice,
+            originalPrice: unit.currentPrice,
+            unitId: unitId,
+          },
+          priority: effectiveDiscountPercent > 15 ? 'High' : 'Medium',
+          title: `Discount ${effectiveDiscountPercent.toFixed(1)}% on ${unit.unitNumber}`,
+          description: `${req.user.roleRef?.slug || 'User'} requesting ${effectiveDiscountPercent.toFixed(1)}% discount (₹${calculatedDiscountAmount.toLocaleString('en-IN')}) on unit ${unit.unitNumber}. Sale price: ₹${finalSalePrice.toLocaleString('en-IN')}.`,
+        });
+
+        // Link approval request to sale
+        createdPendingSale.approvalRequest = approvalResult.approvalRequest?._id;
+        await createdPendingSale.save();
+
+        const populatedPendingSale = await Sale.findById(createdPendingSale._id)
+          .populate('project', 'name location type status')
+          .populate('unit', 'unitNumber fullAddress floor area')
+          .populate('lead', 'firstName lastName email phone source priority')
+          .populate('salesPerson', 'firstName lastName email role');
+
+        return res.status(201).json({
+          success: true,
+          pendingApproval: true,
+          data: populatedPendingSale,
+          approvalRequest: approvalResult.approvalRequest?.requestNumber,
+          message: `Sale created pending discount approval (${effectiveDiscountPercent.toFixed(1)}% exceeds your limit)`,
+        });
+      }
+    }
+
+    // 6b. No approval needed — proceed with normal flow
     const sale = new Sale({
       project: unit.project._id,
       unit: unitId,
@@ -121,7 +211,7 @@ const createSale = asyncHandler(async (req, res) => {
       // Store the payment plan snapshot for reference
       paymentPlanSnapshot: paymentPlanSnapshot
     });
-    
+
     const createdSale = await sale.save({ session });
     console.log('✅ Sale created successfully:', createdSale._id);
 
@@ -536,6 +626,41 @@ const cancelSale = asyncHandler(async (req, res) => {
     }
 
     verifyProjectAccess(req, res, sale.project);
+
+    // Check if cancellation approval is required
+    const cancellationCheck = await checkApprovalRequired(
+      req.user.organization,
+      'SALE_CANCELLATION',
+      { requestedBy: req.user._id },
+      sale.project
+    );
+
+    if (cancellationCheck.required) {
+      await session.abortTransaction();
+      session.endSession();
+
+      await createApprovalRequest({
+        organizationId: req.user.organization,
+        projectId: sale.project,
+        approvalType: 'SALE_CANCELLATION',
+        entityType: 'Sale',
+        entityId: sale._id,
+        requestedBy: req.user._id,
+        requestData: {
+          cancellationReason: reason || 'No reason provided',
+          salePriceAtCancellation: sale.salePrice,
+        },
+        priority: 'High',
+        title: `Cancel sale for unit ${sale.unit}`,
+        description: `Cancellation requested for sale worth ₹${sale.salePrice?.toLocaleString('en-IN')}. Reason: ${reason || 'No reason provided'}`,
+      });
+
+      return res.json({
+        success: true,
+        pendingApproval: true,
+        message: 'Cancellation request submitted for approval',
+      });
+    }
 
     // Update sale status
     sale.status = 'cancelled';

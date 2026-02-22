@@ -19,6 +19,12 @@ export const NOTIFICATION_TYPES = [
   'task_due_soon',
   'task_escalated',
   'task_auto_generated',
+  // Approval events
+  'approval_requested',
+  'approval_approved',
+  'approval_rejected',
+  'approval_escalated',
+  'approval_cancelled',
   // Business events
   'payment_overdue',
   'lead_follow_up_due',
@@ -33,7 +39,7 @@ export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 
 export const RELATED_ENTITY_TYPES = [
   'Task', 'Lead', 'Sale', 'Installment', 'ConstructionMilestone', 'Invoice', 'Project',
-  'Conversation',
+  'Conversation', 'ApprovalRequest',
 ];
 
 // =============================================================================

@@ -49,6 +49,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import leadershipDashboardRoutes from './routes/leadershipDashboardRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import projectAccessRoutes from './routes/projectAccessRoutes.js';
+import approvalRoutes from './routes/approvalRoutes.js';
 
 
 // Load environment variables
@@ -135,6 +136,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/leadership', leadershipDashboardRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/project-access', projectAccessRoutes);
+app.use('/api/approvals', approvalRoutes);
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -167,6 +169,7 @@ app.get('/api/health', (req, res) => {
       'Commission Management',
       'Document Management',
       'Document Approval Workflows',
+      'Centralized Approval System',
       'Version Control',
       'Document Templates',
       'Construction Management', 

@@ -113,6 +113,7 @@ const LINKED_ENTITY_TYPES = [
   'Contractor',
   'User',
   'File',
+  'ApprovalRequest',
 ];
 
 const TRIGGER_TYPES = [

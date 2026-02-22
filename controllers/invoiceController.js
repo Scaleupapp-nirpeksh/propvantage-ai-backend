@@ -12,6 +12,10 @@ import Lead from '../models/leadModel.js';
 import Project from '../models/projectModel.js';
 import Organization from '../models/organizationModel.js';
 import { verifyProjectAccess, projectAccessFilter } from '../utils/projectAccessHelper.js';
+import {
+  checkApprovalRequired,
+  createApprovalRequest,
+} from '../services/approvalService.js';
 
 /**
  * Helper function to convert number to words for Indian currency
@@ -533,8 +537,50 @@ const updateInvoice = asyncHandler(async (req, res) => {
       throw new Error('Cannot update a cancelled invoice');
     }
 
+    // Check if invoice approval is needed when transitioning to 'sent'
+    if (updateData.status === 'sent' && ['draft', 'generated'].includes(invoice.status)) {
+      const invoiceApprovalCheck = await checkApprovalRequired(
+        req.user.organization,
+        'INVOICE_APPROVAL',
+        { requestedBy: req.user._id },
+        invoice.project?._id || invoice.project
+      );
+
+      if (invoiceApprovalCheck.required) {
+        invoice.approvalWorkflow = {
+          requiresApproval: true,
+          approvalStatus: 'pending',
+        };
+        await invoice.save();
+
+        await createApprovalRequest({
+          organizationId: req.user.organization,
+          projectId: invoice.project?._id || invoice.project,
+          approvalType: 'INVOICE_APPROVAL',
+          entityType: 'Invoice',
+          entityId: invoice._id,
+          requestedBy: req.user._id,
+          requestData: {
+            invoiceAmount: invoice.financialSummary?.totalAmount,
+            invoiceType: invoice.type,
+          },
+          priority: 'Medium',
+          title: `Invoice ${invoice.invoiceNumber} approval`,
+          description: `Approval required before sending invoice ${invoice.invoiceNumber} (₹${invoice.financialSummary?.totalAmount?.toLocaleString('en-IN')}) to customer.`,
+        });
+
+        return res.json({
+          success: true,
+          pendingApproval: true,
+          data: invoice,
+          message: 'Invoice submitted for approval before sending',
+        });
+      }
+    }
+
     // Update allowed fields
     const allowedUpdates = [
+      'status',
       'dueDate',
       'notes.customerNotes',
       'notes.paymentInstructions',

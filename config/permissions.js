@@ -210,6 +210,15 @@ export const PERMISSIONS = {
     MANAGE_GROUPS: 'chat:manage_groups',
   },
 
+  // ─── APPROVALS ────────────────────────────────────────
+  APPROVALS: {
+    VIEW: 'approvals:view',
+    VIEW_ALL: 'approvals:view_all',
+    APPROVE: 'approvals:approve',
+    REJECT: 'approvals:reject',
+    MANAGE_POLICIES: 'approvals:manage_policies',
+  },
+
   // ─── TASKS ────────────────────────────────────────────
   TASKS: {
     VIEW: 'tasks:view',

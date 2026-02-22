@@ -58,12 +58,17 @@ const saleSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Booked', 'Agreement Signed', 'Registered', 'Completed', 'Cancelled'],
+      enum: ['Pending Approval', 'Booked', 'Agreement Signed', 'Registered', 'Completed', 'Cancelled'],
       default: 'Booked',
     },
     commission: {
       rate: { type: Number },
       amount: { type: Number },
+    },
+    // Approval reference (populated when sale requires discount approval)
+    approvalRequest: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ApprovalRequest',
     },
     // Add discount tracking for frontend compatibility
     discountAmount: {

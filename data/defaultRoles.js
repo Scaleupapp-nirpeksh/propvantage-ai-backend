@@ -91,6 +91,8 @@ const DEFAULT_ROLES = [
       'dashboard:leadership',
       // Project Access
       'project_access:view', 'project_access:manage',
+      // Approvals — full (including policy management)
+      'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject', 'approvals:manage_policies',
     ],
   },
   {
@@ -140,6 +142,8 @@ const DEFAULT_ROLES = [
       'dashboard:leadership',
       // Project Access
       'project_access:view', 'project_access:manage',
+      // Approvals — view, approve, reject (no policy management)
+      'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -174,6 +178,8 @@ const DEFAULT_ROLES = [
       'dashboard:leadership',
       // Project Access
       'project_access:view', 'project_access:manage',
+      // Approvals — view, approve, reject
+      'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -218,6 +224,8 @@ const DEFAULT_ROLES = [
       'dashboard:leadership',
       // Project Access
       'project_access:view', 'project_access:manage',
+      // Approvals — view, approve, reject
+      'approvals:view', 'approvals:view_all', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -265,6 +273,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Project Access
       'project_access:view', 'project_access:manage',
+      // Approvals — view, approve, reject
+      'approvals:view', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -304,6 +314,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Project Access
       'project_access:view',
+      // Approvals — view, approve, reject
+      'approvals:view', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -340,6 +352,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send', 'chat:create_group',
       // Project Access
       'project_access:view',
+      // Approvals — view, approve, reject
+      'approvals:view', 'approvals:approve', 'approvals:reject',
     ],
   },
   {
@@ -376,6 +390,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send',
       // Project Access
       'project_access:view',
+      // Approvals — view only
+      'approvals:view',
     ],
   },
   {
@@ -402,6 +418,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send',
       // Project Access
       'project_access:view',
+      // Approvals — view only
+      'approvals:view',
     ],
   },
   {
@@ -425,6 +443,8 @@ const DEFAULT_ROLES = [
       'chat:view', 'chat:send',
       // Project Access
       'project_access:view',
+      // Approvals — view only
+      'approvals:view',
     ],
   },
 ];
