@@ -326,6 +326,7 @@ const generateAnalysis = async ({
   }
 
   // ── Step 2: Load competitors ─────────────────────────────
+  console.log(`[Competitive AI] Step 1 done. Project: ${project.name}, Location: ${city}, ${area}`);
   const allCompetitors = await CompetitorProject.find({
     organization: organizationId,
     'location.city': new RegExp(`^${city.trim()}$`, 'i'),
@@ -341,6 +342,8 @@ const generateAnalysis = async ({
       `No competitor data found for ${area}, ${city}. Add competitors or run AI Research first.`
     );
   }
+
+  console.log(`[Competitive AI] Step 2 done. Found ${allCompetitors.length} competitors`);
 
   // Data hash for cache invalidation
   const currentDataHash = computeDataHash(allCompetitors);
@@ -413,6 +416,8 @@ const generateAnalysis = async ({
     pricingRules: project.pricingRules,
   };
 
+  console.log(`[Competitive AI] Step 4 done. Filtered to ${filteredCompetitors.length} competitors. Calling Claude...`);
+
   // ── Step 5: Call Claude for analysis ─────────────────────
   const promptBuilder = ANALYSIS_PROMPTS[analysisType];
   if (!promptBuilder) {
@@ -420,6 +425,7 @@ const generateAnalysis = async ({
   }
 
   const userPrompt = promptBuilder(slimProject, slimCompetitors, overview);
+  console.log(`[Competitive AI] Prompt built. Length: ${userPrompt.length} chars. Sending to Claude...`);
 
   let parsed;
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -432,11 +438,13 @@ const generateAnalysis = async ({
         messages: [{ role: 'user', content: userPrompt }],
       });
 
+      console.log(`[Competitive AI] Claude responded. Parsing JSON...`);
       const content = response.content[0].text;
       parsed = JSON.parse(content);
+      console.log(`[Competitive AI] JSON parsed successfully.`);
       break;
     } catch (err) {
-      console.error(`[Competitive AI] Attempt ${attempt} failed:`, err.message);
+      console.error(`[Competitive AI] Attempt ${attempt} failed:`, err.message, err.status || '');
       if (attempt === 2) {
         throw new Error(`AI analysis failed after 2 attempts: ${err.message}`);
       }
