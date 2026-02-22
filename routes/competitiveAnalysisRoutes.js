@@ -16,6 +16,7 @@ import {
   updateProviderConfig,
   triggerProviderSync,
   triggerAIResearch,
+  getResearchStatus,
   importCompetitorCSV,
   exportCompetitorCSV,
   downloadCSVTemplate,
@@ -82,6 +83,12 @@ router.post(
   '/research',
   hasPermission(PERMISSIONS.COMPETITIVE_ANALYSIS.AI_RESEARCH),
   triggerAIResearch
+);
+
+router.get(
+  '/research/:jobKey',
+  hasPermission(PERMISSIONS.COMPETITIVE_ANALYSIS.AI_RESEARCH),
+  getResearchStatus
 );
 
 // ─── CSV Import / Export ─────────────────────────────────────

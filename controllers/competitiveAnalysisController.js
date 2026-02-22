@@ -3,6 +3,7 @@
 
 import asyncHandler from 'express-async-handler';
 import CompetitorProject from '../models/competitorProjectModel.js';
+import CompetitiveAnalysis from '../models/competitiveAnalysisModel.js';
 import DataProviderConfig from '../models/dataProviderConfigModel.js';
 import { executeResearch } from '../services/aiResearchService.js';
 import { importCSV, exportCSV, generateCSVTemplate } from '../services/csvImportService.js';
@@ -13,6 +14,22 @@ import {
   getDemandSupplyAnalysis as fetchDemandSupply,
 } from '../services/competitiveDataService.js';
 import { generateAnalysis } from '../services/competitiveAIService.js';
+
+// ─── Background Job Tracker ──────────────────────────────────
+// In-memory map to track long-running AI jobs and prevent duplicates.
+// Structure: jobKey → { startedAt, status, result?, error? }
+const activeJobs = new Map();
+
+// Auto-clear stale jobs (failed/stuck for >10 minutes)
+const JOB_STALE_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, job] of activeJobs) {
+    if (now - job.startedAt > JOB_STALE_MS) {
+      activeJobs.delete(key);
+    }
+  }
+}, 60 * 1000);
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -391,19 +408,117 @@ const triggerAIResearch = asyncHandler(async (req, res) => {
     throw new Error('Both "city" and "area" are required for AI research');
   }
 
-  const result = await executeResearch({
+  const trimmedCity = city.trim();
+  const trimmedArea = area.trim();
+  const jobKey = `research_${req.user.organization}_${trimmedCity}_${trimmedArea}`.toLowerCase();
+
+  // Check if a research job is already running for this locality
+  if (activeJobs.has(jobKey)) {
+    const job = activeJobs.get(jobKey);
+
+    if (job.status === 'completed') {
+      const result = job.result;
+      activeJobs.delete(jobKey);
+      return res.json({
+        success: true,
+        status: 'completed',
+        data: result,
+        message: result.researchSummary,
+      });
+    }
+
+    if (job.status === 'failed') {
+      const errMsg = job.error;
+      activeJobs.delete(jobKey);
+      res.status(500);
+      throw new Error(errMsg);
+    }
+
+    // Still processing
+    return res.status(202).json({
+      success: true,
+      status: 'processing',
+      message: `AI research for ${trimmedArea}, ${trimmedCity} is in progress. Poll GET /api/competitive-analysis/research/${encodeURIComponent(jobKey)} for results.`,
+      jobKey,
+      startedAt: job.startedAt,
+      elapsedMs: Date.now() - job.startedAt,
+    });
+  }
+
+  // Start background research job
+  const startedAt = Date.now();
+  activeJobs.set(jobKey, { startedAt, status: 'processing' });
+
+  executeResearch({
     organizationId: req.user.organization,
-    city: city.trim(),
-    area: area.trim(),
+    city: trimmedCity,
+    area: trimmedArea,
     projectType,
     additionalContext,
     userId: req.user._id,
-  });
+  })
+    .then((result) => {
+      activeJobs.set(jobKey, { startedAt, status: 'completed', result });
+      console.log(`[AI Research] Background job completed: ${jobKey}`);
+      // Auto-clear completed jobs after 5 minutes
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
+    })
+    .catch((err) => {
+      activeJobs.set(jobKey, { startedAt, status: 'failed', error: err.message });
+      console.error(`[AI Research] Background job failed: ${jobKey}:`, err.message);
+      // Auto-clear failed jobs after 5 minutes
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
+    });
 
-  res.json({
+  res.status(202).json({
     success: true,
-    data: result,
-    message: result.researchSummary,
+    status: 'processing',
+    message: `AI research started for ${trimmedArea}, ${trimmedCity}. Poll this endpoint again (same body) or GET /api/competitive-analysis/research/${encodeURIComponent(jobKey)} for results.`,
+    jobKey,
+    startedAt,
+  });
+});
+
+/**
+ * @desc    Poll research job status
+ * @route   GET /api/competitive-analysis/research/:jobKey
+ * @access  Private (competitive_analysis:ai_research)
+ */
+const getResearchStatus = asyncHandler(async (req, res) => {
+  const { jobKey } = req.params;
+
+  if (!activeJobs.has(jobKey)) {
+    res.status(404);
+    throw new Error('Research job not found or already expired. Trigger a new research.');
+  }
+
+  const job = activeJobs.get(jobKey);
+
+  if (job.status === 'completed') {
+    const result = job.result;
+    activeJobs.delete(jobKey);
+    return res.json({
+      success: true,
+      status: 'completed',
+      data: result,
+      message: result.researchSummary,
+    });
+  }
+
+  if (job.status === 'failed') {
+    const errMsg = job.error;
+    activeJobs.delete(jobKey);
+    res.status(500);
+    throw new Error(errMsg);
+  }
+
+  res.status(202).json({
+    success: true,
+    status: 'processing',
+    message: 'Research is still in progress...',
+    jobKey,
+    startedAt: job.startedAt,
+    elapsedMs: Date.now() - job.startedAt,
   });
 });
 
@@ -566,12 +681,21 @@ const VALID_ANALYSIS_TYPES = [
 ];
 
 /**
- * @desc    Get or generate AI competitive analysis for a project
+ * @desc    Get or generate AI competitive analysis for a project (async)
  * @route   GET /api/competitive-analysis/analysis/:projectId
  * @access  Private (competitive_analysis:ai_recommendations)
+ *
+ * Flow:
+ *   1. If cached result exists in DB → return immediately (status: 'completed')
+ *   2. If background job running → return 202 (status: 'processing')
+ *   3. If no cache + no job → start background job, return 202 (status: 'processing')
+ *   Frontend should poll this endpoint every 3-5 seconds until status = 'completed'.
  */
 const getAnalysis = asyncHandler(async (req, res) => {
   const { type = 'comprehensive' } = req.query;
+  const orgId = req.user.organization;
+  const projectId = req.params.projectId;
+  const jobKey = `analysis_${orgId}_${projectId}_${type}`;
 
   if (!VALID_ANALYSIS_TYPES.includes(type)) {
     res.status(400);
@@ -580,39 +704,98 @@ const getAnalysis = asyncHandler(async (req, res) => {
     );
   }
 
-  try {
-    const result = await generateAnalysis({
-      organizationId: req.user.organization,
-      projectId: req.params.projectId,
-      analysisType: type,
-      userId: req.user._id,
+  // ── Step 1: Quick cache check (DB lookup) ──────────────────
+  const cached = await CompetitiveAnalysis.findOne({
+    organization: orgId,
+    'analysisScope.project': projectId,
+    analysisType: type,
+    isExpired: false,
+  });
+
+  if (cached) {
+    return res.json({
+      success: true,
+      status: 'completed',
+      data: { ...cached.toObject(), fromCache: true },
+      message: 'Returning cached analysis (data unchanged since last generation)',
+    });
+  }
+
+  // ── Step 2: Check if background job exists ─────────────────
+  if (activeJobs.has(jobKey)) {
+    const job = activeJobs.get(jobKey);
+
+    if (job.status === 'completed') {
+      const result = job.result;
+      activeJobs.delete(jobKey);
+      return res.json({
+        success: true,
+        status: 'completed',
+        data: result,
+        message: `${type} analysis generated successfully`,
+      });
+    }
+
+    if (job.status === 'failed') {
+      const errMsg = job.error;
+      activeJobs.delete(jobKey);
+      if (errMsg.includes('not found') || errMsg.includes('No competitor data')) {
+        res.status(404);
+      } else if (errMsg.includes('must have location')) {
+        res.status(400);
+      }
+      throw new Error(errMsg);
+    }
+
+    // Still processing
+    return res.status(202).json({
+      success: true,
+      status: 'processing',
+      message: `${type} analysis is being generated by AI. Please poll this endpoint.`,
+      startedAt: job.startedAt,
+      elapsedMs: Date.now() - job.startedAt,
+    });
+  }
+
+  // ── Step 3: Start background job ───────────────────────────
+  const startedAt = Date.now();
+  activeJobs.set(jobKey, { startedAt, status: 'processing' });
+
+  generateAnalysis({
+    organizationId: orgId,
+    projectId,
+    analysisType: type,
+    userId: req.user._id,
+  })
+    .then((result) => {
+      activeJobs.set(jobKey, { startedAt, status: 'completed', result });
+      console.log(`[Competitive AI] Background job completed: ${jobKey}`);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
+    })
+    .catch((err) => {
+      activeJobs.set(jobKey, { startedAt, status: 'failed', error: err.message });
+      console.error(`[Competitive AI] Background job failed: ${jobKey}:`, err.message);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
     });
 
-    res.json({
-      success: true,
-      data: result,
-      message: result.fromCache
-        ? 'Returning cached analysis (data unchanged since last generation)'
-        : `${type} analysis generated successfully`,
-    });
-  } catch (err) {
-    // Map known service errors to proper HTTP status codes
-    if (err.message.includes('not found') || err.message.includes('No competitor data')) {
-      res.status(404);
-    } else if (err.message.includes('must have location')) {
-      res.status(400);
-    }
-    throw err;
-  }
+  res.status(202).json({
+    success: true,
+    status: 'processing',
+    message: `${type} analysis generation started. Poll this endpoint every 3-5 seconds for results.`,
+    startedAt,
+  });
 });
 
 /**
- * @desc    Force re-generate AI analysis (bypass cache)
+ * @desc    Force re-generate AI analysis (bypass cache, async)
  * @route   POST /api/competitive-analysis/analysis/:projectId/refresh
  * @access  Private (competitive_analysis:ai_recommendations)
  */
 const refreshAnalysis = asyncHandler(async (req, res) => {
   const { type = 'comprehensive' } = req.body;
+  const orgId = req.user.organization;
+  const projectId = req.params.projectId;
+  const jobKey = `analysis_${orgId}_${projectId}_${type}`;
 
   if (!VALID_ANALYSIS_TYPES.includes(type)) {
     res.status(400);
@@ -621,28 +804,36 @@ const refreshAnalysis = asyncHandler(async (req, res) => {
     );
   }
 
-  try {
-    const result = await generateAnalysis({
-      organizationId: req.user.organization,
-      projectId: req.params.projectId,
-      analysisType: type,
-      userId: req.user._id,
-      forceRefresh: true,
+  // Clear any existing job for this key (force refresh)
+  activeJobs.delete(jobKey);
+
+  const startedAt = Date.now();
+  activeJobs.set(jobKey, { startedAt, status: 'processing' });
+
+  generateAnalysis({
+    organizationId: orgId,
+    projectId,
+    analysisType: type,
+    userId: req.user._id,
+    forceRefresh: true,
+  })
+    .then((result) => {
+      activeJobs.set(jobKey, { startedAt, status: 'completed', result });
+      console.log(`[Competitive AI] Refresh job completed: ${jobKey}`);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
+    })
+    .catch((err) => {
+      activeJobs.set(jobKey, { startedAt, status: 'failed', error: err.message });
+      console.error(`[Competitive AI] Refresh job failed: ${jobKey}:`, err.message);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
     });
 
-    res.json({
-      success: true,
-      data: result,
-      message: `${type} analysis refreshed successfully`,
-    });
-  } catch (err) {
-    if (err.message.includes('not found') || err.message.includes('No competitor data')) {
-      res.status(404);
-    } else if (err.message.includes('must have location')) {
-      res.status(400);
-    }
-    throw err;
-  }
+  res.status(202).json({
+    success: true,
+    status: 'processing',
+    message: `${type} analysis refresh started. Poll GET /api/competitive-analysis/analysis/${projectId}?type=${type} for results.`,
+    startedAt,
+  });
 });
 
 export {
@@ -656,6 +847,7 @@ export {
   updateProviderConfig,
   triggerProviderSync,
   triggerAIResearch,
+  getResearchStatus,
   importCompetitorCSV,
   exportCompetitorCSV,
   downloadCSVTemplate,
