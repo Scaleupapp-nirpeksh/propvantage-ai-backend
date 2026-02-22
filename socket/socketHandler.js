@@ -1,5 +1,5 @@
 // File: socket/socketHandler.js
-// Description: Socket.IO handler for real-time chat events
+// Description: Socket.IO handler for real-time chat events with per-event JWT revalidation.
 
 import jwt from 'jsonwebtoken';
 import User from '../models/userModel.js';
@@ -11,6 +11,9 @@ const onlineUsers = new Map();
 
 // conversationId -> Set<userId> (who is currently typing)
 const typingUsers = new Map();
+
+// How often (in seconds) to do a full DB revalidation check
+const FULL_REVALIDATION_INTERVAL = 300; // 5 minutes
 
 // ─── MAIN INITIALIZER ────────────────────────────────────────
 
@@ -26,7 +29,9 @@ export function initializeSocket(io) {
         return next(new Error('Authentication error: No token provided'));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
+      });
 
       const user = await User.findById(decoded.userId)
         .select('-password')
@@ -39,6 +44,9 @@ export function initializeSocket(io) {
       socket.userId = user._id.toString();
       socket.organizationId = user.organization.toString();
       socket.userName = `${user.firstName} ${user.lastName}`.trim();
+      socket.token = token;
+      socket.tokenExp = decoded.exp; // Unix timestamp
+      socket.lastFullCheck = Math.floor(Date.now() / 1000);
 
       next();
     } catch (error) {
@@ -49,6 +57,52 @@ export function initializeSocket(io) {
   // ─── CONNECTION ──────────────────────────────────────────
   io.on('connection', async (socket) => {
     console.log(`[Socket] User connected: ${socket.userName} (${socket.userId})`);
+
+    // ─── PER-EVENT JWT REVALIDATION ──────────────────────
+    socket.use(async (packet, next) => {
+      try {
+        const eventName = packet[0];
+        if (!eventName) return next();
+
+        const now = Math.floor(Date.now() / 1000);
+
+        // Quick check: is the token expired?
+        if (socket.tokenExp && socket.tokenExp < now) {
+          socket.emit('auth:expired', { message: 'Token expired' });
+          socket.disconnect(true);
+          return next(new Error('Token expired'));
+        }
+
+        // Full check every 5 minutes: verify token + check user is still active
+        if (now - socket.lastFullCheck > FULL_REVALIDATION_INTERVAL) {
+          try {
+            jwt.verify(socket.token, process.env.JWT_SECRET, {
+              algorithms: ['HS256'],
+            });
+
+            const user = await User.findById(socket.userId)
+              .select('isActive')
+              .lean();
+
+            if (!user || !user.isActive) {
+              socket.emit('auth:revoked', { message: 'Account deactivated' });
+              socket.disconnect(true);
+              return next(new Error('User deactivated'));
+            }
+
+            socket.lastFullCheck = now;
+          } catch (err) {
+            socket.emit('auth:expired', { message: 'Token invalid' });
+            socket.disconnect(true);
+            return next(new Error('Token verification failed'));
+          }
+        }
+
+        next();
+      } catch (err) {
+        next(err);
+      }
+    });
 
     // Track online status
     if (!onlineUsers.has(socket.userId)) {
@@ -78,6 +132,25 @@ export function initializeSocket(io) {
     } catch (err) {
       console.error('[Socket] Error joining conversations:', err.message);
     }
+
+    // ─── TOKEN UPDATE EVENT ─────────────────────────────
+    // Client sends a new access token after refreshing via /api/auth/refresh.
+    // This keeps the socket alive without requiring a reconnect.
+    socket.on('auth:update-token', async ({ token }, callback) => {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+          algorithms: ['HS256'],
+        });
+        socket.token = token;
+        socket.tokenExp = decoded.exp;
+        socket.lastFullCheck = Math.floor(Date.now() / 1000);
+        callback?.({ success: true });
+      } catch (err) {
+        callback?.({ success: false, error: 'Invalid token' });
+        socket.emit('auth:expired', { message: 'Invalid token provided' });
+        socket.disconnect(true);
+      }
+    });
 
     // ─── CONVERSATION EVENTS ─────────────────────────────
 

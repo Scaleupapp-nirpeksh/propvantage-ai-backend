@@ -73,6 +73,9 @@ const auditLogSchema = new mongoose.Schema(
         // Data access events
         'DATA_EXPORTED',
         'BULK_OPERATION',
+        // Token events
+        'TOKEN_REFRESHED',
+        'TOKEN_REVOKED',
         // Security events
         'PERMISSION_DENIED',
         'SUSPICIOUS_ACTIVITY',

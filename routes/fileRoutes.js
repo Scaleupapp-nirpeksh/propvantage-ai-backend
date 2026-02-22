@@ -3,7 +3,7 @@
 
 import express from 'express';
 import multer from 'multer';
-import { uploadFile, getFilesForResource } from '../controllers/fileController.js';
+import { uploadFile, getFilesForResource, getFileDownloadUrl } from '../controllers/fileController.js';
 
 // Import the security middleware
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
@@ -37,9 +37,18 @@ router.post(
 // @desc    Get all files for a specific resource
 // @access  Private
 router.get(
-    '/resource/:resourceId',
-    hasPermission(PERMISSIONS.FILES.VIEW),
-    getFilesForResource
+  '/resource/:resourceId',
+  hasPermission(PERMISSIONS.FILES.VIEW),
+  getFilesForResource
+);
+
+// @route   GET /api/files/:fileId/download
+// @desc    Get a pre-signed download URL for a single file
+// @access  Private
+router.get(
+  '/:fileId/download',
+  hasPermission(PERMISSIONS.FILES.VIEW),
+  getFileDownloadUrl
 );
 
 export default router;

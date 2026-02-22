@@ -2,6 +2,7 @@
 // Description: Tracks individual partner commission records and calculations
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 
 // Schema for commission calculation breakdown
 const commissionBreakdownSchema = new mongoose.Schema({
@@ -746,6 +747,13 @@ partnerCommissionSchema.index({ status: 1 });
 partnerCommissionSchema.index({ 'paymentSchedule.scheduledDate': 1 });
 partnerCommissionSchema.index({ 'saleDetails.saleDate': 1 });
 partnerCommissionSchema.index({ 'approvalWorkflow.approvalStatus': 1 });
+
+// Field-level encryption for PII data
+partnerCommissionSchema.plugin(encryptionPlugin, {
+  fields: [
+    'paymentSchedule.bankAccountDetails.accountNumber',
+  ],
+});
 
 const PartnerCommission = mongoose.model('PartnerCommission', partnerCommissionSchema);
 

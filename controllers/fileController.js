@@ -2,7 +2,7 @@
 // Description: Handles the business logic for file uploads and management.
 
 import asyncHandler from 'express-async-handler';
-import { uploadFileToS3 } from '../services/s3Service.js';
+import { uploadFileToS3, getPresignedDownloadUrl } from '../services/s3Service.js';
 import File from '../models/fileModel.js';
 import mongoose from 'mongoose';
 
@@ -61,20 +61,61 @@ const uploadFile = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get all files for a specific resource
+ * @desc    Get all files for a specific resource (with pre-signed URLs)
  * @route   GET /api/files/resource/:resourceId
  * @access  Private
  */
 const getFilesForResource = asyncHandler(async (req, res) => {
-    const { resourceId } = req.params;
+  const { resourceId } = req.params;
 
-    const files = await File.find({ 
-        organization: req.user.organization,
-        associatedResource: resourceId 
-    }).populate('uploadedBy', 'firstName lastName');
+  const files = await File.find({
+    organization: req.user.organization,
+    associatedResource: resourceId,
+  }).populate('uploadedBy', 'firstName lastName');
 
-    res.json(files);
+  // Generate pre-signed URLs for each file
+  const filesWithPresignedUrls = await Promise.all(
+    files.map(async (file) => {
+      const fileObj = file.toObject();
+      if (file.s3Key) {
+        fileObj.url = await getPresignedDownloadUrl(file.s3Key);
+        fileObj.urlExpiresAt = new Date(Date.now() + 3600 * 1000);
+      }
+      return fileObj;
+    })
+  );
+
+  res.json(filesWithPresignedUrls);
 });
 
+/**
+ * @desc    Get a pre-signed download URL for a single file
+ * @route   GET /api/files/:fileId/download
+ * @access  Private
+ */
+const getFileDownloadUrl = asyncHandler(async (req, res) => {
+  const file = await File.findOne({
+    _id: req.params.fileId,
+    organization: req.user.organization,
+  });
 
-export { uploadFile, getFilesForResource };
+  if (!file) {
+    res.status(404);
+    throw new Error('File not found');
+  }
+
+  if (!file.s3Key) {
+    res.status(400);
+    throw new Error('File has no S3 key');
+  }
+
+  const url = await getPresignedDownloadUrl(file.s3Key);
+
+  res.json({
+    url,
+    expiresAt: new Date(Date.now() + 3600 * 1000),
+    fileName: file.originalName,
+  });
+});
+
+export { uploadFile, getFilesForResource, getFileDownloadUrl };

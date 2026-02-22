@@ -3,6 +3,7 @@
 // ⚠️ IMPORTANT: This enhances your existing model - copy and replace your current projectModel.js
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 
 // Schema for defining additional one-time or recurring charges for a project.
 const additionalChargeSchema = new mongoose.Schema({
@@ -803,6 +804,13 @@ projectSchema.pre('save', function(next) {
   }
   
   next();
+});
+
+// Field-level encryption for PII data
+projectSchema.plugin(encryptionPlugin, {
+  fields: [
+    'paymentConfiguration.bankAccountDetails[].accountNumber',
+  ],
 });
 
 const Project = mongoose.model('Project', projectSchema);

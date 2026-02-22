@@ -2,6 +2,7 @@
 // Description: Defines the Mongoose schema for contractors and vendors
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 
 const contractorSchema = new mongoose.Schema(
   {
@@ -512,7 +513,7 @@ contractorSchema.index({ specialization: 1 });
 contractorSchema.index({ 'rating.overall': -1 });
 contractorSchema.index({ 'contactInfo.primaryContact.phone': 1 });
 contractorSchema.index({ 'businessInfo.gstNumber': 1 });
-contractorSchema.index({ 'businessInfo.panNumber': 1 });
+// PAN index removed — encrypted values are not searchable via index
 contractorSchema.index({ isPreferred: 1, status: 1 });
 
 // Text index for search functionality
@@ -666,6 +667,14 @@ contractorSchema.pre('save', function(next) {
   }
   
   next();
+});
+
+// Field-level encryption for PII data
+contractorSchema.plugin(encryptionPlugin, {
+  fields: [
+    'businessInfo.panNumber',
+    'financialInfo.bankDetails.accountNumber',
+  ],
 });
 
 const Contractor = mongoose.model('Contractor', contractorSchema);

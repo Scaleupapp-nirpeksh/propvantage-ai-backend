@@ -7,6 +7,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import mongoSanitize from 'express-mongo-sanitize';
 import xss from 'xss-clean';
@@ -88,6 +89,9 @@ app.use(cors({
 // 3. Body parsing with reduced limits
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// 3b. Cookie parsing — required for refresh token httpOnly cookies
+app.use(cookieParser());
 
 // 4. NoSQL injection prevention — strips $ and . from req.body/query/params
 app.use(mongoSanitize());

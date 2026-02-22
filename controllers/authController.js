@@ -1,12 +1,20 @@
 // File: controllers/authController.js
 // Description: Handles the business logic for user authentication, including registration and login.
 
+import crypto from 'crypto';
 import asyncHandler from 'express-async-handler';
 import User from '../models/userModel.js';
 import Organization from '../models/organizationModel.js';
-import generateToken from '../utils/generateToken.js';
+import {
+  generateAccessToken,
+  generateRefreshTokenValue,
+  setRefreshCookie,
+} from '../utils/generateToken.js';
+import RefreshToken from '../models/refreshTokenModel.js';
 import { seedDefaultRoles } from '../data/defaultRoles.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
+
+const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 // Account lockout configuration
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -72,7 +80,20 @@ const registerUser = asyncHandler(async (req, res) => {
         await user.save({ validateBeforeSave: false });
       }
 
-      const token = generateToken(res, user._id);
+      const token = generateAccessToken(user._id);
+
+      // Issue refresh token
+      const refreshTokenValue = generateRefreshTokenValue();
+      await RefreshToken.create({
+        token: refreshTokenValue,
+        user: user._id,
+        organization: organization._id,
+        family: crypto.randomUUID(),
+        expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+        userAgent: req.get('User-Agent'),
+        ipAddress: req.ip,
+      });
+      setRefreshCookie(res, refreshTokenValue);
 
       // Populate roleRef for the response
       await user.populate('roleRef', 'name slug level permissions isOwnerRole');
@@ -212,7 +233,20 @@ const loginUser = asyncHandler(async (req, res) => {
   user.lastLogin = Date.now();
   await user.save({ validateBeforeSave: false });
 
-  const token = generateToken(res, user._id);
+  const token = generateAccessToken(user._id);
+
+  // Issue refresh token
+  const refreshTokenValue = generateRefreshTokenValue();
+  await RefreshToken.create({
+    token: refreshTokenValue,
+    user: user._id,
+    organization: user.organization,
+    family: crypto.randomUUID(),
+    expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+    userAgent: req.get('User-Agent'),
+    ipAddress: req.ip,
+  });
+  setRefreshCookie(res, refreshTokenValue);
 
   // Audit: successful login
   logAuditEvent({

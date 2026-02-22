@@ -2,6 +2,7 @@
 // Description: Defines the Mongoose schema for payment transactions with update/recalculation support
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 
 // Schema for payment allocation (how payment is distributed across installments)
 const paymentAllocationSchema = new mongoose.Schema({
@@ -529,6 +530,13 @@ paymentTransactionSchema.index({ status: 1 });
 paymentTransactionSchema.index({ paymentDate: 1 });
 paymentTransactionSchema.index({ transactionNumber: 1 });
 paymentTransactionSchema.index({ 'paymentMethodDetails.referenceNumber': 1 });
+
+// Field-level encryption for PII data
+paymentTransactionSchema.plugin(encryptionPlugin, {
+  fields: [
+    'receivedInAccount.accountNumber',
+  ],
+});
 
 const PaymentTransaction = mongoose.model('PaymentTransaction', paymentTransactionSchema);
 
