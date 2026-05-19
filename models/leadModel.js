@@ -242,10 +242,17 @@ const leadSchema = new mongoose.Schema(
     // Follow-up scheduling
     followUpSchedule: {
       nextFollowUpDate: { type: Date },
-      followUpType: { 
-        type: String, 
+      followUpType: {
+        type: String,
         enum: ['call', 'email', 'site_visit', 'meeting', 'whatsapp'],
-        default: 'call' 
+        default: 'call',
+        // Normalise common UI casing/spacing variants — "Call" → "call",
+        // "Site Visit" → "site_visit", "WhatsApp" → "whatsapp" — so the
+        // frontend can send human-readable values without 400ing the API.
+        set: (v) => {
+          if (typeof v !== 'string') return v;
+          return v.trim().toLowerCase().replace(/\s+/g, '_');
+        },
       },
       notes: { type: String },
       // NEW ENHANCED fields (safe to add)
