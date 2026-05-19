@@ -42,8 +42,12 @@ jobs:
           set -e
 
           # Write the deploy script to a file (preserves newlines exactly).
+          # SSM Run Command executes as root but with no HOME env var; pm2 stores
+          # its app registry under $HOME/.pm2, so we set HOME=/root explicitly to
+          # match the existing pm2 daemon's process registry.
           cat > /tmp/deploy.sh <<'BASH'
           set -euo pipefail
+          export HOME=/root
           APP_DIR=/home/ec2-user/propvantage-ai-backend
           PM2_APP=propvantage-api
           cd "$APP_DIR"
@@ -53,12 +57,12 @@ jobs:
           git pull origin main --ff-only
           AFTER=$(git rev-parse --short HEAD)
           echo "After:  $AFTER"
-          # Re-install deps only if package.json or lock changed
-          if ! git diff --quiet "$BEFORE" "$AFTER" -- package.json package-lock.json; then
-            echo "package.json or lock changed; running npm ci..."
+          # Re-install deps only if package-lock.json actually changed
+          if ! git diff --quiet "$BEFORE" "$AFTER" -- package-lock.json; then
+            echo "package-lock.json changed; running npm ci..."
             npm ci --omit=dev
           else
-            echo "No package changes; skipping npm install."
+            echo "No dependency changes; skipping npm install."
           fi
           pm2 restart "$PM2_APP" --update-env
           pm2 save
