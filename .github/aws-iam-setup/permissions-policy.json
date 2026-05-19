@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DescribeOnePropvantageInstance",
+      "Effect": "Allow",
+      "Action": "ec2:DescribeInstances",
+      "Resource": "*"
+    },
+    {
+      "Sid": "InstanceConnectToPropvantage",
+      "Effect": "Allow",
+      "Action": "ec2-instance-connect:SendSSHPublicKey",
+      "Resource": "arn:aws:ec2:ap-south-1:854781667410:instance/i-0dfec8426e507aa00",
+      "Condition": {
+        "StringEquals": {
+          "ec2:osuser": "ec2-user"
+        }
+      }
+    }
+  ]
+}

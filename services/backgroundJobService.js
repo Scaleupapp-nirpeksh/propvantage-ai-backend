@@ -187,13 +187,17 @@ class BackgroundJobService {
       // Find leads needing score updates
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const staleLeads = await Lead.find({
-        organization: organizationId,
+
+      const query = {
         lastScoreUpdate: { $lt: sevenDaysAgo },
-        status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
-      }).select('_id').limit(50);
-      
+        status: { $nin: ['Booked', 'Lost', 'Unqualified'] },
+      };
+      if (organizationId !== 'all') {
+        query.organization = organizationId;
+      }
+
+      const staleLeads = await Lead.find(query).select('_id').limit(50);
+
       if (staleLeads.length > 0) {
         const leadIds = staleLeads.map(lead => lead._id.toString());
         await bulkUpdateLeadScores(leadIds);
@@ -206,17 +210,24 @@ class BackgroundJobService {
    */
   async cleanupStaleScores(data) {
     const { organizationId } = data;
-    
+
     // Find leads with very old scores that might need reset
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const oldLeads = await Lead.find({
-      organization: organizationId,
+
+    // The recurring scheduler passes organizationId: 'all' to mean "scan every org".
+    // Omit the organization filter in that case rather than passing the literal string
+    // to Mongoose, which would fail ObjectId cast.
+    const query = {
       lastScoreUpdate: { $lt: thirtyDaysAgo },
-      status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
-    }).select('_id').limit(25);
-    
+      status: { $nin: ['Booked', 'Lost', 'Unqualified'] },
+    };
+    if (organizationId && organizationId !== 'all') {
+      query.organization = organizationId;
+    }
+
+    const oldLeads = await Lead.find(query).select('_id').limit(25);
+
     if (oldLeads.length > 0) {
       const leadIds = oldLeads.map(lead => lead._id.toString());
       await bulkUpdateLeadScores(leadIds);

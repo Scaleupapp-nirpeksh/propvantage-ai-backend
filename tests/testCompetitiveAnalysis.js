@@ -457,15 +457,34 @@ const testAIAnalysis = async () => {
     return;
   }
 
-  // We can test the endpoint responds correctly even if no competitor data matches the project's locality
+  // The endpoint is async (HTTP 202 + polling) since commit fe00745.
+  // First call kicks off a background job and returns 202; subsequent calls
+  // either still report 'processing' or return the completed result / error.
+  // "No competitor data" for the project's locality is also a valid pass —
+  // the endpoint behaved correctly, just no data to analyze.
+  const url = `/api/competitive-analysis/analysis/${testProjectId}?type=pricing_recommendations`;
+  const POLL_MS = 3000;
+  const MAX_POLLS = 20;
   try {
-    const res = await api('GET', `/api/competitive-analysis/analysis/${testProjectId}?type=pricing_recommendations`);
-    if (res.ok) {
-      log('PASS', 'AI pricing analysis', `fromCache: ${res.data.data.fromCache}`);
-    } else if (res.status === 500 && res.data.message?.includes('No competitor data')) {
+    let res = await api('GET', url);
+    let polls = 0;
+    while (res.status === 202 && res.data?.status === 'processing' && polls < MAX_POLLS) {
+      await new Promise((r) => setTimeout(r, POLL_MS));
+      res = await api('GET', url);
+      polls++;
+    }
+
+    if (res.ok && res.data?.status === 'completed' && res.data?.data) {
+      log('PASS', 'AI pricing analysis', `fromCache: ${res.data.data.fromCache} (polled ${polls}x)`);
+    } else if (
+      (res.status === 404 || res.status === 500) &&
+      res.data?.message?.includes('No competitor data')
+    ) {
       log('PASS', 'AI analysis — no data for project locality', res.data.message);
+    } else if (res.status === 202) {
+      log('FAIL', 'AI pricing analysis', `still processing after ${polls} polls (~${(polls * POLL_MS) / 1000}s)`);
     } else {
-      log('FAIL', 'AI pricing analysis', `${res.status}: ${res.data.message}`);
+      log('FAIL', 'AI pricing analysis', `${res.status}: ${res.data?.message || JSON.stringify(res.data)}`);
     }
   } catch (e) {
     log('FAIL', 'AI pricing analysis', e.message);
