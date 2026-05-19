@@ -8,6 +8,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const LEAD_INSIGHTS_MODEL = process.env.LEAD_INSIGHTS_MODEL || 'gpt-4o';
+
 /**
  * Generates sales insights for a given lead by calling the OpenAI API.
  * It constructs a detailed prompt with the lead's information and asks the model
@@ -41,7 +43,7 @@ const getSalesInsightsForLead = async (leadData) => {
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4', // Using a powerful model for better insights
+      model: LEAD_INSIGHTS_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.5, // A balance between creativity and determinism
       max_tokens: 500, // Limit the response length to keep it concise

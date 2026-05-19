@@ -9,7 +9,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const COPILOT_MODEL = process.env.COPILOT_MODEL || 'gpt-4';
+const COPILOT_MODEL = process.env.COPILOT_MODEL || 'gpt-4o';
 
 // =============================================================================
 // IN-MEMORY CONVERSATION STORE (No Redis required)

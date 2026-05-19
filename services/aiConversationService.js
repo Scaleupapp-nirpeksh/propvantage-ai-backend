@@ -11,6 +11,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const CONVERSATION_MODEL = process.env.CONVERSATION_MODEL || 'gpt-4o';
+
 // Import models dynamically
 let Interaction, Lead, Sale;
 
@@ -88,7 +90,7 @@ ANALYZE AND RESPOND IN JSON FORMAT:
 IMPORTANT: Respond ONLY with valid JSON. No additional text.`;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: CONVERSATION_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 1000,
@@ -184,7 +186,7 @@ Generate actionable recommendations in JSON format:
 Respond ONLY with valid JSON.`;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: CONVERSATION_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.4,
       max_tokens: 800,
@@ -302,7 +304,7 @@ Provide a concise summary in JSON format:
 Respond ONLY with valid JSON.`;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: CONVERSATION_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 600,

@@ -91,7 +91,7 @@ const competitiveAnalysisSchema = new mongoose.Schema(
 
     // ─── Metadata ─────────────────────────────────────────────
     metadata: {
-      model: { type: String, default: 'gpt-4' },
+      model: { type: String, default: 'claude-sonnet-4-6' },
       tokensUsed: Number,
       generationTimeMs: Number,
       promptVersion: { type: String, default: '1.0' },

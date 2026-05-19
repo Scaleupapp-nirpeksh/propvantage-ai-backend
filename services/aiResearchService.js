@@ -16,9 +16,9 @@ const anthropic = new Anthropic({
 });
 
 // Model for web search — has built-in web browsing capability (OpenAI only)
-const SEARCH_MODEL = 'gpt-4o-search-preview';
+const SEARCH_MODEL = process.env.RESEARCH_SEARCH_MODEL || 'gpt-4o-search-preview';
 // Model for structured extraction — Claude Sonnet for better analytical precision
-const EXTRACTION_MODEL = 'claude-sonnet-4-20250514';
+const EXTRACTION_MODEL = process.env.RESEARCH_EXTRACTION_MODEL || 'claude-sonnet-4-6';
 
 // ─── Research Prompts ─────────────────────────────────────────
 
@@ -63,10 +63,13 @@ Be thorough — include both well-known developers and smaller local projects. P
 };
 
 /**
- * Build the structured extraction prompt.
+ * Static system prompt for structured extraction.
+ * Kept invariant across requests so it can hit the Anthropic prompt cache.
+ * Locality (city/area) is injected via the user message below.
  */
-const buildExtractionPrompt = (rawResearch, city, area) => {
-  return `You are a data extraction specialist. Parse the following real estate market research for ${area}, ${city} into a structured JSON array.
+const EXTRACTION_SYSTEM = `You are a data extraction specialist. You always respond with valid JSON only — no markdown fences, no comments, no explanation outside the JSON.
+
+Your task: parse the real estate market research provided in the user message into a structured JSON array.
 
 IMPORTANT RULES:
 1. Return ONLY valid JSON — no markdown, no comments, no explanation.
@@ -77,6 +80,7 @@ IMPORTANT RULES:
    - "₹85 Lakhs" = 8500000, "₹1.2 Cr" = 12000000, "₹8,500/sqft" = 8500
 5. For boolean amenities, use true/false.
 6. confidence should be 30-80: 30 for estimated/guessed data, 50 for partially verified, 70-80 for data with clear sources.
+7. Use the locality (city/area) provided in the user message verbatim inside each project's "location" object.
 
 Required JSON schema:
 {
@@ -86,8 +90,8 @@ Required JSON schema:
       "developerName": "string",
       "reraNumber": "string or null",
       "location": {
-        "city": "${city}",
-        "area": "${area}",
+        "city": "<from user message>",
+        "area": "<from user message>",
         "state": "string",
         "pincode": "string or null"
       },
@@ -156,7 +160,14 @@ Required JSON schema:
       "confidence": "number 30-80"
     }
   ]
-}
+}`;
+
+/**
+ * Build the per-request user message: just the variable inputs.
+ * Keeping the static schema out of this string lets the system block hit the cache.
+ */
+const buildExtractionUserMessage = (rawResearch, city, area) => {
+  return `Locality: city="${city}", area="${area}"
 
 RAW RESEARCH DATA:
 ${rawResearch}`;
@@ -227,7 +238,7 @@ const executeResearch = async ({
   console.log('[AI Research] Extracting structured data...');
 
   let parsedProjects;
-  const extractionPrompt = buildExtractionPrompt(rawResearch, city, area);
+  const extractionUserMessage = buildExtractionUserMessage(rawResearch, city, area);
 
   // Try extraction with retry on JSON parse failure (using Claude)
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -236,20 +247,27 @@ const executeResearch = async ({
         model: EXTRACTION_MODEL,
         max_tokens: 8000,
         temperature: attempt === 1 ? 0.2 : 0.1,
-        system: 'You are a data extraction specialist. You always respond with valid JSON only — no markdown fences, no comments, no explanation outside the JSON.',
-        messages: [{ role: 'user', content: extractionPrompt }],
+        system: [
+          { type: 'text', text: EXTRACTION_SYSTEM, cache_control: { type: 'ephemeral' } },
+        ],
+        messages: [{ role: 'user', content: extractionUserMessage }],
       });
 
-      const content = extractionResponse.content[0].text;
-      const parsed = JSON.parse(content);
+      const textBlock = extractionResponse.content.find((b) => b.type === 'text');
+      if (!textBlock) {
+        throw new Error('No text block in Claude extraction response');
+      }
+      const parsed = JSON.parse(textBlock.text);
       parsedProjects = parsed.projects || parsed;
 
       if (!Array.isArray(parsedProjects)) {
         throw new Error('Expected an array of projects');
       }
 
+      const cacheRead = extractionResponse.usage?.cache_read_input_tokens || 0;
+      const cacheWrite = extractionResponse.usage?.cache_creation_input_tokens || 0;
       console.log(
-        `[AI Research] Extracted ${parsedProjects.length} projects via Claude (attempt ${attempt})`
+        `[AI Research] Extracted ${parsedProjects.length} projects via Claude (attempt ${attempt}, cache: ${cacheRead} read / ${cacheWrite} written)`
       );
       break;
     } catch (err) {

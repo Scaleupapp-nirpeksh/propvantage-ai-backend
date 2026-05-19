@@ -13,7 +13,7 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const AI_MODEL = 'claude-sonnet-4-20250514';
+const AI_MODEL = process.env.COMPETITIVE_AI_MODEL || 'claude-sonnet-4-6';
 
 // ─── System Prompt ───────────────────────────────────────────
 
@@ -434,13 +434,20 @@ const generateAnalysis = async ({
         model: AI_MODEL,
         max_tokens: 8000,
         temperature: attempt === 1 ? 0.3 : 0.2,
-        system: SYSTEM_PROMPT,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
+        system: [
+          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        ],
         messages: [{ role: 'user', content: userPrompt }],
       });
 
       console.log(`[Competitive AI] Claude responded. Parsing JSON...`);
-      const content = response.content[0].text;
-      parsed = JSON.parse(content);
+      const textBlock = response.content.find((b) => b.type === 'text');
+      if (!textBlock) {
+        throw new Error('No text block found in Claude response');
+      }
+      parsed = JSON.parse(textBlock.text);
       console.log(`[Competitive AI] JSON parsed successfully.`);
       break;
     } catch (err) {
