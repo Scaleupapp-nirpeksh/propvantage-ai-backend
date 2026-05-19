@@ -40,7 +40,9 @@ jobs:
         id: ssm
         run: |
           set -e
-          DEPLOY_SCRIPT=$(cat <<'BASH'
+
+          # Write the deploy script to a file (preserves newlines exactly).
+          cat > /tmp/deploy.sh <<'BASH'
           set -euo pipefail
           APP_DIR=/home/ec2-user/propvantage-ai-backend
           PM2_APP=propvantage-api
@@ -62,15 +64,25 @@ jobs:
           pm2 save
           echo "Deployed $AFTER"
           BASH
-          )
+
+          # Build the SSM SendCommand request as JSON (avoids shell ↔ shorthand
+          # escaping issues that swallow newlines in inline --parameters).
+          jq -n \
+            --arg instance "$INSTANCE_ID" \
+            --arg comment "gh-actions deploy ${{ github.sha }}" \
+            --rawfile script /tmp/deploy.sh \
+            '{
+              InstanceIds: [$instance],
+              DocumentName: "AWS-RunShellScript",
+              Comment: $comment,
+              TimeoutSeconds: 600,
+              Parameters: {
+                commands: [$script]
+              }
+            }' > /tmp/send-command.json
 
           CMD_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
-            --comment "gh-actions deploy ${{ github.sha }}" \
-            --timeout-seconds 600 \
-            --parameters "commands=[$(jq -Rs . <<<"$DEPLOY_SCRIPT")]" \
-            --cloud-watch-output-config "CloudWatchOutputEnabled=false" \
+            --cli-input-json file:///tmp/send-command.json \
             --query 'Command.CommandId' --output text)
           echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
           echo "Started SSM command $CMD_ID"
