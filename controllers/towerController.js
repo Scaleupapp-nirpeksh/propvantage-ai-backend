@@ -18,7 +18,9 @@ import {
  * @access  Private
  */
 const getTowers = asyncHandler(async (req, res) => {
-  const { projectId, status, includeInactive } = req.query;
+  const { status, includeInactive } = req.query;
+  // Accept both legacy `projectId` and the frontend's `project` query param.
+  const projectId = req.query.project || req.query.projectId;
 
   let query = { organization: req.user.organization, ...projectAccessFilter(req) };
 

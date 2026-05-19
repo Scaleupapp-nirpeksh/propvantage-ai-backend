@@ -103,6 +103,25 @@ app.use(xss());
 // 6. HTTP Parameter Pollution prevention
 app.use(hpp());
 
+// 7. Query-param alias normalisation.
+//    The frontend uniformly sends `project`/`tower` query params, but several
+//    legacy controllers were written to read `projectId`/`towerId`. When the
+//    alias is missing the filter silently disables and the query returns the
+//    full org-wide dataset (= cross-project data leak — see PrestigeCity bug).
+//    This middleware mirrors `project` → `projectId` and `tower` → `towerId`
+//    so every existing controller works regardless of which spelling arrives.
+app.use((req, _res, next) => {
+  if (req.query) {
+    if (req.query.project && !req.query.projectId) req.query.projectId = req.query.project;
+    if (req.query.tower && !req.query.towerId) req.query.towerId = req.query.tower;
+    // Also handle the reverse direction so new controllers can rely on the
+    // short names without breaking older clients that still send the long ones.
+    if (req.query.projectId && !req.query.project) req.query.project = req.query.projectId;
+    if (req.query.towerId && !req.query.tower) req.query.tower = req.query.towerId;
+  }
+  next();
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

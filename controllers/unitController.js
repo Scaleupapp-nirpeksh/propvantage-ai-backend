@@ -28,9 +28,7 @@ try {
  * @access  Private
  */
 const getUnits = asyncHandler(async (req, res) => {
-  const { 
-    projectId, 
-    towerId,     // NEW: Filter by tower
+  const {
     type,
     status,
     floor,
@@ -46,6 +44,13 @@ const getUnits = asyncHandler(async (req, res) => {
     search       // NEW: Search functionality
   } = req.query;
 
+  // Accept BOTH `project`/`tower` (used by the frontend) and `projectId`/`towerId`
+  // (legacy param names). Previously only the legacy names were read, which
+  // silently turned a project-scoped query into an org-wide query and leaked
+  // units across projects.
+  const projectId = req.query.project || req.query.projectId;
+  const towerId = req.query.tower || req.query.towerId;
+
   // Build query
   let query = { organization: req.user.organization, ...projectAccessFilter(req) };
 
@@ -53,8 +58,16 @@ const getUnits = asyncHandler(async (req, res) => {
     query.project = projectId;
   }
 
-  if (towerId && Tower) {
-    query.tower = towerId;
+  // Allow explicit `tower=null` (or 'null'/'none'/''/'undefined') to mean
+  // "only standalone units that aren't attached to any tower" (villa-style
+  // projects). Otherwise filter by tower id if provided.
+  if (towerId !== undefined && towerId !== null) {
+    const t = String(towerId).toLowerCase();
+    if (t === 'null' || t === 'none' || t === '' || t === 'undefined') {
+      query.tower = null;
+    } else if (Tower) {
+      query.tower = towerId;
+    }
   }
 
   if (type) {
@@ -379,14 +392,16 @@ const handleGroupByQuery = async (req, res, baseQuery, groupBy) => {
  * @access  Private
  */
 const getUnitStatistics = asyncHandler(async (req, res) => {
-  const { projectId, towerId } = req.query;
+  // Accept both legacy `projectId`/`towerId` and frontend's `project`/`tower`.
+  const projectId = req.query.project || req.query.projectId;
+  const towerId = req.query.tower || req.query.towerId;
 
   let matchQuery = { organization: req.user.organization, ...projectAccessFilter(req) };
-  
+
   if (projectId) {
     matchQuery.project = mongoose.Types.ObjectId(projectId);
   }
-  
+
   if (towerId && Tower) {
     matchQuery.tower = mongoose.Types.ObjectId(towerId);
   }
