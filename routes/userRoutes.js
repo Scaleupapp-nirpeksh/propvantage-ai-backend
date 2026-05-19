@@ -291,6 +291,18 @@ router.use((error, req, res, next) => {
     });
   }
 
+  // Respect status codes already set on res by upstream middleware (e.g. protect()
+  // does `res.status(401); throw ...`). Without this, the catch-all below would
+  // overwrite 401 with 500 and the client gets a misleading server-error response.
+  if (res.statusCode && res.statusCode >= 400 && res.statusCode < 500) {
+    return res.json({
+      success: false,
+      message: error.message || 'Request rejected',
+      code: res.statusCode === 401 ? 'NOT_AUTHENTICATED' : 'CLIENT_ERROR',
+      error: process.env.NODE_ENV === 'production' ? undefined : error.message,
+    });
+  }
+
   // Default error response
   res.status(500).json({
     success: false,

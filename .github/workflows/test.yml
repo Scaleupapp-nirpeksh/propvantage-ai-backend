@@ -1,0 +1,34 @@
+name: Regression tests (PRs)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-prod-readonly:
+    name: Read-only contract tests against production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --omit=optional --no-audit --no-fund
+
+      # The regression suite is read-only — no mutating tests run by default.
+      # If API_TEST_TOKEN is provided as a repo secret, auth-required tests
+      # exercise authenticated endpoints; otherwise they cleanly skip.
+      - name: Run regression suite against production
+        env:
+          API_BASE_URL: https://api.prop-vantage.com
+          API_TEST_TOKEN: ${{ secrets.API_TEST_TOKEN }}
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        run: npm run test:regression

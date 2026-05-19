@@ -1,22 +1,50 @@
-# GitHub Actions deploy — one-time AWS setup
+# GitHub Actions deploy — AWS setup
 
-The workflow at `.github/workflows/deploy.yml` uses **GitHub OIDC** to assume an AWS IAM role on every run. No long-lived AWS access keys are stored in GitHub secrets — short-lived tokens are minted per workflow run and expire automatically.
+The deploy workflow at `.github/workflows/deploy.yml` uses **GitHub OIDC** to assume an IAM role on every run, then drives the deploy via **AWS Systems Manager (SSM) Run Command** — no SSH, no long-lived keys, no Instance Connect dance.
 
-This document covers the three one-time steps you need to do in the AWS Console (or via CLI) before the workflow will succeed.
+**All AWS infrastructure has already been provisioned in account `854781667410` / `ap-south-1`** — this document records what exists and how to recreate it if needed.
 
-## Step 1 — Create the GitHub OIDC identity provider
+## What's already deployed
 
-This tells AWS to trust tokens signed by GitHub Actions.
+| Resource | Identifier |
+|---|---|
+| GitHub OIDC provider | `arn:aws:iam::854781667410:oidc-provider/token.actions.githubusercontent.com` |
+| GitHub Actions deploy role | `github-actions-deploy-propvantage` |
+| Deploy role ARN (used in workflow) | `arn:aws:iam::854781667410:role/github-actions-deploy-propvantage` |
+| Trust policy | Pinned to `repo:Scaleupapp-nirpeksh/propvantage-ai-backend:*` (all refs in this repo) |
+| Inline permissions policy | `deploy-via-ssm` — `ec2:DescribeInstances`, `ssm:SendCommand` (scoped to `i-0dfec8426e507aa00`), `ssm:GetCommandInvocation`, `ssm:ListCommandInvocations` |
+| SSM instance role on EC2 | `propvantage-ec2-ssm` with `AmazonSSMManagedInstanceCore` |
+| SSM instance profile attached to `i-0dfec8426e507aa00` | Yes (association `iip-assoc-0d2c4d13771affbbd`) |
+| SSM agent on `i-0dfec8426e507aa00` | `Online` (agent 3.3.2299.0) |
+| GitHub repo secret `AWS_DEPLOY_ROLE_ARN` | Set |
 
-**Console:**
-1. IAM → Identity providers → Add provider
-2. Provider type: **OpenID Connect**
-3. Provider URL: `https://token.actions.githubusercontent.com`
-   - Click **Get thumbprint**
-4. Audience: `sts.amazonaws.com`
-5. Add provider
+## How it works at runtime
 
-**CLI equivalent:**
+```
+push to main
+   ↓
+GitHub Actions runner
+   ↓ (mints short-lived OIDC token)
+sts:AssumeRoleWithWebIdentity → 1-hour STS credential for `github-actions-deploy-propvantage`
+   ↓
+aws ssm send-command --instance-id i-0dfec8426e507aa00 \
+    --document-name AWS-RunShellScript \
+    --parameters '{commands: [git pull && pm2 restart ...]}'
+   ↓
+SSM agent on EC2 runs the script (as root)
+   ↓
+aws ssm wait command-executed → fetch StandardOutputContent
+   ↓
+curl https://api.prop-vantage.com/api/health → must return 200
+```
+
+No SSH key is ever generated. No AWS key sits in GitHub secrets. The 1-hour STS credential is scoped to one instance + a handful of SSM actions.
+
+## To recreate from scratch (if anything is ever deleted)
+
+The CLI commands below assume `AWS_REGION=ap-south-1` and credentials that can manage IAM + SSM.
+
+### 1. OIDC provider
 ```sh
 aws iam create-open-id-connect-provider \
   --url https://token.actions.githubusercontent.com \
@@ -24,69 +52,47 @@ aws iam create-open-id-connect-provider \
   --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
 ```
 
-(AWS now validates the thumbprint server-side, so the value above is conventional. If you've already done this for any other repo in account `854781667410`, skip this step — the provider is account-wide.)
-
-## Step 2 — Create the deploy role
-
-**Console:**
-1. IAM → Roles → Create role
-2. Trusted entity type: **Web identity**
-3. Identity provider: `token.actions.githubusercontent.com`
-4. Audience: `sts.amazonaws.com`
-5. GitHub organization: `Scaleupapp-nirpeksh`
-6. GitHub repository: `propvantage-ai-backend`
-7. GitHub branch: `main`
-8. Next → skip attaching policies for now (we'll attach inline next) → name the role `github-actions-deploy-propvantage` → Create
-
-After creation, **replace the trust policy** with the contents of `trust-policy.json` in this folder. (The Console wizard creates a workable trust policy, but the one in this repo pins it explicitly to the `main` branch via `StringLike` on the `sub` claim — same effect, just version-controlled.)
-
-**CLI equivalent:**
+### 2. SSM instance profile role
 ```sh
-aws iam create-role \
-  --role-name github-actions-deploy-propvantage \
-  --assume-role-policy-document file://.github/aws-iam-setup/trust-policy.json
+aws iam create-role --role-name propvantage-ec2-ssm \
+  --assume-role-policy-document '{
+    "Version":"2012-10-17",
+    "Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]
+  }'
+aws iam attach-role-policy --role-name propvantage-ec2-ssm \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name propvantage-ec2-ssm
+aws iam add-role-to-instance-profile \
+  --instance-profile-name propvantage-ec2-ssm --role-name propvantage-ec2-ssm
+
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-0dfec8426e507aa00 \
+  --iam-instance-profile Name=propvantage-ec2-ssm
+
+# Then restart the SSM agent on the EC2 instance so it picks up credentials:
+#   sudo systemctl restart amazon-ssm-agent
 ```
 
-## Step 3 — Attach the minimal permissions policy
-
-The workflow needs exactly two permissions: `ec2:DescribeInstances` (to look up the public DNS) and `ec2-instance-connect:SendSSHPublicKey` (to push the ephemeral SSH key, scoped to the prop-vantage instance + `ec2-user` only).
-
-**Console:**
-1. Open the role `github-actions-deploy-propvantage`
-2. Permissions tab → Add permissions → Create inline policy
-3. JSON editor → paste the contents of `permissions-policy.json` in this folder
-4. Name: `deploy-via-instance-connect` → Create
-
-**CLI equivalent:**
+### 3. Deploy role (trust + permissions)
 ```sh
-aws iam put-role-policy \
-  --role-name github-actions-deploy-propvantage \
-  --policy-name deploy-via-instance-connect \
+aws iam create-role --role-name github-actions-deploy-propvantage \
+  --assume-role-policy-document file://.github/aws-iam-setup/trust-policy.json
+aws iam put-role-policy --role-name github-actions-deploy-propvantage \
+  --policy-name deploy-via-ssm \
   --policy-document file://.github/aws-iam-setup/permissions-policy.json
 ```
 
-## Step 4 — Add the role ARN to GitHub repo secrets
+### 4. GitHub repo secret
+```sh
+gh secret set AWS_DEPLOY_ROLE_ARN \
+  --body "arn:aws:iam::854781667410:role/github-actions-deploy-propvantage"
+```
 
-1. Copy the role ARN: `arn:aws:iam::854781667410:role/github-actions-deploy-propvantage`
-2. GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-3. Name: `AWS_DEPLOY_ROLE_ARN`
-4. Value: paste the role ARN
-5. Save
+## What this locks down
 
-## Step 5 — Test it
-
-Push any small commit to `main` (or run the workflow manually: Actions tab → "Deploy to EC2" → Run workflow). The workflow will:
-1. Assume the OIDC role
-2. Resolve the EC2 public DNS
-3. Push an ephemeral SSH key (60s validity) via Instance Connect
-4. SSH in, `git pull`, `pm2 restart propvantage-api`
-5. Curl the public health endpoint until it returns 200, fail if it doesn't within ~25s
-
-You can watch the run live in the Actions tab.
-
-## What gets locked down by this setup
-
-- **No AWS access keys in GitHub.** GitHub mints a short-lived OIDC token, AWS verifies it, and issues a 1-hour STS credential scoped to this single role.
-- **Role can only be assumed from this repo + this branch.** Trust policy `sub` condition is pinned to `repo:Scaleupapp-nirpeksh/propvantage-ai-backend:ref:refs/heads/main`. A fork or feature branch cannot assume it.
-- **Role can only touch the prop-vantage EC2 instance.** Permissions are scoped to `arn:aws:ec2:ap-south-1:854781667410:instance/i-0dfec8426e507aa00` and `ec2:osuser=ec2-user`. The role cannot push keys to other instances or as other users.
-- **No SSH private key stored anywhere persistent.** Each workflow run generates a fresh keypair, uses it for 60 seconds, and discards it on cleanup.
+- **No AWS access keys in GitHub.** OIDC tokens are minted per workflow run, expire in 1 hour, and are scoped to this repo only.
+- **Role can only be assumed from this repo.** Trust policy `sub` condition: `repo:Scaleupapp-nirpeksh/propvantage-ai-backend:*`. A fork or another repo cannot assume it.
+- **Role can only touch the prop-vantage EC2 instance.** `ssm:SendCommand` is resource-scoped to `arn:aws:ec2:ap-south-1:854781667410:instance/i-0dfec8426e507aa00` only.
+- **Role cannot execute arbitrary documents.** `SendCommand` is also scoped to the `AWS-RunShellScript` document; no Patch Manager, no Config Compliance, no custom docs.
+- **No SSH key ever exists.** SSM agent runs as root on the box and is authenticated against AWS, not authorized via any local key.
+- **Audit trail.** Every deploy command shows up in CloudTrail (`SendCommand` event) and SSM Run Command history with the full script body and stdout.

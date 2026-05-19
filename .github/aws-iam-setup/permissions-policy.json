@@ -2,21 +2,25 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DescribeOnePropvantageInstance",
+      "Sid": "DescribeInstances",
       "Effect": "Allow",
-      "Action": "ec2:DescribeInstances",
+      "Action": ["ec2:DescribeInstances", "ec2:DescribeTags"],
       "Resource": "*"
     },
     {
-      "Sid": "InstanceConnectToPropvantage",
+      "Sid": "SendCommandToPropvantage",
       "Effect": "Allow",
-      "Action": "ec2-instance-connect:SendSSHPublicKey",
-      "Resource": "arn:aws:ec2:ap-south-1:854781667410:instance/i-0dfec8426e507aa00",
-      "Condition": {
-        "StringEquals": {
-          "ec2:osuser": "ec2-user"
-        }
-      }
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ec2:ap-south-1:854781667410:instance/i-0dfec8426e507aa00",
+        "arn:aws:ssm:ap-south-1::document/AWS-RunShellScript"
+      ]
+    },
+    {
+      "Sid": "PollCommandResult",
+      "Effect": "Allow",
+      "Action": ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"],
+      "Resource": "*"
     }
   ]
 }

@@ -1,14 +1,14 @@
 name: Deploy to EC2
 
 # Triggers:
-#   - automatic on push to main
+#   - automatic on push to main (after CI tests pass — see test.yml)
 #   - manual via Actions UI ("Run workflow")
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# OIDC requires this. No long-lived AWS keys live in GitHub secrets.
+# OIDC: short-lived federated credential, no long-lived AWS keys in GitHub.
 permissions:
   id-token: write
   contents: read
@@ -16,14 +16,13 @@ permissions:
 env:
   AWS_REGION: ap-south-1
   INSTANCE_ID: i-0dfec8426e507aa00
-  SSH_USER: ec2-user
   APP_DIR: /home/ec2-user/propvantage-ai-backend
   PM2_APP: propvantage-api
   HEALTH_URL: https://api.prop-vantage.com/api/health
 
 jobs:
   deploy:
-    name: Pull + restart on prop-vantage EC2
+    name: SSM deploy to prop-vantage EC2
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-prop-vantage-prod
@@ -37,71 +36,69 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-deploy
 
-      - name: Resolve EC2 public DNS
-        id: ec2
+      - name: Send deploy command via SSM
+        id: ssm
         run: |
-          HOST=$(aws ec2 describe-instances \
-            --instance-ids "$INSTANCE_ID" \
-            --query 'Reservations[0].Instances[0].PublicDnsName' \
-            --output text)
-          if [ -z "$HOST" ] || [ "$HOST" = "None" ]; then
-            echo "::error::Could not resolve PublicDnsName for $INSTANCE_ID"
-            exit 1
+          set -e
+          DEPLOY_SCRIPT=$(cat <<'BASH'
+          set -euo pipefail
+          APP_DIR=/home/ec2-user/propvantage-ai-backend
+          PM2_APP=propvantage-api
+          cd "$APP_DIR"
+          BEFORE=$(git rev-parse --short HEAD)
+          echo "Before: $BEFORE"
+          git fetch origin main
+          git pull origin main --ff-only
+          AFTER=$(git rev-parse --short HEAD)
+          echo "After:  $AFTER"
+          # Re-install deps only if package.json or lock changed
+          if ! git diff --quiet "$BEFORE" "$AFTER" -- package.json package-lock.json; then
+            echo "package.json or lock changed; running npm ci..."
+            npm ci --omit=dev
+          else
+            echo "No package changes; skipping npm install."
           fi
-          echo "host=$HOST" >> "$GITHUB_OUTPUT"
-          echo "Resolved host: $HOST"
+          pm2 restart "$PM2_APP" --update-env
+          pm2 save
+          echo "Deployed $AFTER"
+          BASH
+          )
 
-      - name: Generate ephemeral SSH key
-        run: |
-          ssh-keygen -t rsa -b 2048 -f /tmp/ci-key -N "" -q
-          chmod 600 /tmp/ci-key
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "gh-actions deploy ${{ github.sha }}" \
+            --timeout-seconds 600 \
+            --parameters "commands=[$(jq -Rs . <<<"$DEPLOY_SCRIPT")]" \
+            --cloud-watch-output-config "CloudWatchOutputEnabled=false" \
+            --query 'Command.CommandId' --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "Started SSM command $CMD_ID"
 
-      - name: Push public key via EC2 Instance Connect (60s validity)
+      - name: Wait for SSM command to finish
         run: |
-          aws ec2-instance-connect send-ssh-public-key \
+          set -e
+          CMD_ID="${{ steps.ssm.outputs.command_id }}"
+          # AWS CLI ships a built-in waiter for command execution
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" || true
+          # Always fetch the invocation to surface output and final status
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
             --instance-id "$INSTANCE_ID" \
-            --instance-os-user "$SSH_USER" \
-            --ssh-public-key file:///tmp/ci-key.pub
-
-      - name: Deploy (git pull + pm2 restart)
-        env:
-          HOST: ${{ steps.ec2.outputs.host }}
-        run: |
-          ssh -i /tmp/ci-key \
-              -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=15 \
-              -o ServerAliveInterval=30 \
-              "$SSH_USER@$HOST" 'bash -se' <<'REMOTE'
-            set -euo pipefail
-
-            APP_DIR="/home/ec2-user/propvantage-ai-backend"
-            PM2_APP="propvantage-api"
-
-            cd "$APP_DIR"
-            BEFORE=$(sudo git rev-parse --short HEAD)
-            echo "Before: $BEFORE"
-
-            sudo git fetch origin main
-            sudo git pull origin main --ff-only
-
-            AFTER=$(sudo git rev-parse --short HEAD)
-            echo "After:  $AFTER"
-
-            # Re-install deps only if package.json or lock changed
-            if ! sudo git diff --quiet "$BEFORE" "$AFTER" -- package.json package-lock.json; then
-              echo "package.json or lock changed; running npm ci..."
-              sudo npm ci --omit=dev
-            else
-              echo "No package changes; skipping npm install."
-            fi
-
-            sudo pm2 restart "$PM2_APP" --update-env
-            sudo pm2 save
-          REMOTE
+            --output json > /tmp/inv.json
+          STATUS=$(jq -r .Status /tmp/inv.json)
+          echo "=== SSM stdout ==="
+          jq -r .StandardOutputContent /tmp/inv.json
+          echo ""
+          echo "=== SSM stderr ==="
+          jq -r .StandardErrorContent /tmp/inv.json
+          echo ""
+          echo "Final status: $STATUS"
+          [ "$STATUS" = "Success" ] || { echo "::error::Deploy command failed"; exit 1; }
 
       - name: Verify health endpoint
-        env:
-          HEALTH_URL: ${{ env.HEALTH_URL }}
         run: |
           echo "Waiting 8s for server to settle..."
           sleep 8
@@ -118,7 +115,3 @@ jobs:
           echo "::error::Health check failed after 5 attempts"
           cat /tmp/health.json || true
           exit 1
-
-      - name: Cleanup
-        if: always()
-        run: rm -f /tmp/ci-key /tmp/ci-key.pub
