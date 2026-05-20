@@ -120,12 +120,12 @@ const createLead = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const getLeads = asyncHandler(async (req, res) => {
-  const { 
-    page = 1, 
-    limit = 10, 
-    status, 
-    source, 
-    assignedTo, 
+  const {
+    page = 1,
+    limit = 10,
+    status,
+    source,
+    assignedTo,
     project,
     minScore,
     maxScore,
@@ -133,7 +133,8 @@ const getLeads = asyncHandler(async (req, res) => {
     qualificationStatus,
     sortBy = 'score',
     sortOrder = 'desc',
-    search
+    search,
+    channelPartner
   } = req.query;
 
   // --- V1.1 Enhancement: Advanced RBAC Filtering ---
@@ -144,6 +145,9 @@ const getLeads = asyncHandler(async (req, res) => {
   if (source) query.source = source;
   if (assignedTo) query.assignedTo = assignedTo;
   if (project) query.project = project;
+  if (channelPartner) {
+    query['channelPartnerAttribution.partners.channelPartner'] = channelPartner;
+  }
   if (priority) query.priority = priority;
   if (qualificationStatus) query.qualificationStatus = qualificationStatus;
 
@@ -184,10 +188,11 @@ const getLeads = asyncHandler(async (req, res) => {
   const leads = await Lead.find(query)
     .populate('project', 'name location')
     .populate('assignedTo', 'firstName lastName')
+    .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
     .sort(sort)
     .limit(limit * 1)
     .skip((page - 1) * limit)
-    .select('firstName lastName phone email score scoreGrade priority confidence qualificationStatus status source createdAt lastScoreUpdate assignedTo project engagementMetrics followUpSchedule');
+    .select('firstName lastName phone email score scoreGrade priority confidence qualificationStatus status source createdAt lastScoreUpdate assignedTo project engagementMetrics followUpSchedule channelPartnerAttribution');
 
   const total = await Lead.countDocuments(query);
 
@@ -218,7 +223,9 @@ const getLeadById = asyncHandler(async (req, res) => {
     organization: req.user.organization,
   })
     .populate('project', 'name targetRevenue location')
-    .populate('assignedTo', 'firstName lastName email');
+    .populate('assignedTo', 'firstName lastName email')
+    .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
+    .populate('channelPartnerAttribution.partners.agent', 'name');
 
   if (!lead) {
     res.status(404);
