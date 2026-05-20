@@ -12,7 +12,7 @@ import {
   verifyProjectAccess,
   projectAccessFilter,
 } from '../utils/projectAccessHelper.js';
-import { runLeadEnrichment } from '../services/leadEnrichmentService.js';
+import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichmentService.js';
 
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
@@ -93,10 +93,7 @@ const createLead = asyncHandler(async (req, res) => {
 
   // Kick off AI enrichment in the background if research source URLs were provided.
   // Status is set deterministically here — never trusted from the request body.
-  const src = createdLead.enrichment?.sources || {};
-  const hasSources = Boolean(
-    src.linkedinUrl || src.companyWebsite || (src.articleUrls && src.articleUrls.length)
-  );
+  const hasSources = hasEnrichmentSources(createdLead.enrichment);
   createdLead.enrichment.summary = '';
   createdLead.enrichment.signals = [];
   createdLead.enrichment.sourcesUsed = [];
@@ -295,11 +292,7 @@ const enrichLead = asyncHandler(async (req, res) => {
     }
   }
 
-  const src = lead.enrichment.sources;
-  const hasSources = Boolean(
-    src.linkedinUrl || src.companyWebsite || (src.articleUrls && src.articleUrls.length)
-  );
-  if (!hasSources) {
+  if (!hasEnrichmentSources(lead.enrichment)) {
     res.status(400);
     throw new Error(
       'At least one research source URL (LinkedIn, company website, or article) is required.'
@@ -346,6 +339,11 @@ const updateLead = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error('You are not authorized to update this lead.');
   }
+
+  // The enrichment sub-document is AI-owned: it is managed only by createLead
+  // and the /enrich endpoint. Drop any client-supplied enrichment payload so its
+  // status/summary/signals cannot be forged through a plain lead update.
+  delete req.body.enrichment;
 
   // Track what fields are being updated
   const updatedFields = Object.keys(req.body);

@@ -19,6 +19,19 @@ const EXTRACTION_MODEL = process.env.RESEARCH_EXTRACTION_MODEL || 'claude-sonnet
 
 const VALID_CATEGORIES = ['seniority', 'industry', 'employer_scale', 'wealth', 'other'];
 
+// ─── Helpers ──────────────────────────────────────────────────
+
+/**
+ * True when a lead's enrichment sub-document has at least one research source URL.
+ * Shared by the lead controller so the "has sources" rule lives in one place.
+ */
+const hasEnrichmentSources = (enrichment) => {
+  const src = enrichment?.sources || {};
+  return Boolean(
+    src.linkedinUrl || src.companyWebsite || (src.articleUrls && src.articleUrls.length)
+  );
+};
+
 // ─── Prompts ──────────────────────────────────────────────────
 
 const buildSearchPrompt = (lead) => {
@@ -81,10 +94,11 @@ Required JSON schema:
  * @param {ObjectId|string} userId - who triggered the enrichment
  */
 const runLeadEnrichment = async (leadId, userId) => {
-  const { default: Lead } = await import('../models/leadModel.js');
-
   let lead;
   try {
+    // Imported inside the try so a module-resolution failure cannot reject
+    // out of this fire-and-forget function and crash the process.
+    const { default: Lead } = await import('../models/leadModel.js');
     lead = await Lead.findById(leadId);
     if (!lead) {
       console.error(`[Lead Enrichment] Lead ${leadId} not found — aborting`);
@@ -108,6 +122,7 @@ const runLeadEnrichment = async (leadId, userId) => {
       try {
         const extractionResponse = await anthropic.messages.create({
           model: EXTRACTION_MODEL,
+          // Output is small — a short summary plus up to 6 signal objects.
           max_tokens: 1500,
           temperature: attempt === 1 ? 0.2 : 0.1,
           system: [
@@ -161,7 +176,8 @@ const runLeadEnrichment = async (leadId, userId) => {
     try {
       if (lead) {
         lead.enrichment.status = 'failed';
-        lead.enrichment.error = err.message;
+        // Cap the message — raw SDK errors can carry rate-limit / quota detail.
+        lead.enrichment.error = (err.message || 'Enrichment failed').slice(0, 300);
         await lead.save();
       }
     } catch (saveErr) {
@@ -173,4 +189,4 @@ const runLeadEnrichment = async (leadId, userId) => {
   }
 };
 
-export { runLeadEnrichment };
+export { runLeadEnrichment, hasEnrichmentSources };
