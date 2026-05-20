@@ -19,6 +19,7 @@ import {
   getCommissionRecords,
   markPayoutPaid,
   editSaleAttribution,
+  getChannelPartnerDashboard,
 } from '../controllers/channelPartnerController.js';
 
 const router = express.Router();
@@ -53,6 +54,13 @@ router.put(
   '/commission-records/:id/payouts/:index/pay',
   hasPermission(PERMISSIONS.CHANNEL_PARTNERS.MANAGE_COMMISSIONS),
   markPayoutPaid
+);
+
+// ─── Performance dashboard ──────────────────────────────────
+router.get(
+  '/dashboard',
+  hasPermission(PERMISSIONS.CHANNEL_PARTNERS.VIEW),
+  getChannelPartnerDashboard
 );
 
 // ─── Booking attribution edit ───────────────────────────────
