@@ -53,7 +53,10 @@ const main = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     const { default: User } = await import('../models/userModel.js');
 
-    const user = await User.findOne().sort({ createdAt: 1 });
+    // Prefer an owner-equivalent user — they have channel_partners:create.
+    const user =
+      (await User.findOne({ email: /owner/i })) ||
+      (await User.findOne().sort({ createdAt: 1 }));
     if (!user) {
       console.error('  ❌ No user found — seed data first.');
       process.exit(1);

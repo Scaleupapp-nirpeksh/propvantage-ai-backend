@@ -3,6 +3,7 @@
 //   sources buyers for the developer. Managed records (no login in this phase).
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 
 const channelPartnerSchema = new mongoose.Schema(
   {
@@ -44,6 +45,15 @@ const channelPartnerSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound indexes for the controller's common query shapes.
+channelPartnerSchema.index({ organization: 1, status: 1 });
+channelPartnerSchema.index({ organization: 1, firmName: 1 });
+
+// Field-level encryption for the payout bank account number (PII).
+channelPartnerSchema.plugin(encryptionPlugin, {
+  fields: ['bankDetails.accountNumber'],
+});
 
 const ChannelPartner = mongoose.model('ChannelPartner', channelPartnerSchema);
 

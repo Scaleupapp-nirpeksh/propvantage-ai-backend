@@ -6,6 +6,20 @@ import asyncHandler from 'express-async-handler';
 import ChannelPartner from '../models/channelPartnerModel.js';
 import ChannelPartnerAgent from '../models/channelPartnerAgentModel.js';
 import CommissionRule from '../models/commissionRuleModel.js';
+import Project from '../models/projectModel.js';
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+// Keep only the project IDs from `ids` that belong to the organization —
+// prevents a caller persisting foreign-org project references.
+const filterOrgProjectIds = async (ids, organizationId) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const found = await Project.find({
+    _id: { $in: ids },
+    organization: organizationId,
+  }).select('_id');
+  return found.map((p) => p._id);
+};
 
 // ─── Channel Partner firms ───────────────────────────────────
 
@@ -21,8 +35,10 @@ const createChannelPartner = asyncHandler(async (req, res) => {
     throw new Error('Firm name is required');
   }
 
+  const { organization, onboardedBy, approvedProjects, ...body } = req.body;
   const partner = await ChannelPartner.create({
-    ...req.body,
+    ...body,
+    approvedProjects: await filterOrgProjectIds(approvedProjects, req.user.organization),
     organization: req.user.organization,
     onboardedBy: req.user._id,
   });
@@ -88,8 +104,14 @@ const updateChannelPartner = asyncHandler(async (req, res) => {
   }
 
   // organization / onboardedBy are immutable via this endpoint
-  const { organization, onboardedBy, ...updatable } = req.body;
+  const { organization, onboardedBy, approvedProjects, ...updatable } = req.body;
   Object.assign(partner, updatable);
+  if (approvedProjects !== undefined) {
+    partner.approvedProjects = await filterOrgProjectIds(
+      approvedProjects,
+      req.user.organization
+    );
+  }
   await partner.save();
 
   res.json({ success: true, data: partner });
@@ -135,8 +157,17 @@ const createAgent = asyncHandler(async (req, res) => {
  * @access  Private (channel_partners:view)
  */
 const getAgents = asyncHandler(async (req, res) => {
+  const partner = await ChannelPartner.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!partner) {
+    res.status(404);
+    throw new Error('Channel partner not found');
+  }
+
   const agents = await ChannelPartnerAgent.find({
-    channelPartner: req.params.id,
+    channelPartner: partner._id,
     organization: req.user.organization,
   }).sort({ name: 1 });
 
@@ -177,9 +208,18 @@ const createCommissionRule = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Rule name is required');
   }
+  const { organization, appliesToProject, ...body } = req.body;
+  if (appliesToProject) {
+    const valid = await filterOrgProjectIds([appliesToProject], req.user.organization);
+    if (valid.length === 0) {
+      res.status(400);
+      throw new Error('appliesToProject must be a project in your organization');
+    }
+  }
   try {
     const rule = await CommissionRule.create({
-      ...req.body,
+      ...body,
+      appliesToProject: appliesToProject || null,
       organization: req.user.organization,
     });
     res.status(201).json({ success: true, data: rule });
@@ -240,8 +280,18 @@ const updateCommissionRule = asyncHandler(async (req, res) => {
     throw new Error('Commission rule not found');
   }
 
-  const { organization, ...updatable } = req.body;
+  const { organization, appliesToProject, ...updatable } = req.body;
   Object.assign(rule, updatable);
+  if (appliesToProject !== undefined) {
+    if (appliesToProject) {
+      const valid = await filterOrgProjectIds([appliesToProject], req.user.organization);
+      if (valid.length === 0) {
+        res.status(400);
+        throw new Error('appliesToProject must be a project in your organization');
+      }
+    }
+    rule.appliesToProject = appliesToProject || null;
+  }
   try {
     await rule.save();
   } catch (err) {

@@ -78,12 +78,16 @@ commissionRuleSchema.pre('validate', function (next) {
       return next(new Error('Tranche schedule requires at least one tranche'));
     }
     const sum = tranches.reduce((a, t) => a + (t.percentage || 0), 0);
-    if (Math.round(sum) !== 100) {
+    if (Math.abs(sum - 100) > 0.01) {
       return next(new Error(`Tranche percentages must sum to 100 (got ${sum})`));
     }
   }
   next();
 });
+
+// Compound indexes for the controller's common query shapes.
+commissionRuleSchema.index({ organization: 1, status: 1 });
+commissionRuleSchema.index({ organization: 1, appliesToProject: 1 });
 
 const CommissionRule = mongoose.model('CommissionRule', commissionRuleSchema);
 
