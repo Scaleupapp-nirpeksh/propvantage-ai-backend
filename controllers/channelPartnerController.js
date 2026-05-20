@@ -9,6 +9,7 @@ import CommissionRule from '../models/commissionRuleModel.js';
 import Project from '../models/projectModel.js';
 import CommissionRecord from '../models/commissionRecordModel.js';
 import Sale from '../models/salesModel.js';
+import Lead from '../models/leadModel.js';
 import { syncCommissionForSale } from '../services/commissionService.js';
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -405,6 +406,121 @@ const editSaleAttribution = asyncHandler(async (req, res) => {
   res.json({ success: true, data: sale.channelPartnerAttribution });
 });
 
+// ─── Performance dashboard ───────────────────────────────────
+
+/**
+ * @desc    Per-channel-partner performance leaderboard + funnel
+ * @route   GET /api/channel-partners/dashboard
+ * @access  Private (channel_partners:view)
+ */
+const getChannelPartnerDashboard = asyncHandler(async (req, res) => {
+  const orgId = req.user.organization;
+
+  const partners = await ChannelPartner.find({ organization: orgId }).select('firmName status');
+
+  // Leads tagged to each CP
+  const leadAgg = await Lead.aggregate([
+    { $match: { organization: orgId, 'channelPartnerAttribution.viaChannelPartner': true } },
+    { $unwind: '$channelPartnerAttribution.partners' },
+    {
+      $group: {
+        _id: '$channelPartnerAttribution.partners.channelPartner',
+        leadsTagged: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Bookings + booked value attributed to each CP (cancelled bookings excluded)
+  const saleAgg = await Sale.aggregate([
+    {
+      $match: {
+        organization: orgId,
+        'channelPartnerAttribution.viaChannelPartner': true,
+        status: { $ne: 'Cancelled' },
+      },
+    },
+    { $unwind: '$channelPartnerAttribution.partners' },
+    {
+      $group: {
+        _id: '$channelPartnerAttribution.partners.channelPartner',
+        bookings: { $sum: 1 },
+        bookingValue: { $sum: '$salePrice' },
+      },
+    },
+  ]);
+
+  // Commission earned / paid per CP (cancelled records excluded)
+  const commAgg = await CommissionRecord.aggregate([
+    { $match: { organization: orgId, status: { $ne: 'cancelled' } } },
+    {
+      $addFields: {
+        paidAmount: {
+          $sum: {
+            $map: {
+              input: { $filter: { input: '$payouts', as: 'p', cond: { $eq: ['$$p.status', 'paid'] } } },
+              as: 'p',
+              in: '$$p.amount',
+            },
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: '$channelPartner',
+        commissionNet: { $sum: '$netAmount' },
+        commissionPaid: { $sum: '$paidAmount' },
+      },
+    },
+  ]);
+
+  const byId = (rows) => Object.fromEntries(rows.map((r) => [String(r._id), r]));
+  const leadMap = byId(leadAgg);
+  const saleMap = byId(saleAgg);
+  const commMap = byId(commAgg);
+
+  const leaderboard = partners
+    .map((p) => {
+      const id = String(p._id);
+      const lead = leadMap[id] || {};
+      const sale = saleMap[id] || {};
+      const comm = commMap[id] || {};
+      const commissionNet = comm.commissionNet || 0;
+      const commissionPaid = comm.commissionPaid || 0;
+      return {
+        channelPartnerId: p._id,
+        firmName: p.firmName,
+        status: p.status,
+        leadsTagged: lead.leadsTagged || 0,
+        bookings: sale.bookings || 0,
+        bookingValue: sale.bookingValue || 0,
+        commissionNet,
+        commissionPaid,
+        commissionPending: commissionNet - commissionPaid,
+      };
+    })
+    .sort((a, b) => b.bookingValue - a.bookingValue);
+
+  const funnel = leaderboard.reduce(
+    (acc, r) => ({
+      leadsTagged: acc.leadsTagged + r.leadsTagged,
+      bookings: acc.bookings + r.bookings,
+      bookingValue: acc.bookingValue + r.bookingValue,
+      commissionNet: acc.commissionNet + r.commissionNet,
+      commissionPaid: acc.commissionPaid + r.commissionPaid,
+      commissionPending: acc.commissionPending + r.commissionPending,
+    }),
+    { leadsTagged: 0, bookings: 0, bookingValue: 0, commissionNet: 0, commissionPaid: 0, commissionPending: 0 }
+  );
+  funnel.conversionPct =
+    funnel.leadsTagged > 0 ? Math.round((funnel.bookings / funnel.leadsTagged) * 100) : 0;
+
+  res.json({
+    success: true,
+    data: { leaderboard, funnel, partnerCount: partners.length },
+  });
+});
+
 export {
   createChannelPartner,
   getChannelPartners,
@@ -420,4 +536,5 @@ export {
   getCommissionRecords,
   markPayoutPaid,
   editSaleAttribution,
+  getChannelPartnerDashboard,
 };
