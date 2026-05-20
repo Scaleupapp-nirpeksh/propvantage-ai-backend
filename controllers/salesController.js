@@ -145,6 +145,18 @@ const createSale = asyncHandler(async (req, res) => {
           status: 'Pending Approval',
           bookingDate: new Date(),
           paymentPlanSnapshot: paymentPlanSnapshot,
+          ...(channelPartnerAttribution && channelPartnerAttribution.viaChannelPartner
+            ? {
+                channelPartnerAttribution: {
+                  viaChannelPartner: true,
+                  partners: channelPartnerAttribution.partners || [],
+                  status: 'tagged',
+                  taggedBy: req.user._id,
+                  taggedAt: new Date(),
+                  history: [{ by: req.user._id, action: 'tagged', note: 'Set at booking creation.' }],
+                },
+              }
+            : {}),
         });
         const createdPendingSale = await pendingSale.save({ session });
 
