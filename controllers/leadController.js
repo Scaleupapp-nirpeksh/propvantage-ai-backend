@@ -12,6 +12,7 @@ import {
   verifyProjectAccess,
   projectAccessFilter,
 } from '../utils/projectAccessHelper.js';
+import { runLeadEnrichment } from '../services/leadEnrichmentService.js';
 
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
@@ -90,10 +91,29 @@ const createLead = asyncHandler(async (req, res) => {
   // Trigger initial score calculation in background with delay
   addLeadScoreUpdateJob(createdLead._id, { delay: 2000 }); // 2 second delay
 
+  // Kick off AI enrichment in the background if research source URLs were provided.
+  // Status is set deterministically here — never trusted from the request body.
+  const src = createdLead.enrichment?.sources || {};
+  const hasSources = Boolean(
+    src.linkedinUrl || src.companyWebsite || (src.articleUrls && src.articleUrls.length)
+  );
+  createdLead.enrichment.summary = '';
+  createdLead.enrichment.signals = [];
+  createdLead.enrichment.sourcesUsed = [];
+  createdLead.enrichment.error = '';
+  createdLead.enrichment.status = hasSources ? 'pending' : 'idle';
+  await createdLead.save();
+
+  if (hasSources) {
+    setImmediate(() => runLeadEnrichment(createdLead._id, req.user._id));
+  }
+
   res.status(201).json({
     success: true,
     data: createdLead,
-    message: 'Lead created successfully. Score calculation in progress.'
+    message: hasSources
+      ? 'Lead created successfully. AI enrichment in progress.'
+      : 'Lead created successfully. Score calculation in progress.'
   });
 });
 
