@@ -241,7 +241,7 @@ app.get('/api/docs', (req, res) => {
       leads: '/api/leads',
       sales: '/api/sales',
       payments: '/api/payments',
-      commissions: '/api/commissions',
+      channelPartners: '/api/channel-partners',
       documents: '/api/documents',
       construction: '/api/construction',
       contractors: '/api/contractors',
