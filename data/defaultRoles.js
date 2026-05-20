@@ -96,6 +96,10 @@ const DEFAULT_ROLES = [
       // Competitive Analysis — full
       'competitive_analysis:view', 'competitive_analysis:manage_data', 'competitive_analysis:ai_research',
       'competitive_analysis:ai_recommendations', 'competitive_analysis:manage_providers',
+      // Channel Partners — full
+      'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
+      'channel_partners:manage_commission_rules', 'channel_partners:attribute',
+      'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
     ],
   },
   {
@@ -150,6 +154,10 @@ const DEFAULT_ROLES = [
       // Competitive Analysis — view, manage data, research, recommendations
       'competitive_analysis:view', 'competitive_analysis:manage_data',
       'competitive_analysis:ai_research', 'competitive_analysis:ai_recommendations',
+      // Channel Partners — full (sales leadership manages CPs and commissions)
+      'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
+      'channel_partners:manage_commission_rules', 'channel_partners:attribute',
+      'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
     ],
   },
   {
@@ -289,6 +297,8 @@ const DEFAULT_ROLES = [
       'approvals:view', 'approvals:approve', 'approvals:reject',
       // Competitive Analysis — view, manage data
       'competitive_analysis:view', 'competitive_analysis:manage_data',
+      // Channel Partners — view + attribute (can tag a lead's CP, not manage registry)
+      'channel_partners:view', 'channel_partners:attribute',
     ],
   },
   {
@@ -372,6 +382,10 @@ const DEFAULT_ROLES = [
       'approvals:view', 'approvals:approve', 'approvals:reject',
       // Competitive Analysis — view only
       'competitive_analysis:view',
+      // Channel Partners — full (manages CP relationships and rules)
+      'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
+      'channel_partners:manage_commission_rules', 'channel_partners:attribute',
+      'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
     ],
   },
   {
@@ -410,6 +424,8 @@ const DEFAULT_ROLES = [
       'project_access:view',
       // Approvals — view only
       'approvals:view',
+      // Channel Partners — view + attribute (can tag a lead's CP, not manage registry)
+      'channel_partners:view', 'channel_partners:attribute',
     ],
   },
   {
@@ -438,6 +454,8 @@ const DEFAULT_ROLES = [
       'project_access:view',
       // Approvals — view only
       'approvals:view',
+      // Channel Partners — view + attribute (line sales role)
+      'channel_partners:view', 'channel_partners:attribute',
     ],
   },
   {
@@ -463,6 +481,8 @@ const DEFAULT_ROLES = [
       'project_access:view',
       // Approvals — view only
       'approvals:view',
+      // Channel Partners — view + attribute (external agent, line sales role)
+      'channel_partners:view', 'channel_partners:attribute',
     ],
   },
 ];
