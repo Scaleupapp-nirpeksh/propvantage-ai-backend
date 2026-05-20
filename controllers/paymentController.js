@@ -321,33 +321,74 @@ const waiveInstallment = asyncHandler(async (req, res) => {
  */
 const recordPayment = asyncHandler(async (req, res) => {
   const {
-    paymentPlanId,
     amount,
     paymentDate,
     paymentMethod,
     paymentMethodDetails,
-    allocations,
-    notes
+    paymentReference,   // frontend sends a flat reference string
+    notes,
   } = req.body;
 
-  // Validate required fields
-  if (!paymentPlanId || !amount || !paymentDate || !paymentMethod) {
+  // ── Resolve the payment plan ────────────────────────────────────────
+  // The frontend's RecordPaymentPage sends `sale`; this controller was
+  // written to take `paymentPlanId`. Accept either: if only `sale` is
+  // given, look up that sale's payment plan.
+  let paymentPlanId = req.body.paymentPlanId || req.body.paymentPlan;
+  const saleId = req.body.sale;
+
+  if (!amount || !paymentDate || !paymentMethod) {
     res.status(400);
-    throw new Error('Payment plan ID, amount, payment date, and payment method are required.');
+    throw new Error('Amount, payment date, and payment method are required.');
+  }
+  if (!paymentPlanId && !saleId) {
+    res.status(400);
+    throw new Error('A payment plan or sale reference is required.');
   }
 
-  // Verify payment plan exists and belongs to organization
-  const paymentPlan = await PaymentPlan.findOne({
-    _id: paymentPlanId,
-    organization: req.user.organization
-  });
+  let paymentPlan;
+  if (paymentPlanId) {
+    paymentPlan = await PaymentPlan.findOne({
+      _id: paymentPlanId,
+      organization: req.user.organization,
+    });
+  } else {
+    paymentPlan = await PaymentPlan.findOne({
+      sale: saleId,
+      organization: req.user.organization,
+    });
+  }
 
   if (!paymentPlan) {
     res.status(404);
-    throw new Error('Payment plan not found.');
+    throw new Error(
+      saleId && !req.body.paymentPlanId
+        ? 'No payment plan found for this sale. Create a payment plan first.'
+        : 'Payment plan not found.'
+    );
   }
+  paymentPlanId = paymentPlan._id;
 
   verifyProjectAccess(req, res, paymentPlan.project);
+
+  // ── Normalise allocations ───────────────────────────────────────────
+  // processPayment expects an array: [{ installment, allocatedAmount, allocationType }].
+  // The frontend sends `allocation` as an object map: { <installmentId>: amount }.
+  // Also accept an already-correct `allocations` array.
+  let allocations = req.body.allocations;
+  if ((!allocations || !allocations.length) && req.body.allocation && typeof req.body.allocation === 'object') {
+    allocations = Object.entries(req.body.allocation)
+      .filter(([, amt]) => Number(amt) > 0)
+      .map(([installmentId, amt]) => ({
+        installment: installmentId,
+        allocatedAmount: Number(amt),
+        allocationType: 'principal',
+      }));
+  }
+
+  // Fold a flat paymentReference into paymentMethodDetails.
+  const resolvedMethodDetails = paymentMethodDetails || (paymentReference
+    ? { referenceNumber: paymentReference }
+    : undefined);
 
   const generateTransactionNumber = () => {
     const timestamp = Date.now().toString();
@@ -360,10 +401,10 @@ const recordPayment = asyncHandler(async (req, res) => {
     paymentPlan: paymentPlanId,
     customer: paymentPlan.customer,
     amount,
-    transactionNumber: generateTransactionNumber(), 
+    transactionNumber: generateTransactionNumber(),
     paymentDate: new Date(paymentDate),
     paymentMethod,
-    paymentMethodDetails,
+    paymentMethodDetails: resolvedMethodDetails,
     notes,
     status: 'completed' // Default to completed, can be changed to pending if approval needed
   };
