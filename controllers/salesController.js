@@ -354,7 +354,8 @@ const getSales = asyncHandler(async (req, res) => {
       dateFrom = '',
       dateTo = '',
       sortBy = 'bookingDate',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      channelPartner = ''
     } = req.query;
 
     console.log('📋 getSales query params:', req.query);
@@ -383,6 +384,9 @@ const getSales = asyncHandler(async (req, res) => {
     // Add salesperson filter
     if (salesperson && salesperson !== 'all') {
       baseFilters.salesPerson = salesperson;
+    }
+    if (channelPartner && channelPartner !== 'all') {
+      baseFilters['channelPartnerAttribution.partners.channelPartner'] = channelPartner;
     }
 
     // Add date range filter
@@ -494,7 +498,8 @@ const getSales = asyncHandler(async (req, res) => {
         { path: 'project', select: 'name location type status' },
         { path: 'unit', select: 'unitNumber fullAddress floor area' },
         { path: 'lead', select: 'firstName lastName email phone source priority' },
-        { path: 'salesPerson', select: 'firstName lastName email role' }
+        { path: 'salesPerson', select: 'firstName lastName email role' },
+        { path: 'channelPartnerAttribution.partners.channelPartner', select: 'firmName' }
       ]);
 
       // Calculate stats
@@ -522,6 +527,7 @@ const getSales = asyncHandler(async (req, res) => {
         .populate('unit', 'unitNumber fullAddress floor area')
         .populate('lead', 'firstName lastName email phone source priority')
         .populate('salesPerson', 'firstName lastName email role')
+        .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
         .sort(sort)
         .skip(skip)
         .limit(pageSize);
@@ -571,7 +577,9 @@ const getSale = asyncHandler(async (req, res) => {
       .populate('unit', 'unitNumber fullAddress floor area bedrooms bathrooms')
       .populate('lead', 'firstName lastName email phone source priority requirements')
       .populate('salesPerson', 'firstName lastName email role')
-      .populate('paymentPlan');
+      .populate('paymentPlan')
+      .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
+      .populate('channelPartnerAttribution.partners.agent', 'name');
 
     if (!sale) {
       res.status(404);
