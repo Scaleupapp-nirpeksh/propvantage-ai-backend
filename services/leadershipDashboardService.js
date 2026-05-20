@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 let Project, Tower, Unit, Lead, Interaction, Sale,
     PaymentPlan, Installment, PaymentTransaction,
     Invoice, ConstructionMilestone, Contractor,
-    PartnerCommission, Task, User;
+    CommissionRecord, Task, User;
 
 const initializeModels = async () => {
   if (!Project) {
@@ -26,7 +26,7 @@ const initializeModels = async () => {
         { default: InvoiceModel },
         { default: ConstructionMilestoneModel },
         { default: ContractorModel },
-        { default: PartnerCommissionModel },
+        { default: CommissionRecordModel },
         { default: TaskModel },
         { default: UserModel },
       ] = await Promise.all([
@@ -42,7 +42,7 @@ const initializeModels = async () => {
         import('../models/invoiceModel.js'),
         import('../models/constructionMilestoneModel.js'),
         import('../models/contractorModel.js'),
-        import('../models/partnerCommissionModel.js'),
+        import('../models/commissionRecordModel.js'),
         import('../models/taskModel.js'),
         import('../models/userModel.js'),
       ]);
@@ -59,7 +59,7 @@ const initializeModels = async () => {
       Invoice = InvoiceModel;
       ConstructionMilestone = ConstructionMilestoneModel;
       Contractor = ContractorModel;
-      PartnerCommission = PartnerCommissionModel;
+      CommissionRecord = CommissionRecordModel;
       Task = TaskModel;
       User = UserModel;
 
@@ -550,27 +550,34 @@ const aggregateChannelPartner = async (orgId, pf = {}) => {
   try {
     const orgObjectId = toObjectId(orgId);
 
-    const result = await PartnerCommission.aggregate([
+    const result = await CommissionRecord.aggregate([
       { $match: { organization: orgObjectId, ...pf } },
+      {
+        $addFields: {
+          paidAmount: {
+            $sum: {
+              $map: {
+                input: { $filter: { input: '$payouts', as: 'p', cond: { $eq: ['$$p.status', 'paid'] } } },
+                as: 'p',
+                in: '$$p.amount',
+              },
+            },
+          },
+        },
+      },
       {
         $facet: {
           byStatus: [
-            {
-              $group: {
-                _id: '$status',
-                count: { $sum: 1 },
-                totalNet: { $sum: { $ifNull: ['$commissionCalculation.netCommission', 0] } },
-              },
-            },
+            { $group: { _id: '$status', count: { $sum: 1 }, totalNet: { $sum: '$netAmount' } } },
           ],
           totals: [
             {
               $group: {
                 _id: null,
-                totalGross: { $sum: { $ifNull: ['$commissionCalculation.grossCommission', 0] } },
-                totalNet: { $sum: { $ifNull: ['$commissionCalculation.netCommission', 0] } },
-                totalPaid: { $sum: { $ifNull: ['$paymentDetails.totalPaid', 0] } },
-                totalPending: { $sum: { $ifNull: ['$paymentDetails.totalPending', 0] } },
+                totalGross: { $sum: '$grossAmount' },
+                totalNet: { $sum: '$netAmount' },
+                totalPaid: { $sum: '$paidAmount' },
+                totalPending: { $sum: { $subtract: ['$netAmount', '$paidAmount'] } },
               },
             },
           ],
@@ -970,17 +977,35 @@ const getLeadershipProjectComparison = async (orgId, period, startDate, endDate,
       .lean(),
 
     // 10. Partner commissions per project
-    PartnerCommission.aggregate([
+    CommissionRecord.aggregate([
       { $match: { organization: orgObjectId } },
       {
-        $group: {
-          _id: '$project',
-          totalCommission: { $sum: { $ifNull: ['$commissionCalculation.netCommission', 0] } },
-          paidCommission: {
+        $lookup: {
+          from: 'sales',
+          localField: 'sale',
+          foreignField: '_id',
+          as: 'saleDoc',
+        },
+      },
+      { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          paidAmount: {
             $sum: {
-              $cond: [{ $eq: ['$status', 'paid'] }, { $ifNull: ['$commissionCalculation.netCommission', 0] }, 0],
+              $map: {
+                input: { $filter: { input: '$payouts', as: 'p', cond: { $eq: ['$$p.status', 'paid'] } } },
+                as: 'p',
+                in: '$$p.amount',
+              },
             },
           },
+        },
+      },
+      {
+        $group: {
+          _id: '$saleDoc.project',
+          totalCommission: { $sum: '$netAmount' },
+          paidCommission: { $sum: '$paidAmount' },
           salesViaCp: { $sum: 1 },
         },
       },
