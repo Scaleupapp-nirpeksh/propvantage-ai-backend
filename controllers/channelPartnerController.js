@@ -165,6 +165,92 @@ const updateAgent = asyncHandler(async (req, res) => {
   res.json({ success: true, data: agent });
 });
 
+// ─── Commission rules ────────────────────────────────────────
+
+/**
+ * @desc    Create a commission rule
+ * @route   POST /api/channel-partners/commission-rules
+ * @access  Private (channel_partners:manage_commission_rules)
+ */
+const createCommissionRule = asyncHandler(async (req, res) => {
+  if (!req.body.name || !req.body.name.trim()) {
+    res.status(400);
+    throw new Error('Rule name is required');
+  }
+  try {
+    const rule = await CommissionRule.create({
+      ...req.body,
+      organization: req.user.organization,
+    });
+    res.status(201).json({ success: true, data: rule });
+  } catch (err) {
+    // Surface the tranche-sum / schema validation message as a 400
+    res.status(400);
+    throw new Error(err.message);
+  }
+});
+
+/**
+ * @desc    List commission rules
+ * @route   GET /api/channel-partners/commission-rules
+ * @access  Private (channel_partners:view)
+ */
+const getCommissionRules = asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const query = { organization: req.user.organization };
+  if (status) query.status = status;
+
+  const rules = await CommissionRule.find(query)
+    .populate('appliesToProject', 'name')
+    .sort({ createdAt: -1 });
+
+  res.json({ success: true, count: rules.length, data: rules });
+});
+
+/**
+ * @desc    Get one commission rule
+ * @route   GET /api/channel-partners/commission-rules/:id
+ * @access  Private (channel_partners:view)
+ */
+const getCommissionRuleById = asyncHandler(async (req, res) => {
+  const rule = await CommissionRule.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  }).populate('appliesToProject', 'name');
+
+  if (!rule) {
+    res.status(404);
+    throw new Error('Commission rule not found');
+  }
+  res.json({ success: true, data: rule });
+});
+
+/**
+ * @desc    Update a commission rule
+ * @route   PUT /api/channel-partners/commission-rules/:id
+ * @access  Private (channel_partners:manage_commission_rules)
+ */
+const updateCommissionRule = asyncHandler(async (req, res) => {
+  const rule = await CommissionRule.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!rule) {
+    res.status(404);
+    throw new Error('Commission rule not found');
+  }
+
+  const { organization, ...updatable } = req.body;
+  Object.assign(rule, updatable);
+  try {
+    await rule.save();
+  } catch (err) {
+    res.status(400);
+    throw new Error(err.message);
+  }
+  res.json({ success: true, data: rule });
+});
+
 export {
   createChannelPartner,
   getChannelPartners,
@@ -173,4 +259,8 @@ export {
   createAgent,
   getAgents,
   updateAgent,
+  createCommissionRule,
+  getCommissionRules,
+  getCommissionRuleById,
+  updateCommissionRule,
 };
