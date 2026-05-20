@@ -262,6 +262,64 @@ const getLeadById = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Re-run AI enrichment for a lead
+ * @route   POST /api/leads/:id/enrich
+ * @access  Private
+ */
+const enrichLead = asyncHandler(async (req, res) => {
+  const lead = await Lead.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+
+  if (!lead) {
+    res.status(404);
+    throw new Error('Lead not found');
+  }
+
+  verifyProjectAccess(req, res, lead.project);
+
+  // Optionally update the research source URLs before re-running
+  const { sources } = req.body;
+  if (sources && typeof sources === 'object') {
+    if (typeof sources.linkedinUrl === 'string') {
+      lead.enrichment.sources.linkedinUrl = sources.linkedinUrl.trim();
+    }
+    if (typeof sources.companyWebsite === 'string') {
+      lead.enrichment.sources.companyWebsite = sources.companyWebsite.trim();
+    }
+    if (Array.isArray(sources.articleUrls)) {
+      lead.enrichment.sources.articleUrls = sources.articleUrls
+        .filter((u) => typeof u === 'string' && u.trim())
+        .map((u) => u.trim());
+    }
+  }
+
+  const src = lead.enrichment.sources;
+  const hasSources = Boolean(
+    src.linkedinUrl || src.companyWebsite || (src.articleUrls && src.articleUrls.length)
+  );
+  if (!hasSources) {
+    res.status(400);
+    throw new Error(
+      'At least one research source URL (LinkedIn, company website, or article) is required.'
+    );
+  }
+
+  lead.enrichment.status = 'pending';
+  lead.enrichment.error = '';
+  await lead.save();
+
+  setImmediate(() => runLeadEnrichment(lead._id, req.user._id));
+
+  res.status(202).json({
+    success: true,
+    status: 'pending',
+    message: 'Lead enrichment started. Poll the lead detail endpoint for results.',
+  });
+});
+
+/**
  * @desc    Update a lead
  * @route   PUT /api/leads/:id
  * @access  Private
@@ -681,6 +739,7 @@ export {
   createLead,
   getLeads,
   getLeadById,
+  enrichLead,
   updateLead,
   deleteLead,
   addInteractionToLead,      // FIXED: Now properly exported

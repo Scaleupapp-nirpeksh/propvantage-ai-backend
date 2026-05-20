@@ -6,6 +6,7 @@ import {
   createLead,
   getLeads,
   getLeadById,
+  enrichLead,
   updateLead,
   addInteractionToLead,
   getLeadInteractions,
@@ -45,6 +46,8 @@ router.route('/:id')
 router.route('/:id/interactions')
   .post(hasPermission(PERMISSIONS.LEADS.UPDATE), addInteractionToLead)
   .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadInteractions);
+
+router.post('/:id/enrich', hasPermission(PERMISSIONS.LEADS.UPDATE), enrichLead);
 
 // =============================================================================
 // LEAD SCORING
