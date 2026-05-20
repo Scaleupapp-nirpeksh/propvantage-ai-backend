@@ -18,6 +18,7 @@ import {
   checkApprovalRequired,
   createApprovalRequest,
 } from '../services/approvalService.js';
+import { syncCommissionForSale } from '../services/commissionService.js';
 
 /**
  * @desc    Create a new sale (book a unit) - UPDATED for frontend compatibility
@@ -25,13 +26,14 @@ import {
  * @access  Private (Sales roles)
  */
 const createSale = asyncHandler(async (req, res) => {
-  const { 
-    unitId, 
-    leadId, 
-    discountPercentage = 0, 
-    discountAmount = 0, 
-    costSheetSnapshot, 
-    paymentPlanSnapshot // Frontend sends this with templateId, templateName, schedule
+  const {
+    unitId,
+    leadId,
+    discountPercentage = 0,
+    discountAmount = 0,
+    costSheetSnapshot,
+    paymentPlanSnapshot, // Frontend sends this with templateId, templateName, schedule
+    channelPartnerAttribution
   } = req.body;
 
   console.log('📝 Creating sale with frontend payload:', {
@@ -186,6 +188,8 @@ const createSale = asyncHandler(async (req, res) => {
           .populate('lead', 'firstName lastName email phone source priority')
           .populate('salesPerson', 'firstName lastName email role');
 
+        await syncCommissionForSale(createdPendingSale._id, req.user._id);
+
         return res.status(201).json({
           success: true,
           pendingApproval: true,
@@ -209,7 +213,19 @@ const createSale = asyncHandler(async (req, res) => {
       status: 'Booked',
       bookingDate: new Date(),
       // Store the payment plan snapshot for reference
-      paymentPlanSnapshot: paymentPlanSnapshot
+      paymentPlanSnapshot: paymentPlanSnapshot,
+      ...(channelPartnerAttribution && channelPartnerAttribution.viaChannelPartner
+        ? {
+            channelPartnerAttribution: {
+              viaChannelPartner: true,
+              partners: channelPartnerAttribution.partners || [],
+              status: 'tagged',
+              taggedBy: req.user._id,
+              taggedAt: new Date(),
+              history: [{ by: req.user._id, action: 'tagged', note: 'Set at booking creation.' }],
+            },
+          }
+        : {})
     });
 
     const createdSale = await sale.save({ session });
@@ -260,6 +276,9 @@ const createSale = asyncHandler(async (req, res) => {
     await session.commitTransaction();
     session.endSession();
     console.log('✅ Transaction committed successfully');
+
+    // Generate channel-partner commission records for the new booking.
+    await syncCommissionForSale(createdSale._id, req.user._id);
 
     // 10. Return populated sale data as expected by frontend
     const populatedSale = await Sale.findById(createdSale._id)
@@ -587,6 +606,9 @@ const updateSale = asyncHandler(async (req, res) => {
     sale.updatedAt = new Date();
 
     const updatedSale = await sale.save();
+
+    // Refresh commission records if the booking changed.
+    await syncCommissionForSale(sale._id, req.user._id);
 
     // Return with populated data
     const populatedSale = await Sale.findById(updatedSale._id)
