@@ -286,6 +286,41 @@ const leadSchema = new mongoose.Schema(
       firstTouchpoint: { type: String },
       lastTouchpoint: { type: String },
       touchpointCount: { type: Number, default: 1 }
+    },
+
+    // AI lead enrichment — background research from public web sources
+    enrichment: {
+      // User-supplied research source URLs (from the create form / re-run dialog)
+      sources: {
+        linkedinUrl: { type: String, trim: true, default: '' },
+        companyWebsite: { type: String, trim: true, default: '' },
+        articleUrls: [{ type: String, trim: true }],
+      },
+      // Background job lifecycle — drives the lead detail UI
+      status: {
+        type: String,
+        enum: ['idle', 'pending', 'researching', 'completed', 'failed'],
+        default: 'idle',
+      },
+      // AI output
+      summary: { type: String, default: '' },
+      signals: [
+        {
+          label: { type: String },
+          category: {
+            type: String,
+            enum: ['seniority', 'industry', 'employer_scale', 'wealth', 'other'],
+          },
+        },
+      ],
+      sourcesUsed: [{ url: String, label: String }],
+      error: { type: String, default: '' },
+      researchedAt: { type: Date, default: null },
+      researchedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+      },
     }
   },
   {
