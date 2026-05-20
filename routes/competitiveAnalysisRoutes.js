@@ -25,6 +25,8 @@ import {
   getDemandSupply,
   getAnalysis,
   refreshAnalysis,
+  getScorecard,
+  getScorecardAnalysis,
 } from '../controllers/competitiveAnalysisController.js';
 
 // Multer config for CSV uploads (memory storage, 10MB limit, CSV only)
@@ -144,6 +146,20 @@ router.post(
   '/analysis/:projectId/refresh',
   hasPermission(PERMISSIONS.COMPETITIVE_ANALYSIS.AI_RECOMMENDATIONS),
   refreshAnalysis
+);
+
+// ─── Competitive Performance Scorecard ───────────────────────
+
+router.get(
+  '/scorecard/:projectId/analysis',
+  hasPermission(PERMISSIONS.COMPETITIVE_ANALYSIS.AI_RECOMMENDATIONS),
+  getScorecardAnalysis
+);
+
+router.get(
+  '/scorecard/:projectId',
+  hasPermission(PERMISSIONS.COMPETITIVE_ANALYSIS.VIEW),
+  getScorecard
 );
 
 // ─── Competitor Projects CRUD ─────────────────────────────────
