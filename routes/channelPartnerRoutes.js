@@ -16,6 +16,9 @@ import {
   getCommissionRules,
   getCommissionRuleById,
   updateCommissionRule,
+  getCommissionRecords,
+  markPayoutPaid,
+  editSaleAttribution,
 } from '../controllers/channelPartnerController.js';
 
 const router = express.Router();
@@ -38,6 +41,26 @@ router
     hasPermission(PERMISSIONS.CHANNEL_PARTNERS.MANAGE_COMMISSION_RULES),
     updateCommissionRule
   );
+
+// ─── Commission records ─────────────────────────────────────
+router.get(
+  '/commission-records',
+  hasPermission(PERMISSIONS.CHANNEL_PARTNERS.VIEW),
+  getCommissionRecords
+);
+
+router.put(
+  '/commission-records/:id/payouts/:index/pay',
+  hasPermission(PERMISSIONS.CHANNEL_PARTNERS.MANAGE_COMMISSIONS),
+  markPayoutPaid
+);
+
+// ─── Booking attribution edit ───────────────────────────────
+router.put(
+  '/sales/:saleId/attribution',
+  hasPermission(PERMISSIONS.CHANNEL_PARTNERS.EDIT_BOOKING_ATTRIBUTION),
+  editSaleAttribution
+);
 
 // ─── Agents ──────────────────────────────────────────────────
 router.put(
