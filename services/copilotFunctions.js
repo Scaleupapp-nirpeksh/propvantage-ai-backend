@@ -11,7 +11,7 @@ import Tower from '../models/towerModel.js';
 import PaymentPlan from '../models/paymentPlanModel.js';
 import PaymentTransaction from '../models/paymentTransactionModel.js';
 import Installment from '../models/installmentModel.js';
-import PartnerCommission from '../models/partnerCommissionModel.js';
+import CommissionRecord from '../models/commissionRecordModel.js';
 import User from '../models/userModel.js';
 import Task from '../models/taskModel.js';
 import CompetitorProject from '../models/competitorProjectModel.js';
@@ -1404,32 +1404,66 @@ const functionImplementations = {
   },
 
   get_commission_summary: async (params, user, accessibleProjectIds) => {
-    const filter = applyRoleScope({}, user, 'commission');
-    if (params.partner_id) filter.partner = new mongoose.Types.ObjectId(params.partner_id);
-    if (params.project_id) {
-      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
-      filter.project = new mongoose.Types.ObjectId(params.project_id);
-    } else {
-      filter.project = getProjectScopeFilter(accessibleProjectIds);
+    // CommissionRecord is organization-scoped; the channel partner is a firm
+    // (not a User), so the legacy per-user role scope does not apply here.
+    const match = { organization: user.organization, status: { $ne: 'cancelled' } };
+    if (params.channel_partner_id) {
+      match.channelPartner = new mongoose.Types.ObjectId(params.channel_partner_id);
     }
-    if (params.status) filter.status = params.status;
+    if (params.status) match.status = params.status;
 
-    const summary = await PartnerCommission.aggregate([
-      { $match: filter },
+    const pipeline = [{ $match: match }];
+
+    // Project filter / scope is resolved through the linked Sale.
+    if (params.project_id || accessibleProjectIds) {
+      pipeline.push(
+        { $lookup: { from: 'sales', localField: 'sale', foreignField: '_id', as: 'saleDoc' } },
+        { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: true } }
+      );
+      if (params.project_id) {
+        if (!isProjectAccessible(accessibleProjectIds, params.project_id)) {
+          return { error: 'You do not have access to this project' };
+        }
+        pipeline.push({
+          $match: { 'saleDoc.project': new mongoose.Types.ObjectId(params.project_id) },
+        });
+      } else if (accessibleProjectIds) {
+        pipeline.push({
+          $match: { 'saleDoc.project': getProjectScopeFilter(accessibleProjectIds) },
+        });
+      }
+    }
+
+    pipeline.push(
+      {
+        $addFields: {
+          paidAmount: {
+            $sum: {
+              $map: {
+                input: { $filter: { input: '$payouts', as: 'p', cond: { $eq: ['$$p.status', 'paid'] } } },
+                as: 'p',
+                in: '$$p.amount',
+              },
+            },
+          },
+        },
+      },
       {
         $group: {
           _id: '$status',
           count: { $sum: 1 },
-          totalAmount: { $sum: '$commissionCalculation.netCommission' },
-          totalPaid: { $sum: '$paymentDetails.totalPaid' },
-          totalPending: { $sum: '$paymentDetails.totalPending' },
+          totalAmount: { $sum: '$netAmount' },
+          totalPaid: { $sum: '$paidAmount' },
+          totalPending: { $sum: { $subtract: ['$netAmount', '$paidAmount'] } },
         },
-      },
-    ]);
+      }
+    );
+
+    const summary = await CommissionRecord.aggregate(pipeline);
 
     const statusMap = {};
     let grandTotal = 0, grandPaid = 0, grandPending = 0;
-    summary.forEach(s => {
+    summary.forEach((s) => {
       statusMap[s._id] = { count: s.count, amount: s.totalAmount, paid: s.totalPaid, pending: s.totalPending };
       grandTotal += s.totalAmount;
       grandPaid += s.totalPaid;
