@@ -65,6 +65,34 @@ const saleSchema = new mongoose.Schema(
       rate: { type: Number },
       amount: { type: Number },
     },
+
+    // Channel partner attribution — which CP(s) sourced this booking
+    channelPartnerAttribution: {
+      viaChannelPartner: { type: Boolean, default: false },
+      partners: [
+        {
+          channelPartner: { type: mongoose.Schema.Types.ObjectId, ref: 'ChannelPartner' },
+          agent: { type: mongoose.Schema.Types.ObjectId, ref: 'ChannelPartnerAgent', default: null },
+          sharePct: { type: Number, default: 0, min: 0, max: 100 },
+        },
+      ],
+      status: {
+        type: String,
+        enum: ['tagged', 'pending', 'approved', 'rejected'],
+        default: 'tagged',
+      },
+      taggedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      taggedAt: { type: Date, default: null },
+      history: [
+        {
+          at: { type: Date, default: Date.now },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+          action: { type: String },
+          note: { type: String },
+        },
+      ],
+    },
+
     // Approval reference (populated when sale requires discount approval)
     approvalRequest: {
       type: mongoose.Schema.Types.ObjectId,
