@@ -32,7 +32,8 @@ import fileRoutes from './routes/fileRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import projectPaymentRoutes from './routes/projectPaymentRoutes.js';
-import commissionRoutes from './routes/commissionRoutes.js';
+// DEPRECATED — Channel Partner module supersedes the legacy commission system
+// import commissionRoutes from './routes/commissionRoutes.js';
 import documentRoutes from './routes/documentRoutes.js';
 import documentApprovalRoutes from './routes/documentApprovalRoutes.js';
 import budgetVsActualRoutes from './routes/budgetVsActualRoutes.js';
@@ -140,7 +141,8 @@ app.use('/api/ai/conversation', aiConversationRoutes); // NEW: AI Conversation i
 app.use('/api/files', fileRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentRoutes);
-app.use('/api/commissions', commissionRoutes);
+// DEPRECATED — legacy commission API removed; see /api/channel-partners
+// app.use('/api/commissions', commissionRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/documents', documentApprovalRoutes);
 app.use('/api/analytics', budgetVsActualRoutes);

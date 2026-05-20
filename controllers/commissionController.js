@@ -1,3 +1,7 @@
+// DEPRECATED (2026-05-20): superseded by the Channel Partner module
+//   (models/commissionRecordModel.js, services/commissionService.js,
+//   controllers/channelPartnerController.js). No longer wired into the app.
+//   Pending removal — do not extend.
 // File: controllers/commissionController.js
 // Description: Handles commission management API endpoints
 
