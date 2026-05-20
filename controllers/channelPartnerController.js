@@ -7,6 +7,9 @@ import ChannelPartner from '../models/channelPartnerModel.js';
 import ChannelPartnerAgent from '../models/channelPartnerAgentModel.js';
 import CommissionRule from '../models/commissionRuleModel.js';
 import Project from '../models/projectModel.js';
+import CommissionRecord from '../models/commissionRecordModel.js';
+import Sale from '../models/salesModel.js';
+import { syncCommissionForSale } from '../services/commissionService.js';
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -301,6 +304,107 @@ const updateCommissionRule = asyncHandler(async (req, res) => {
   res.json({ success: true, data: rule });
 });
 
+// ─── Commission records ──────────────────────────────────────
+
+/**
+ * @desc    List commission records
+ * @route   GET /api/channel-partners/commission-records
+ * @access  Private (channel_partners:view)
+ */
+const getCommissionRecords = asyncHandler(async (req, res) => {
+  const { status, channelPartner } = req.query;
+  const query = { organization: req.user.organization };
+  if (status) query.status = status;
+  if (channelPartner) query.channelPartner = channelPartner;
+
+  const records = await CommissionRecord.find(query)
+    .populate('channelPartner', 'firmName')
+    .populate('agent', 'name')
+    .populate({ path: 'sale', select: 'salePrice bookingDate project', populate: { path: 'project', select: 'name' } })
+    .sort({ createdAt: -1 });
+
+  res.json({ success: true, count: records.length, data: records });
+});
+
+/**
+ * @desc    Mark one payout of a commission record as paid
+ * @route   PUT /api/channel-partners/commission-records/:id/payouts/:index/pay
+ * @access  Private (channel_partners:manage_commissions)
+ */
+const markPayoutPaid = asyncHandler(async (req, res) => {
+  const record = await CommissionRecord.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!record) {
+    res.status(404);
+    throw new Error('Commission record not found');
+  }
+  const idx = Number(req.params.index);
+  const payout = record.payouts[idx];
+  if (!payout) {
+    res.status(404);
+    throw new Error('Payout not found');
+  }
+  if (payout.status === 'paid') {
+    res.status(400);
+    throw new Error('Payout is already paid');
+  }
+  payout.status = 'paid';
+  payout.paidOn = new Date();
+  payout.paidBy = req.user._id;
+  record.history.push({ by: req.user._id, action: 'payout_paid', note: `Payout "${payout.label}" marked paid.` });
+  record.recomputeStatus();
+  await record.save();
+
+  res.json({ success: true, data: record });
+});
+
+/**
+ * @desc    Edit the channel-partner attribution on an existing booking
+ * @route   PUT /api/channel-partners/sales/:saleId/attribution
+ * @access  Private (channel_partners:edit_booking_attribution)
+ */
+const editSaleAttribution = asyncHandler(async (req, res) => {
+  const sale = await Sale.findOne({
+    _id: req.params.saleId,
+    organization: req.user.organization,
+  });
+  if (!sale) {
+    res.status(404);
+    throw new Error('Booking not found');
+  }
+
+  const { viaChannelPartner, partners } = req.body;
+  const list = Array.isArray(partners) ? partners.filter((p) => p && p.channelPartner) : [];
+
+  if (viaChannelPartner && list.length > 0) {
+    const sum = list.reduce((a, p) => a + (Number(p.sharePct) || 0), 0);
+    if (Math.abs(sum - 100) > 0.01) {
+      res.status(400);
+      throw new Error(`Commission split must sum to 100% (got ${sum})`);
+    }
+  }
+
+  const prev = sale.channelPartnerAttribution || {};
+  sale.channelPartnerAttribution = {
+    viaChannelPartner: Boolean(viaChannelPartner) && list.length > 0,
+    partners: Boolean(viaChannelPartner) ? list : [],
+    status: prev.status || 'tagged',
+    taggedBy: prev.taggedBy || req.user._id,
+    taggedAt: prev.taggedAt || new Date(),
+    history: [
+      ...(prev.history || []),
+      { by: req.user._id, action: 'attribution_edited', note: 'Booking CP attribution edited.' },
+    ],
+  };
+  await sale.save();
+
+  await syncCommissionForSale(sale._id, req.user._id);
+
+  res.json({ success: true, data: sale.channelPartnerAttribution });
+});
+
 export {
   createChannelPartner,
   getChannelPartners,
@@ -313,4 +417,7 @@ export {
   getCommissionRules,
   getCommissionRuleById,
   updateCommissionRule,
+  getCommissionRecords,
+  markPayoutPaid,
+  editSaleAttribution,
 };
