@@ -385,7 +385,7 @@ const getSales = asyncHandler(async (req, res) => {
     if (salesperson && salesperson !== 'all') {
       baseFilters.salesPerson = salesperson;
     }
-    if (channelPartner && channelPartner !== 'all') {
+    if (channelPartner && channelPartner !== 'all' && mongoose.isValidObjectId(channelPartner)) {
       baseFilters['channelPartnerAttribution.partners.channelPartner'] = channelPartner;
     }
 

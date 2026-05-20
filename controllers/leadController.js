@@ -145,7 +145,7 @@ const getLeads = asyncHandler(async (req, res) => {
   if (source) query.source = source;
   if (assignedTo) query.assignedTo = assignedTo;
   if (project) query.project = project;
-  if (channelPartner) {
+  if (channelPartner && mongoose.isValidObjectId(channelPartner)) {
     query['channelPartnerAttribution.partners.channelPartner'] = channelPartner;
   }
   if (priority) query.priority = priority;
