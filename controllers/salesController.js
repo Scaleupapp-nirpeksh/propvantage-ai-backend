@@ -613,8 +613,12 @@ const updateSale = asyncHandler(async (req, res) => {
 
     verifyProjectAccess(req, res, sale.project);
 
+    // Channel-partner attribution is not editable via the generic sale update
+    // (it bypasses split-sum validation) — use PUT /channel-partners/sales/:id/attribution.
+    const { channelPartnerAttribution: _ignoredAttribution, ...safeUpdateData } = updateData;
+
     // Update the sale
-    Object.assign(sale, updateData);
+    Object.assign(sale, safeUpdateData);
     sale.updatedAt = new Date();
 
     const updatedSale = await sale.save();

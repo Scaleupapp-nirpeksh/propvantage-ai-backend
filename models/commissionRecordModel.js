@@ -76,6 +76,9 @@ const commissionRecordSchema = new mongoose.Schema(
 
 commissionRecordSchema.index({ organization: 1, status: 1 });
 commissionRecordSchema.index({ organization: 1, channelPartner: 1 });
+// One commission record per (booking, channel partner) — guards the
+// read-then-write in syncCommissionForSale against a concurrent-call race.
+commissionRecordSchema.index({ sale: 1, channelPartner: 1 }, { unique: true });
 
 // Keep `status` in sync with the payout states (unless cancelled).
 commissionRecordSchema.methods.recomputeStatus = function () {

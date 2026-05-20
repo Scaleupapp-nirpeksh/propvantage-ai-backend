@@ -551,7 +551,7 @@ const aggregateChannelPartner = async (orgId, pf = {}) => {
     const orgObjectId = toObjectId(orgId);
 
     const result = await CommissionRecord.aggregate([
-      { $match: { organization: orgObjectId, ...pf } },
+      { $match: { organization: orgObjectId, status: { $ne: 'cancelled' }, ...pf } },
       {
         $addFields: {
           paidAmount: {
@@ -978,7 +978,7 @@ const getLeadershipProjectComparison = async (orgId, period, startDate, endDate,
 
     // 10. Partner commissions per project
     CommissionRecord.aggregate([
-      { $match: { organization: orgObjectId } },
+      { $match: { organization: orgObjectId, status: { $ne: 'cancelled' } } },
       {
         $lookup: {
           from: 'sales',

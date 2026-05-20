@@ -54,12 +54,18 @@ const computeAmounts = (rule, sale, sharePct) => {
 
   let payouts;
   if (rule?.payout?.schedule === 'tranches' && (rule.payout.tranches || []).length > 0) {
-    payouts = rule.payout.tranches.map((t) => ({
-      label: t.label,
-      amount: Math.round((netAmount * (t.percentage || 0)) / 100),
-      trigger: t.trigger,
-      status: 'pending',
-    }));
+    // Round each tranche, but make the last one a remainder so the payout
+    // amounts always sum to exactly netAmount (no ±₹1 rounding drift).
+    let allocated = 0;
+    const tranches = rule.payout.tranches;
+    payouts = tranches.map((t, i) => {
+      const isLast = i === tranches.length - 1;
+      const amount = isLast
+        ? netAmount - allocated
+        : Math.round((netAmount * (t.percentage || 0)) / 100);
+      allocated += amount;
+      return { label: t.label, amount, trigger: t.trigger, status: 'pending' };
+    });
   } else {
     payouts = [{ label: 'Full commission', amount: netAmount, trigger: 'on_booking', status: 'pending' }];
   }
@@ -144,23 +150,44 @@ const syncCommissionForSale = async (saleId, userId = null) => {
           note: rule ? `Recalculated from rule "${rule.name}".` : 'No applicable commission rule.' });
         await rec.save();
       } else {
-        await CommissionRecord.create({
-          organization: sale.organization,
-          sale: sale._id,
-          channelPartner: partner.channelPartner,
-          agent: partner.agent || null,
-          commissionRule: rule?._id || null,
-          sharePct: partner.sharePct,
-          grossAmount,
-          tdsAmount,
-          netAmount,
-          payouts,
-          status: 'accrued',
-          history: [
-            { by: userId, action: 'created',
-              note: rule ? `Generated from rule "${rule.name}".` : 'No applicable commission rule — recorded at zero.' },
-          ],
-        });
+        try {
+          await CommissionRecord.create({
+            organization: sale.organization,
+            sale: sale._id,
+            channelPartner: partner.channelPartner,
+            agent: partner.agent || null,
+            commissionRule: rule?._id || null,
+            sharePct: partner.sharePct,
+            grossAmount,
+            tdsAmount,
+            netAmount,
+            payouts,
+            status: 'accrued',
+            history: [
+              { by: userId, action: 'created',
+                note: rule ? `Generated from rule "${rule.name}".` : 'No applicable commission rule — recorded at zero.' },
+            ],
+          });
+        } catch (createErr) {
+          // A concurrent sync inserted this (sale, channelPartner) first —
+          // the unique index rejects the duplicate; update that record instead.
+          if (createErr.code !== 11000) throw createErr;
+          const dupe = await CommissionRecord.findOne({
+            sale: sale._id,
+            channelPartner: partner.channelPartner,
+          });
+          if (dupe && !(dupe.payouts || []).some((p) => p.status === 'paid')) {
+            dupe.agent = partner.agent || null;
+            dupe.commissionRule = rule?._id || null;
+            dupe.sharePct = partner.sharePct;
+            dupe.grossAmount = grossAmount;
+            dupe.tdsAmount = tdsAmount;
+            dupe.netAmount = netAmount;
+            dupe.payouts = payouts;
+            dupe.recomputeStatus();
+            await dupe.save();
+          }
+        }
       }
     }
   } catch (err) {
