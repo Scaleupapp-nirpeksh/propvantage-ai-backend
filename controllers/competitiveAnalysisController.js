@@ -14,6 +14,8 @@ import {
   getDemandSupplyAnalysis as fetchDemandSupply,
 } from '../services/competitiveDataService.js';
 import { generateAnalysis } from '../services/competitiveAIService.js';
+import { buildScorecard } from '../services/scorecardService.js';
+import { generateScorecardAnalysis } from '../services/scorecardAIService.js';
 
 // ─── Background Job Tracker ──────────────────────────────────
 // In-memory map to track long-running AI jobs and prevent duplicates.
@@ -836,6 +838,96 @@ const refreshAnalysis = asyncHandler(async (req, res) => {
   });
 });
 
+
+// ─── Competitive Performance Scorecard ───────────────────────
+
+/**
+ * @desc    Project-centric competitive performance scorecard (verified data)
+ * @route   GET /api/competitive-analysis/scorecard/:projectId
+ * @access  Private (competitive_analysis:view)
+ */
+const getScorecard = asyncHandler(async (req, res) => {
+  const orgId = req.user.organization;
+  const { projectId } = req.params;
+
+  let scorecard;
+  try {
+    scorecard = await buildScorecard(orgId, projectId);
+  } catch (err) {
+    if (err.message && err.message.includes('not found')) {
+      res.status(404);
+      throw new Error('Project not found');
+    }
+    throw err;
+  }
+
+  res.json({ success: true, data: scorecard });
+});
+
+/**
+ * @desc    AI verdict + confidence-scored market demand for a project (async)
+ * @route   GET /api/competitive-analysis/scorecard/:projectId/analysis
+ * @access  Private (competitive_analysis:ai_recommendations)
+ *
+ * Reuses the activeJobs Map + 202-polling contract. Completed jobs are kept
+ * 30 minutes in-memory as a cost-control cache.
+ */
+const getScorecardAnalysis = asyncHandler(async (req, res) => {
+  const orgId = req.user.organization;
+  const { projectId } = req.params;
+  const jobKey = `scorecard_${orgId}_${projectId}`;
+
+  if (activeJobs.has(jobKey)) {
+    const job = activeJobs.get(jobKey);
+
+    if (job.status === 'completed') {
+      return res.json({
+        success: true,
+        status: 'completed',
+        data: job.result,
+        message: 'Scorecard analysis ready.',
+      });
+    }
+
+    if (job.status === 'failed') {
+      const errMsg = job.error;
+      activeJobs.delete(jobKey);
+      if (errMsg && errMsg.includes('not found')) res.status(404);
+      throw new Error(errMsg);
+    }
+
+    return res.status(202).json({
+      success: true,
+      status: 'processing',
+      message: 'Scorecard analysis is being generated. Please poll this endpoint.',
+      startedAt: job.startedAt,
+      elapsedMs: Date.now() - job.startedAt,
+    });
+  }
+
+  const startedAt = Date.now();
+  activeJobs.set(jobKey, { startedAt, status: 'processing' });
+
+  generateScorecardAnalysis({ organizationId: orgId, projectId })
+    .then((result) => {
+      activeJobs.set(jobKey, { startedAt, status: 'completed', result });
+      console.log(`[Scorecard AI] Background job completed: ${jobKey}`);
+      setTimeout(() => activeJobs.delete(jobKey), 30 * 60 * 1000);
+    })
+    .catch((err) => {
+      activeJobs.set(jobKey, { startedAt, status: 'failed', error: err.message });
+      console.error(`[Scorecard AI] Background job failed: ${jobKey}:`, err.message);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
+    });
+
+  res.status(202).json({
+    success: true,
+    status: 'processing',
+    message: 'Scorecard analysis started. Poll this endpoint every 3-5 seconds for results.',
+    startedAt,
+  });
+});
+
 export {
   createCompetitorProject,
   getCompetitorProjects,
@@ -856,4 +948,6 @@ export {
   getDemandSupply,
   getAnalysis,
   refreshAnalysis,
+  getScorecard,
+  getScorecardAnalysis,
 };
