@@ -128,7 +128,12 @@ const generateScorecardAnalysis = async ({ organizationId, projectId }) => {
       });
       const textBlock = response.content.find((b) => b.type === 'text');
       if (!textBlock) throw new Error('No text block in synthesis response');
-      parsed = JSON.parse(textBlock.text);
+      // Strip a ```json ... ``` fence if the model wrapped its output despite
+      // being told not to — Claude does this intermittently.
+      let jsonText = textBlock.text.trim();
+      const fence = jsonText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+      if (fence) jsonText = fence[1].trim();
+      parsed = JSON.parse(jsonText);
       break;
     } catch (err) {
       if (attempt === 2) throw new Error(`Scorecard synthesis failed: ${err.message}`);
