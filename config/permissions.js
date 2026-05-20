@@ -241,6 +241,17 @@ export const PERMISSIONS = {
     ANALYTICS: 'tasks:analytics',
     BULK_OPERATIONS: 'tasks:bulk_operations',
   },
+
+  // ─── CHANNEL PARTNERS ───────────────────────────────────
+  CHANNEL_PARTNERS: {
+    VIEW: 'channel_partners:view',
+    CREATE: 'channel_partners:create',
+    UPDATE: 'channel_partners:update',
+    MANAGE_COMMISSION_RULES: 'channel_partners:manage_commission_rules',
+    ATTRIBUTE: 'channel_partners:attribute',
+    EDIT_BOOKING_ATTRIBUTION: 'channel_partners:edit_booking_attribution',
+    MANAGE_COMMISSIONS: 'channel_partners:manage_commissions',
+  },
 };
 
 // Flat array of all permission strings for validation
