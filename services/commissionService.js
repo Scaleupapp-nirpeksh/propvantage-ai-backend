@@ -1,5 +1,10 @@
 // File: services/commissionService.js
-// Description: Service for commission calculations, processing, and management
+// Description: Channel-partner commission engine. syncCommissionForSale()
+//   (re)generates CommissionRecords for a sale from its channelPartnerAttribution
+//   and the applicable CommissionRule. Records with a paid payout are immutable.
+//
+// SUPERSEDES the legacy commission helpers below (kept for reference during
+// migration — they are no longer called by any active route).
 
 import CommissionStructure from '../models/commissionStructureModel.js';
 import PartnerCommission from '../models/partnerCommissionModel.js';
@@ -7,6 +12,163 @@ import Sale from '../models/salesModel.js';
 import User from '../models/userModel.js';
 import Project from '../models/projectModel.js';
 import mongoose from 'mongoose';
+
+// ─── NEW: Channel Partner Commission Engine ────────────────────────────────
+
+// Resolve the commission rule that applies to a sale's project:
+// a project-specific active rule wins; otherwise the org-wide (appliesToProject
+// null) active rule; most recently created if several match.
+const resolveRule = async (CommissionRule, organizationId, projectId) => {
+  const projectRule = await CommissionRule.findOne({
+    organization: organizationId,
+    status: 'active',
+    appliesToProject: projectId,
+  }).sort({ createdAt: -1 });
+  if (projectRule) return projectRule;
+  return CommissionRule.findOne({
+    organization: organizationId,
+    status: 'active',
+    appliesToProject: null,
+  }).sort({ createdAt: -1 });
+};
+
+// Compute gross/tds/net + payout breakdown for one CP's share.
+const computeAmounts = (rule, sale, sharePct) => {
+  const share = (Number(sharePct) || 0) / 100;
+  let ruleAmount = 0;
+  if (rule) {
+    if (rule.rate?.method === 'flat') {
+      ruleAmount = rule.rate.flatAmount || 0;
+    } else {
+      const base =
+        rule.rate?.basis === 'base_price'
+          ? sale.costSheetSnapshot?.basePrice || sale.salePrice || 0
+          : sale.salePrice || 0;
+      ruleAmount = (base * (rule.rate?.percentage || 0)) / 100;
+    }
+  }
+  const grossAmount = Math.round(ruleAmount * share);
+  const tdsPercent = rule?.tdsPercent || 0;
+  const tdsAmount = Math.round((grossAmount * tdsPercent) / 100);
+  const netAmount = grossAmount - tdsAmount;
+
+  let payouts;
+  if (rule?.payout?.schedule === 'tranches' && (rule.payout.tranches || []).length > 0) {
+    payouts = rule.payout.tranches.map((t) => ({
+      label: t.label,
+      amount: Math.round((netAmount * (t.percentage || 0)) / 100),
+      trigger: t.trigger,
+      status: 'pending',
+    }));
+  } else {
+    payouts = [{ label: 'Full commission', amount: netAmount, trigger: 'on_booking', status: 'pending' }];
+  }
+  return { grossAmount, tdsAmount, netAmount, payouts };
+};
+
+/**
+ * (Re)generate CommissionRecords for a sale.
+ * Safe to call repeatedly. Never throws into the caller's critical path —
+ * callers should still await it but a failure only logs.
+ *
+ * @param {ObjectId|string} saleId
+ * @param {ObjectId|string} [userId] - who triggered the sync (for history)
+ */
+const syncCommissionForSale = async (saleId, userId = null) => {
+  try {
+    const { default: SaleModel } = await import('../models/salesModel.js');
+    const { default: CommissionRule } = await import('../models/commissionRuleModel.js');
+    const { default: CommissionRecord } = await import('../models/commissionRecordModel.js');
+
+    const sale = await SaleModel.findById(saleId);
+    if (!sale) return;
+
+    const attribution = sale.channelPartnerAttribution || {};
+    const partners =
+      attribution.viaChannelPartner && Array.isArray(attribution.partners)
+        ? attribution.partners.filter((p) => p.channelPartner)
+        : [];
+
+    const existing = await CommissionRecord.find({ sale: sale._id });
+    const keepPartnerIds = new Set(partners.map((p) => String(p.channelPartner)));
+
+    // Cancel records for CPs no longer attributed — unless a payout is paid.
+    for (const rec of existing) {
+      if (!keepPartnerIds.has(String(rec.channelPartner))) {
+        const hasPaid = (rec.payouts || []).some((p) => p.status === 'paid');
+        if (hasPaid) {
+          rec.history.push({ by: userId, action: 'attribution_removed',
+            note: 'CP removed from the booking but a payout is already paid — needs manual reconciliation.' });
+        } else if (rec.status !== 'cancelled') {
+          rec.status = 'cancelled';
+          rec.history.push({ by: userId, action: 'cancelled',
+            note: 'CP removed from the booking attribution.' });
+        }
+        await rec.save();
+      }
+    }
+
+    const rule = await resolveRule(CommissionRule, sale.organization, sale.project);
+
+    for (const partner of partners) {
+      const rec = existing.find(
+        (r) => String(r.channelPartner) === String(partner.channelPartner)
+      );
+      const hasPaid = rec && (rec.payouts || []).some((p) => p.status === 'paid');
+
+      if (hasPaid) {
+        // Immutable — leave amounts/payouts; just note if the share drifted.
+        if (rec.sharePct !== partner.sharePct) {
+          rec.history.push({ by: userId, action: 'share_changed_after_payout',
+            note: `Attribution share changed to ${partner.sharePct}% but a payout is already paid — record left unchanged.` });
+          await rec.save();
+        }
+        continue;
+      }
+
+      const { grossAmount, tdsAmount, netAmount, payouts } = computeAmounts(
+        rule, sale, partner.sharePct
+      );
+
+      if (rec) {
+        rec.agent = partner.agent || null;
+        rec.commissionRule = rule?._id || null;
+        rec.sharePct = partner.sharePct;
+        rec.grossAmount = grossAmount;
+        rec.tdsAmount = tdsAmount;
+        rec.netAmount = netAmount;
+        rec.payouts = payouts;
+        rec.status = 'cancelled' === rec.status ? 'accrued' : rec.status;
+        rec.recomputeStatus();
+        rec.history.push({ by: userId, action: 'recalculated',
+          note: rule ? `Recalculated from rule "${rule.name}".` : 'No applicable commission rule.' });
+        await rec.save();
+      } else {
+        await CommissionRecord.create({
+          organization: sale.organization,
+          sale: sale._id,
+          channelPartner: partner.channelPartner,
+          agent: partner.agent || null,
+          commissionRule: rule?._id || null,
+          sharePct: partner.sharePct,
+          grossAmount,
+          tdsAmount,
+          netAmount,
+          payouts,
+          status: 'accrued',
+          history: [
+            { by: userId, action: 'created',
+              note: rule ? `Generated from rule "${rule.name}".` : 'No applicable commission rule — recorded at zero.' },
+          ],
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[Commission] syncCommissionForSale failed for ${saleId}:`, err.message);
+  }
+};
+
+// ─── LEGACY (deprecated — no longer called by active routes) ──────────────
 
 /**
  * Creates a commission record for a sale
@@ -972,6 +1134,7 @@ const validateCommissionStructure = (structureData) => {
 };
 
 export {
+  syncCommissionForSale,
   createCommissionForSale,
   processCommissionPayments,
   adjustCommissionForSaleChange,
