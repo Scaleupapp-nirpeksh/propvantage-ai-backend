@@ -414,7 +414,7 @@ export const copilotTools = [
       parameters: {
         type: 'object',
         properties: {
-          partner_id: { type: 'string' },
+          channel_partner_id: { type: 'string', description: 'ObjectId of the ChannelPartner firm' },
           project_id: { type: 'string' },
           status: { type: 'string' },
         },
@@ -1406,11 +1406,14 @@ const functionImplementations = {
   get_commission_summary: async (params, user, accessibleProjectIds) => {
     // CommissionRecord is organization-scoped; the channel partner is a firm
     // (not a User), so the legacy per-user role scope does not apply here.
-    const match = { organization: user.organization, status: { $ne: 'cancelled' } };
+    // Cancelled records are always excluded; an explicit params.status
+    // filters within the non-cancelled set (so status:'cancelled' yields none).
+    const statusFilter = [{ status: { $ne: 'cancelled' } }];
+    if (params.status) statusFilter.push({ status: params.status });
+    const match = { organization: user.organization, $and: statusFilter };
     if (params.channel_partner_id) {
       match.channelPartner = new mongoose.Types.ObjectId(params.channel_partner_id);
     }
-    if (params.status) match.status = params.status;
 
     const pipeline = [{ $match: match }];
 
@@ -1418,7 +1421,9 @@ const functionImplementations = {
     if (params.project_id || accessibleProjectIds) {
       pipeline.push(
         { $lookup: { from: 'sales', localField: 'sale', foreignField: '_id', as: 'saleDoc' } },
-        { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: true } }
+        // A commission record always has a sale — drop any whose sale is
+        // unresolvable rather than leak it into a full-access summary.
+        { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: false } }
       );
       if (params.project_id) {
         if (!isProjectAccessible(accessibleProjectIds, params.project_id)) {

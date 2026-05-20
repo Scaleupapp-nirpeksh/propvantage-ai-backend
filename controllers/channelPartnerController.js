@@ -418,16 +418,17 @@ const getChannelPartnerDashboard = asyncHandler(async (req, res) => {
 
   const partners = await ChannelPartner.find({ organization: orgId }).select('firmName status');
 
-  // Leads tagged to each CP
+  // Leads tagged to each CP. The inner $group dedupes per (lead, CP) first so
+  // a CP listed twice in one lead's split is still counted once.
   const leadAgg = await Lead.aggregate([
     { $match: { organization: orgId, 'channelPartnerAttribution.viaChannelPartner': true } },
     { $unwind: '$channelPartnerAttribution.partners' },
     {
       $group: {
-        _id: '$channelPartnerAttribution.partners.channelPartner',
-        leadsTagged: { $sum: 1 },
+        _id: { lead: '$_id', cp: '$channelPartnerAttribution.partners.channelPartner' },
       },
     },
+    { $group: { _id: '$_id.cp', leadsTagged: { $sum: 1 } } },
   ]);
 
   // Bookings + booked value attributed to each CP (cancelled bookings excluded)
@@ -440,9 +441,16 @@ const getChannelPartnerDashboard = asyncHandler(async (req, res) => {
       },
     },
     { $unwind: '$channelPartnerAttribution.partners' },
+    // Dedupe per (sale, CP) so a CP listed twice in one split is counted once.
     {
       $group: {
-        _id: '$channelPartnerAttribution.partners.channelPartner',
+        _id: { sale: '$_id', cp: '$channelPartnerAttribution.partners.channelPartner' },
+        salePrice: { $first: '$salePrice' },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.cp',
         bookings: { $sum: 1 },
         bookingValue: { $sum: '$salePrice' },
       },
