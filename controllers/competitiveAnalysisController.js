@@ -869,8 +869,9 @@ const getScorecard = asyncHandler(async (req, res) => {
  * @route   GET /api/competitive-analysis/scorecard/:projectId/analysis
  * @access  Private (competitive_analysis:ai_recommendations)
  *
- * Reuses the activeJobs Map + 202-polling contract. Completed jobs are kept
- * 30 minutes in-memory as a cost-control cache.
+ * Reuses the activeJobs Map + 202-polling contract. A completed job is left
+ * in the Map (not deleted on read) so repeat polls within its lifetime act as
+ * a short cost-control cache; the shared stale-job sweeper clears it.
  */
 const getScorecardAnalysis = asyncHandler(async (req, res) => {
   const orgId = req.user.organization;
@@ -912,7 +913,7 @@ const getScorecardAnalysis = asyncHandler(async (req, res) => {
     .then((result) => {
       activeJobs.set(jobKey, { startedAt, status: 'completed', result });
       console.log(`[Scorecard AI] Background job completed: ${jobKey}`);
-      setTimeout(() => activeJobs.delete(jobKey), 30 * 60 * 1000);
+      setTimeout(() => activeJobs.delete(jobKey), 5 * 60 * 1000);
     })
     .catch((err) => {
       activeJobs.set(jobKey, { startedAt, status: 'failed', error: err.message });

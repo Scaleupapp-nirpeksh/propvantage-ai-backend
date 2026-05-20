@@ -34,6 +34,9 @@ const monthsBetween = (from, to) => {
   return Math.max(1, ms / (1000 * 60 * 60 * 24 * 30.44));
 };
 
+// Escape regex metacharacters so localities like "St. John's" match literally.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // ─── Core ─────────────────────────────────────────────────────
 
 /**
@@ -59,13 +62,13 @@ const buildScorecard = async (organizationId, projectId) => {
 
   const [units, sales, leads, competitors] = await Promise.all([
     Unit.find({ project: projectId, organization: organizationId }),
-    Sale.find({ project: projectId }),
+    Sale.find({ project: projectId, organization: organizationId }),
     Lead.find({ project: projectId, organization: organizationId }),
     CompetitorProject.find({
       organization: organizationId,
       isActive: true,
-      'location.city': new RegExp(`^${city.trim()}$`, 'i'),
-      'location.area': new RegExp(`^${area.trim()}$`, 'i'),
+      'location.city': new RegExp(`^${escapeRe(city.trim())}$`, 'i'),
+      'location.area': new RegExp(`^${escapeRe(area.trim())}$`, 'i'),
     }),
   ]);
 
@@ -104,9 +107,12 @@ const buildScorecard = async (organizationId, projectId) => {
       .map((m) => m.pricePerSqftRange);
     const mins = mktRanges.map((r) => r.min).filter((v) => typeof v === 'number' && v > 0);
     const maxs = mktRanges.map((r) => r.max).filter((v) => typeof v === 'number' && v > 0);
+    const midpoints = mktRanges
+      .map((r) => (typeof r.min === 'number' && typeof r.max === 'number' ? (r.min + r.max) / 2 : null))
+      .filter((v) => typeof v === 'number' && v > 0);
     const marketPsf = {
       min: mins.length ? Math.min(...mins) : null,
-      avg: round(mean([...mins, ...maxs])),
+      avg: round(mean(midpoints)),
       max: maxs.length ? Math.max(...maxs) : null,
     };
     const deltaPct =
@@ -133,6 +139,9 @@ const buildScorecard = async (organizationId, projectId) => {
   const totalUnits = units.length;
   const soldUnits = units.filter((u) => ['sold', 'booked'].includes(u.status)).length;
   const availableUnits = units.filter((u) => u.status === 'available').length;
+  // 'blocked' units are neither sold nor on the market — surfaced separately
+  // so percentSold / inventory math don't silently hide them.
+  const blockedUnits = units.filter((u) => u.status === 'blocked').length;
 
   const liveSales = sales.filter((s) => s.status !== 'Cancelled');
   const revenueAchieved = round(
@@ -161,6 +170,7 @@ const buildScorecard = async (organizationId, projectId) => {
     totalUnits,
     soldUnits,
     availableUnits,
+    blockedUnits,
     percentSold: totalUnits ? round((soldUnits / totalUnits) * 100, 1) : null,
     monthsActive,
     unitsPerMonth,
