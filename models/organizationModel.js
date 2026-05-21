@@ -34,12 +34,11 @@ const organizationSchema = new mongoose.Schema(
     category: {
       type: String,
       enum: ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'],
-      default: null,
     },
     reraRegistrationNumber: {
       type: String,
       trim: true,
-      uppercase: true,
+      uppercase: true, // normalizes on save via Mongoose setter — all writes must go through Mongoose (not raw driver updateOne) for the unique index's case-consistency to hold
       default: null,
     },
     subscriptionPlan: {
@@ -58,10 +57,12 @@ const organizationSchema = new mongoose.Schema(
 );
 
 // RERA registration number is unique among channel-partner orgs only —
-// the partial filter keeps it from colliding with builder orgs (which have none).
+// the partial filter keeps it from colliding with builder orgs (which have none),
+// and the $type:'string' guard excludes channel-partner orgs that have no RERA number
+// (null / missing) so two unregistered CPs cannot collide on a null key.
 organizationSchema.index(
   { reraRegistrationNumber: 1 },
-  { unique: true, partialFilterExpression: { type: 'channel_partner' } }
+  { unique: true, partialFilterExpression: { type: 'channel_partner', reraRegistrationNumber: { $type: 'string' } } }
 );
 
 const Organization = mongoose.model('Organization', organizationSchema);
