@@ -259,6 +259,28 @@ export const ALL_PERMISSIONS = Object.values(PERMISSIONS).flatMap((group) =>
   Object.values(group)
 );
 
+// ─── CHANNEL PARTNER PORTAL PERMISSIONS ──────────────────────────────
+// A separate namespace for channel-partner organizations. Deliberately NOT
+// part of PERMISSIONS / ALL_PERMISSIONS so it never leaks onto developer roles.
+export const CP_PERMISSIONS = {
+  TEAM: {
+    VIEW: 'cp_team:view',
+    MANAGE: 'cp_team:manage',
+  },
+  ORG: {
+    VIEW: 'cp_org:view',
+    MANAGE: 'cp_org:manage',
+  },
+  DASHBOARD: {
+    VIEW: 'cp_dashboard:view',
+  },
+};
+
+// Flat list of every CP permission — used to seed the CP Owner role.
+export const ALL_CP_PERMISSIONS = Object.values(CP_PERMISSIONS).flatMap((group) =>
+  Object.values(group)
+);
+
 // Grouped for UI display — frontend uses this to render permission checkboxes
 export const PERMISSION_GROUPS = Object.entries(PERMISSIONS).map(
   ([key, perms]) => ({
