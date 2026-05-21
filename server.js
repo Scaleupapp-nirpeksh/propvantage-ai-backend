@@ -54,6 +54,7 @@ import approvalRoutes from './routes/approvalRoutes.js';
 import competitiveAnalysisRoutes from './routes/competitiveAnalysisRoutes.js';
 import channelPartnerRoutes from './routes/channelPartnerRoutes.js';
 import cpPortalRoutes from './routes/cpPortalRoutes.js';
+import portfolioRoutes from './routes/portfolioRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -163,6 +164,7 @@ app.use('/api/approvals', approvalRoutes);
 app.use('/api/competitive-analysis', competitiveAnalysisRoutes);
 app.use('/api/channel-partners', channelPartnerRoutes);
 app.use('/api/cp', cpPortalRoutes);
+app.use('/api/portfolio', portfolioRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
