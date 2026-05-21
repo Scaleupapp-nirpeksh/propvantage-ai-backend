@@ -206,3 +206,137 @@ export const getVolumeBreakdown = async ({ organization, projectFilter = {}, sta
 
   return { sales, leads, conversion, avgDealSize, byCategory, byFirm };
 };
+
+/**
+ * Commission + payment-status breakdown for the given org/project/date scope.
+ * Same args as getVolumeBreakdown.
+ */
+export const getCommissionBreakdown = async ({ organization, projectFilter = {}, startDate = null, endDate = null }) => {
+  // CommissionRecord has no `project` field — project scope is applied via the
+  // linked Sale. A `paidAmount` field is derived from the paid payouts.
+  const buildPipeline = (groupStage) => {
+    const pipeline = [
+      {
+        $match: {
+          organization,
+          status: { $ne: 'cancelled' },
+          ...dateMatch('createdAt', startDate, endDate),
+        },
+      },
+    ];
+    if (projectFilter.project) {
+      pipeline.push(
+        { $lookup: { from: 'sales', localField: 'sale', foreignField: '_id', as: 'saleDoc' } },
+        { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: false } },
+        { $match: { 'saleDoc.project': projectFilter.project } }
+      );
+    }
+    pipeline.push({
+      $addFields: {
+        paidAmount: {
+          $sum: {
+            $map: {
+              input: { $filter: { input: '$payouts', as: 'p', cond: { $eq: ['$$p.status', 'paid'] } } },
+              as: 'p',
+              in: '$$p.amount',
+            },
+          },
+        },
+      },
+    });
+    pipeline.push(groupStage);
+    return pipeline;
+  };
+
+  // Org-wide summary.
+  const summaryRows = await CommissionRecord.aggregate(
+    buildPipeline({
+      $group: {
+        _id: null,
+        grossAccrued: { $sum: '$grossAmount' },
+        tds: { $sum: '$tdsAmount' },
+        netAccrued: { $sum: '$netAmount' },
+        paid: { $sum: '$paidAmount' },
+      },
+    })
+  );
+  const s = summaryRows[0] || { grossAccrued: 0, tds: 0, netAccrued: 0, paid: 0 };
+  const summary = {
+    grossAccrued: Math.round(s.grossAccrued),
+    tds: Math.round(s.tds),
+    netAccrued: Math.round(s.netAccrued),
+    paid: Math.round(s.paid),
+    pending: Math.round(s.netAccrued - s.paid),
+  };
+
+  // Payment status — count + net amount per CommissionRecord.status. Note the
+  // status:{$ne:'cancelled'} match means 'cancelled' never appears here, which
+  // is the intended behaviour for the analytics view.
+  const statusRows = await CommissionRecord.aggregate(
+    buildPipeline({
+      $group: { _id: '$status', count: { $sum: 1 }, netAmount: { $sum: '$netAmount' } },
+    })
+  );
+  const paymentStatus = statusRows.map((r) => ({
+    status: r._id,
+    count: r.count,
+    netAmount: Math.round(r.netAmount),
+  }));
+
+  // Per-firm commission.
+  const firmRows = await CommissionRecord.aggregate(
+    buildPipeline({
+      $group: {
+        _id: '$channelPartner',
+        netCommission: { $sum: '$netAmount' },
+        paid: { $sum: '$paidAmount' },
+      },
+    })
+  );
+
+  // CP-sourced booked revenue per firm — reuse the volume helper for ranking.
+  const salesByPartner = await aggregateSalesByPartner({ organization, projectFilter, startDate, endDate });
+  const revenueMap = Object.fromEntries(salesByPartner.map((r) => [String(r._id), r.revenue || 0]));
+
+  const partners = await ChannelPartner.find({ organization }).select('firmName category').lean();
+  const commMap = Object.fromEntries(firmRows.map((r) => [String(r._id), r]));
+
+  const byFirm = partners
+    .map((p) => {
+      const id = String(p._id);
+      const c = commMap[id] || {};
+      const net = Math.round(c.netCommission || 0);
+      const paid = Math.round(c.paid || 0);
+      return {
+        channelPartnerId: p._id,
+        firmName: p.firmName,
+        category: p.category || 'broker_firm',
+        netCommission: net,
+        paid,
+        pending: net - paid,
+      };
+    })
+    .filter((r) => r.netCommission > 0)
+    .sort((a, b) => b.netCommission - a.netCommission);
+
+  const cpRevenueTotal = salesByPartner.reduce((n, r) => n + (r.revenue || 0), 0);
+  const effectiveCommissionRate =
+    Math.round(safeDiv(summary.netAccrued, cpRevenueTotal) * 1000) / 10; // one decimal %
+
+  const topPerformers = partners
+    .map((p) => {
+      const id = String(p._id);
+      return {
+        channelPartnerId: p._id,
+        firmName: p.firmName,
+        category: p.category || 'broker_firm',
+        bookedRevenue: Math.round(revenueMap[id] || 0),
+        netCommission: Math.round((commMap[id] || {}).netCommission || 0),
+      };
+    })
+    .filter((r) => r.bookedRevenue > 0)
+    .sort((a, b) => b.bookedRevenue - a.bookedRevenue)
+    .slice(0, 10);
+
+  return { summary, paymentStatus, effectiveCommissionRate, byFirm, topPerformers };
+};
