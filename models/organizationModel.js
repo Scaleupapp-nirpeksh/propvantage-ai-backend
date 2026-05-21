@@ -30,6 +30,18 @@ const organizationSchema = new mongoose.Schema(
       website: String,
       address: String,
     },
+    // Channel-partner-only fields (used when type === 'channel_partner').
+    category: {
+      type: String,
+      enum: ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'],
+      default: null,
+    },
+    reraRegistrationNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+    },
     subscriptionPlan: {
       type: String,
       enum: ['trial', 'starter', 'professional', 'enterprise'],
@@ -43,6 +55,13 @@ const organizationSchema = new mongoose.Schema(
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields
   }
+);
+
+// RERA registration number is unique among channel-partner orgs only —
+// the partial filter keeps it from colliding with builder orgs (which have none).
+organizationSchema.index(
+  { reraRegistrationNumber: 1 },
+  { unique: true, partialFilterExpression: { type: 'channel_partner' } }
 );
 
 const Organization = mongoose.model('Organization', organizationSchema);
