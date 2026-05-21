@@ -7,6 +7,7 @@ import { ALL_CP_PERMISSIONS, CP_PERMISSIONS } from '../config/permissions.js';
 const CP_DEFAULT_ROLES = [
   {
     name: 'CP Owner',
+    slug: 'cp-owner',
     description: 'Channel partner organization owner — full control.',
     level: 0,
     isOwnerRole: true,
@@ -14,6 +15,7 @@ const CP_DEFAULT_ROLES = [
   },
   {
     name: 'CP Manager',
+    slug: 'cp-manager',
     description: 'Runs the team day-to-day: members, org profile, dashboard.',
     level: 1,
     isOwnerRole: false,
@@ -27,6 +29,7 @@ const CP_DEFAULT_ROLES = [
   },
   {
     name: 'CP Agent',
+    slug: 'cp-agent',
     description: 'Works their own leads; views the org profile and dashboard.',
     level: 2,
     isOwnerRole: false,
@@ -46,5 +49,5 @@ export const seedChannelPartnerRoles = async (organizationId, createdByUserId) =
     isActive: true,
     createdBy: createdByUserId,
   }));
-  return Role.insertMany(roleDocs);
+  return await Role.insertMany(roleDocs);
 };
