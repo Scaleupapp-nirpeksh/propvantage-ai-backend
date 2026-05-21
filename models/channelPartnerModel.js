@@ -34,6 +34,12 @@ const channelPartnerSchema = new mongoose.Schema(
       default: 'active',
       index: true,
     },
+    category: {
+      type: String,
+      enum: ['broker_firm', 'individual_agent', 'corporate', 'digital_aggregator'],
+      default: 'broker_firm',
+      index: true,
+    },
     bankDetails: {
       accountName: { type: String, trim: true, default: '' },
       accountNumber: { type: String, trim: true, default: '' },
@@ -49,6 +55,7 @@ const channelPartnerSchema = new mongoose.Schema(
 // Compound indexes for the controller's common query shapes.
 channelPartnerSchema.index({ organization: 1, status: 1 });
 channelPartnerSchema.index({ organization: 1, firmName: 1 });
+channelPartnerSchema.index({ organization: 1, category: 1 });
 
 // Field-level encryption for the payout bank account number (PII).
 channelPartnerSchema.plugin(encryptionPlugin, {

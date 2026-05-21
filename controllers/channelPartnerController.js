@@ -39,6 +39,12 @@ const createChannelPartner = asyncHandler(async (req, res) => {
     throw new Error('Firm name is required');
   }
 
+  const VALID_CATEGORIES = ['broker_firm', 'individual_agent', 'corporate', 'digital_aggregator'];
+  if (req.body.category !== undefined && !VALID_CATEGORIES.includes(req.body.category)) {
+    res.status(400);
+    throw new Error('Invalid channel partner category');
+  }
+
   const { organization, onboardedBy, approvedProjects, ...body } = req.body;
   const partner = await ChannelPartner.create({
     ...body,
@@ -105,6 +111,12 @@ const updateChannelPartner = asyncHandler(async (req, res) => {
   if (!partner) {
     res.status(404);
     throw new Error('Channel partner not found');
+  }
+
+  const VALID_CATEGORIES = ['broker_firm', 'individual_agent', 'corporate', 'digital_aggregator'];
+  if (req.body.category !== undefined && !VALID_CATEGORIES.includes(req.body.category)) {
+    res.status(400);
+    throw new Error('Invalid channel partner category');
   }
 
   // organization / onboardedBy are immutable via this endpoint
