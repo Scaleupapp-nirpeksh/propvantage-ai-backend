@@ -281,6 +281,10 @@ export const ALL_CP_PERMISSIONS = Object.values(CP_PERMISSIONS).flatMap((group) 
   Object.values(group)
 );
 
+// Valid category values for channel-partner organizations.
+// Single source of truth — consumed by authController and cpPortalController.
+export const CP_CATEGORIES = ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'];
+
 // Grouped for UI display — frontend uses this to render permission checkboxes
 export const PERMISSION_GROUPS = Object.entries(PERMISSIONS).map(
   ([key, perms]) => ({

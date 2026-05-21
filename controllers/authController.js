@@ -14,9 +14,9 @@ import RefreshToken from '../models/refreshTokenModel.js';
 import { seedDefaultRoles } from '../data/defaultRoles.js';
 import { seedChannelPartnerRoles } from '../data/defaultChannelPartnerRoles.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
+import { CP_CATEGORIES } from '../config/permissions.js';
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
-const CP_CATEGORIES = ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'];
 
 // Account lockout configuration
 const MAX_LOGIN_ATTEMPTS = 5;
