@@ -80,6 +80,7 @@ You help users understand their business data by answering questions about:
 - Sales forecasts and projections
 - Team performance
 - Commissions
+- Channel partners — how much business is sourced through channel partners, the direct-vs-channel-partner split, performance broken down by partner firm and by partner category, partner attribution, and channel-partner commissions, payouts, and top performers. Use the channel-partner tools (not the generic sales/commission tools) whenever the user mentions partners, channel partners, CPs, brokers, or asks which partner/firm sourced business.
 - Tasks and tickets — assignments, overdue tasks, workload, task analytics, and task details
 
 Rules:
@@ -115,13 +116,15 @@ You MUST respond with a valid JSON object matching this exact structure:
   ],
   "actions": [{"label": "...", "type": "navigate", "path": "/..."}],
   "followUpQuestions": ["question1?", "question2?"],
-  "sources": ["sales", "leads", "projects", "payments", "units", "commissions", "predictions", "tasks"]
+  "sources": ["sales", "leads", "projects", "payments", "units", "commissions", "channel_partners", "predictions", "tasks"]
 }
 
 Include only relevant fields in each card based on its type.
 If the answer is simple text with no structured data, use type "text" and omit cards.
 Always include 2-3 followUpQuestions to guide the user to explore further.
-Always include sources listing which data categories were queried.`;
+Always include sources listing which data categories were queried.
+
+CRITICAL: Your entire reply must be ONLY the JSON object — nothing else. Do not write any explanatory text before or after it, and do not wrap it in a markdown code fence. The first character of your reply must be "{" and the last must be "}".`;
 }
 
 // =============================================================================
@@ -304,40 +307,58 @@ export const processCopilotMessage = async (message, user, conversationId, conte
 // =============================================================================
 
 /**
- * Parse GPT-4's response into the structured format
+ * Extract the structured-response JSON object from GPT output.
+ * GPT-4o is asked to return a bare JSON object, but it intermittently wraps it
+ * in a markdown fence or prefaces it with prose. This handles all three shapes:
+ *   1. the whole content is the JSON object (optionally fence-wrapped),
+ *   2. a ```json ... ``` fenced block sits somewhere inside prose,
+ *   3. a bare { ... } object sits somewhere inside prose.
+ * Returns the parsed object, or null if no JSON object is found.
  */
-function parseGPTResponse(content) {
+function extractJsonObject(content) {
+  // 1. Whole content is JSON, optionally wrapped in a single fence.
+  let whole = content.trim();
+  const wholeFence = whole.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (wholeFence) whole = wholeFence[1].trim();
+  try {
+    return JSON.parse(whole);
+  } catch {
+    // not pure JSON — fall through
+  }
+
+  // 2. A fenced ```json ... ``` block embedded anywhere inside prose.
+  const blockFence = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (blockFence) {
+    try {
+      return JSON.parse(blockFence[1].trim());
+    } catch {
+      // fenced block wasn't valid JSON — fall through
+    }
+  }
+
+  // 3. A bare { ... } object embedded in prose.
+  const first = content.indexOf('{');
+  const last = content.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(content.slice(first, last + 1));
+    } catch {
+      // not parseable — fall through
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parse GPT-4's response into the structured format. Robust to GPT wrapping the
+ * JSON envelope in a markdown fence or prefacing it with prose — in those cases
+ * the older parser failed and dumped the raw envelope into the chat as text.
+ */
+export function parseGPTResponse(content) {
   if (!content) {
     return {
       text: 'I was unable to generate a response. Please try again.',
-      type: 'text',
-      sources: [],
-    };
-  }
-
-  // Try to parse as JSON first
-  try {
-    // Remove markdown code fences if present
-    let cleaned = content.trim();
-    if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-    if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-    if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-    cleaned = cleaned.trim();
-
-    const parsed = JSON.parse(cleaned);
-
-    return {
-      text: parsed.text || content,
-      type: parsed.type || (parsed.cards && parsed.cards.length > 0 ? 'rich' : 'text'),
-      cards: parsed.cards || [],
-      actions: parsed.actions || [],
-      followUpQuestions: parsed.followUpQuestions || [],
-      sources: parsed.sources || [],
-    };
-  } catch {
-    // If JSON parsing fails, return as plain text response
-    return {
-      text: content,
       type: 'text',
       cards: [],
       actions: [],
@@ -345,6 +366,35 @@ function parseGPTResponse(content) {
       sources: [],
     };
   }
+
+  const parsed = extractJsonObject(content);
+
+  // Accept the extracted object only if it looks like our response envelope —
+  // a stray { } from unrelated prose must not be mistaken for a response.
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    (parsed.text !== undefined || parsed.cards !== undefined || parsed.type !== undefined)
+  ) {
+    return {
+      text: parsed.text || '',
+      type: parsed.type || (parsed.cards && parsed.cards.length > 0 ? 'rich' : 'text'),
+      cards: parsed.cards || [],
+      actions: parsed.actions || [],
+      followUpQuestions: parsed.followUpQuestions || [],
+      sources: parsed.sources || [],
+    };
+  }
+
+  // No JSON envelope found — treat the whole content as a plain-text answer.
+  return {
+    text: content,
+    type: 'text',
+    cards: [],
+    actions: [],
+    followUpQuestions: [],
+    sources: [],
+  };
 }
 
 /**
