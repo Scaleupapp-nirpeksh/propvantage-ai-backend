@@ -84,39 +84,52 @@ const aggregateLeadsByPartner = ({ organization, projectFilter, startDate, endDa
  * @param {Date|null} args.endDate
  */
 export const getVolumeBreakdown = async ({ organization, projectFilter = {}, startDate = null, endDate = null }) => {
-  // Top-line Direct-vs-CP split — a CP-sourced sale counts its whole revenue once.
-  const salesSplit = await Sale.aggregate([
-    {
-      $match: {
-        organization,
-        status: { $ne: 'Cancelled' },
-        ...projectFilter,
-        ...dateMatch('bookingDate', startDate, endDate),
+  // All five queries are independent — run them concurrently.
+  // salesSplit / leadsSplit: top-line Direct-vs-CP split (whole revenue per sale).
+  // aggregateSalesByPartner / aggregateLeadsByPartner / ChannelPartner.find:
+  //   per-firm data merged below into byFirm / byCategory.
+  const [
+    salesSplit,
+    leadsSplit,
+    salesByPartner,
+    leadsByPartner,
+    partners,
+  ] = await Promise.all([
+    Sale.aggregate([
+      {
+        $match: {
+          organization,
+          status: { $ne: 'Cancelled' },
+          ...projectFilter,
+          ...dateMatch('bookingDate', startDate, endDate),
+        },
       },
-    },
-    {
-      $group: {
-        _id: { $ifNull: ['$channelPartnerAttribution.viaChannelPartner', false] },
-        count: { $sum: 1 },
-        revenue: { $sum: '$salePrice' },
+      {
+        $group: {
+          _id: { $ifNull: ['$channelPartnerAttribution.viaChannelPartner', false] },
+          count: { $sum: 1 },
+          revenue: { $sum: '$salePrice' },
+        },
       },
-    },
-  ]);
-
-  const leadsSplit = await Lead.aggregate([
-    {
-      $match: {
-        organization,
-        ...projectFilter,
-        ...dateMatch('createdAt', startDate, endDate),
+    ]),
+    Lead.aggregate([
+      {
+        $match: {
+          organization,
+          ...projectFilter,
+          ...dateMatch('createdAt', startDate, endDate),
+        },
       },
-    },
-    {
-      $group: {
-        _id: { $ifNull: ['$channelPartnerAttribution.viaChannelPartner', false] },
-        count: { $sum: 1 },
+      {
+        $group: {
+          _id: { $ifNull: ['$channelPartnerAttribution.viaChannelPartner', false] },
+          count: { $sum: 1 },
+        },
       },
-    },
+    ]),
+    aggregateSalesByPartner({ organization, projectFilter, startDate, endDate }),
+    aggregateLeadsByPartner({ organization, projectFilter, startDate, endDate }),
+    ChannelPartner.find({ organization }).select('firmName category').lean(),
   ]);
 
   const pickSplit = (rows, viaValue) => rows.find((r) => r._id === viaValue) || {};
@@ -151,16 +164,15 @@ export const getVolumeBreakdown = async ({ organization, projectFilter = {}, sta
     channelPartner: Math.round(safeDiv(sales.channelPartner.revenue, sales.channelPartner.count)),
   };
 
-  // Per-firm rows — merge sales + leads aggregations with the partner registry.
-  const [salesByPartner, leadsByPartner, partners] = await Promise.all([
-    aggregateSalesByPartner({ organization, projectFilter, startDate, endDate }),
-    aggregateLeadsByPartner({ organization, projectFilter, startDate, endDate }),
-    ChannelPartner.find({ organization }).select('firmName category').lean(),
-  ]);
-
   const salesMap = Object.fromEntries(salesByPartner.map((r) => [String(r._id), r]));
   const leadsMap = Object.fromEntries(leadsByPartner.map((r) => [String(r._id), r]));
 
+  // Per-firm and per-category revenue is apportioned by each partner's `sharePct`.
+  // This reconciles to the top-line `sales.channelPartner.revenue` (which counts each
+  // CP-sourced sale's whole `salePrice` once) ONLY when each sale's partner shares sum
+  // to 100. The `sharePct` field is 0..100 per the schema; malformed data where shares
+  // don't sum to 100 will make per-firm totals diverge from the top-line. This is an
+  // accepted limitation — per-firm figures are best-effort attributions.
   const byFirm = partners
     .map((p) => {
       const id = String(p._id);
