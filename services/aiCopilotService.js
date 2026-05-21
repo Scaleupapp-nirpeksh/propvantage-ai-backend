@@ -387,11 +387,11 @@ function detectIntent(toolCalls, response) {
     category = 'inventory';
   } else if (functionNames.some(n => n.includes('project'))) {
     category = 'projects';
-  } else if (functionNames.some(n => n.includes('team') || n.includes('performance'))) {
-    category = 'team';
   } else if (functionNames.some(n => n.includes('channel_partner'))) {
     category = 'channel_partners';
     confidence = 0.9;
+  } else if (functionNames.some(n => n.includes('team') || n.includes('performance'))) {
+    category = 'team';
   } else if (functionNames.some(n => n.includes('commission'))) {
     category = 'commissions';
   } else if (functionNames.some(n => n.includes('compare'))) {
