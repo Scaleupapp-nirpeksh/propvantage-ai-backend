@@ -100,6 +100,8 @@ const DEFAULT_ROLES = [
       'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
       'channel_partners:manage_commission_rules', 'channel_partners:attribute',
       'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
+      // Portfolio
+      'portfolio:manage',
     ],
   },
   {
@@ -197,6 +199,8 @@ const DEFAULT_ROLES = [
       // Competitive Analysis — view, manage data, research, recommendations
       'competitive_analysis:view', 'competitive_analysis:manage_data',
       'competitive_analysis:ai_research', 'competitive_analysis:ai_recommendations',
+      // Portfolio
+      'portfolio:manage',
     ],
   },
   {

@@ -252,6 +252,11 @@ export const PERMISSIONS = {
     EDIT_BOOKING_ATTRIBUTION: 'channel_partners:edit_booking_attribution',
     MANAGE_COMMISSIONS: 'channel_partners:manage_commissions',
   },
+
+  // ─── DEVELOPER PORTFOLIO ─────────────────────────────────
+  PORTFOLIO: {
+    MANAGE: 'portfolio:manage',
+  },
 };
 
 // Flat array of all permission strings for validation
