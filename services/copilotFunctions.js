@@ -15,6 +15,10 @@ import CommissionRecord from '../models/commissionRecordModel.js';
 import User from '../models/userModel.js';
 import Task from '../models/taskModel.js';
 import CompetitorProject from '../models/competitorProjectModel.js';
+import {
+  getVolumeBreakdown,
+  getCommissionBreakdown,
+} from './channelPartnerAnalyticsService.js';
 
 // =============================================================================
 // HELPER UTILITIES
@@ -417,6 +421,45 @@ export const copilotTools = [
           channel_partner_id: { type: 'string', description: 'ObjectId of the ChannelPartner firm' },
           project_id: { type: 'string' },
           status: { type: 'string' },
+        },
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_channel_partner_performance',
+      description:
+        'Channel partner VOLUME analytics — direct-vs-channel-partner split of sales revenue and leads, breakdown by partner category (broker firm / individual agent / corporate / digital aggregator) and by individual firm, conversion rate, and average deal size. Use for "how much business came through channel partners", "which partner brought the most bookings", "CP vs direct".',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: {
+            type: 'string',
+            enum: ['this_month', 'this_quarter', 'this_year', 'last_month', 'last_quarter'],
+            description: 'Time window; defaults to this_year.',
+          },
+          project_id: { type: 'string', description: 'Optional ObjectId of a project to filter by' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_channel_partner_commission_analytics',
+      description:
+        'Channel partner COMMISSION analytics — total commission accrued / paid / pending, payment status breakdown, commission per firm, top-performing partners by booked revenue, and the effective commission rate (commission as a % of CP-sourced revenue). Use for "how much commission have we paid channel partners", "what is our pending commission", "top channel partners".',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: {
+            type: 'string',
+            enum: ['this_month', 'this_quarter', 'this_year', 'last_month', 'last_quarter'],
+            description: 'Time window; defaults to this_year.',
+          },
+          project_id: { type: 'string', description: 'Optional ObjectId of a project to filter by' },
         },
       },
     },
@@ -1481,6 +1524,44 @@ const functionImplementations = {
       totalPending: grandPending,
       byStatus: statusMap,
     };
+  },
+
+  get_channel_partner_performance: async (params, user, accessibleProjectIds) => {
+    const { start, end } = getDateRange(params.period || 'this_year');
+    let projectFilter = {};
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) {
+        return { error: 'You do not have access to this project' };
+      }
+      projectFilter = { project: new mongoose.Types.ObjectId(params.project_id) };
+    } else {
+      projectFilter = { project: getProjectScopeFilter(accessibleProjectIds) };
+    }
+    return getVolumeBreakdown({
+      organization: user.organization,
+      projectFilter,
+      startDate: start,
+      endDate: end,
+    });
+  },
+
+  get_channel_partner_commission_analytics: async (params, user, accessibleProjectIds) => {
+    const { start, end } = getDateRange(params.period || 'this_year');
+    let projectFilter = {};
+    if (params.project_id) {
+      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) {
+        return { error: 'You do not have access to this project' };
+      }
+      projectFilter = { project: new mongoose.Types.ObjectId(params.project_id) };
+    } else {
+      projectFilter = { project: getProjectScopeFilter(accessibleProjectIds) };
+    }
+    return getCommissionBreakdown({
+      organization: user.organization,
+      projectFilter,
+      startDate: start,
+      endDate: end,
+    });
   },
 
   // ---- 4.7 Comparison & Analytics Functions ----

@@ -129,7 +129,7 @@ Always include sources listing which data categories were queried.`;
 // =============================================================================
 
 const FINANCIAL_ROLES = ['Business Head', 'Project Director', 'Finance Head', 'Finance Manager', 'Sales Head'];
-const FINANCIAL_FUNCTIONS = ['get_revenue_analysis', 'get_payment_summary', 'get_overdue_payments', 'get_payments_due_today', 'get_commission_summary'];
+const FINANCIAL_FUNCTIONS = ['get_revenue_analysis', 'get_payment_summary', 'get_overdue_payments', 'get_payments_due_today', 'get_commission_summary', 'get_channel_partner_commission_analytics'];
 
 function isRoleAllowedForFunction(user, functionName) {
   const userRole = user?.roleRef?.name || user;
@@ -389,6 +389,9 @@ function detectIntent(toolCalls, response) {
     category = 'projects';
   } else if (functionNames.some(n => n.includes('team') || n.includes('performance'))) {
     category = 'team';
+  } else if (functionNames.some(n => n.includes('channel_partner'))) {
+    category = 'channel_partners';
+    confidence = 0.9;
   } else if (functionNames.some(n => n.includes('commission'))) {
     category = 'commissions';
   } else if (functionNames.some(n => n.includes('compare'))) {
