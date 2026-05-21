@@ -26,6 +26,9 @@ Within the existing Analytics pages, show:
 - Commission given, payment status, and top performers (gated — financial data).
 - A promoter-grade KPI: effective commission rate (commission ÷ CP-sourced revenue).
 
+Additionally, make all of the above answerable through the AI copilot chat, so a user
+can ask Channel Partner questions in natural language (see Section 10).
+
 ## 3. Decisions (locked during brainstorming)
 
 | Decision | Choice |
@@ -35,6 +38,7 @@ Within the existing Analytics pages, show:
 | Placement | Split across existing pages — Sales Analytics, Lead Analytics, Analytics Overview |
 | Visibility | Lead/revenue counts open to all Analytics users; commission & payment data gated by `CHANNEL_PARTNERS.VIEW` |
 | Backend approach | Approach A — dedicated CP-analytics endpoints + a shared aggregation service |
+| AI copilot | Two new copilot tools that reuse the same aggregation service (Section 10) |
 
 ## 4. Non-goals
 
@@ -263,11 +267,73 @@ controls are introduced.
 - `effectiveCommissionRate` and `conversion` return `0` rather than `NaN`/`Infinity`
   when a denominator is zero.
 
+**Copilot** — the two new tools are thin wrappers over the tested service, so they need
+no separate aggregation tests. Verify by manual copilot chat on the demo org: a
+performance question (e.g. "how much revenue came via channel partners this year")
+returns data; a commission question is answered for a financial-role user and refused for
+a non-financial role.
+
 **Frontend** — `CI=true npm run build` compiles clean; manual UI verification on the
 demo org (seeder updated to span all 4 categories): CP tabs on Sales/Lead Analytics, the
 Overview contribution card, and (with permission) the gated Commission block.
 
-## 10. File Summary
+## 10. AI Copilot Integration
+
+The AI copilot (`controllers/aiCopilotController.js`, `services/aiCopilotService.js`,
+`services/copilotFunctions.js`) is an OpenAI GPT-4o **tool-calling** chat. The chat UI is
+fully backend-driven — registering a new tool surfaces it in the chat with **no frontend
+change**. The copilot already has a `get_commission_summary` tool (per-partner commission
+lookup); that tool stays. This section adds the org-wide CP **analytics** view.
+
+### 10.1 Two new copilot tools — `services/copilotFunctions.js`
+
+Both tools **reuse the same `services/channelPartnerAnalyticsService.js`** from Section 6 —
+no aggregation logic is duplicated. Each tool is a thin wrapper: parse params, resolve the
+date range and project scope, call the service, return the structured object.
+
+- **`get_channel_partner_performance`** → calls `getVolumeBreakdown(...)`. Answers
+  Direct-vs-CP volume, by-category, by-firm, conversion, and avg-deal-size questions.
+- **`get_channel_partner_commission_analytics`** → calls `getCommissionBreakdown(...)`.
+  Answers commission accrued/paid/pending, payment-status, by-firm, top-performer, and
+  effective-commission-rate questions.
+
+**Tool parameters (both):**
+- `period` — enum `this_month | this_quarter | this_year | last_month | last_quarter`,
+  mapped to a `{ startDate, endDate }` range. The plan must reconcile this enum with the
+  `period`→date-range helper used by the web endpoints (Section 6.3) and reuse a single
+  resolution path.
+- `project_id` — optional ObjectId; when present, narrows the project scope (still
+  intersected with the caller's project-access list).
+
+Register each tool's definition in the `copilotTools` array and its implementation in the
+`functionImplementations` map, following the existing tool pattern in the file.
+
+### 10.2 Role gating — `services/aiCopilotService.js`
+
+`get_channel_partner_commission_analytics` is added to the copilot's `FINANCIAL_FUNCTIONS`
+list — the same role gate that already restricts `get_commission_summary` (Business Head,
+Project Director, Finance Head, Finance Manager, Sales Head). `get_channel_partner_performance`
+follows the default copilot tool access (no financial gate).
+
+The copilot uses its own established role-based gating, separate from the web routes'
+`CHANNEL_PARTNERS.VIEW` permission. Each channel keeps its existing mechanism — they are
+not unified in this work.
+
+### 10.3 Intent detection — `services/aiCopilotService.js`
+
+`detectIntent()` gets a branch: when a called tool name includes `channel_partner`, the
+detected category is `channel_partners`. Used for logging/analytics only — it does not
+change UI behaviour.
+
+### 10.4 No frontend copilot change
+
+The copilot chat UI (`src/components/copilot/`) renders whatever structured cards the
+backend returns through its existing card renderers. No frontend work is needed for the
+copilot to answer CP questions.
+
+---
+
+## 11. File Summary
 
 **Backend — create**
 - `services/channelPartnerAnalyticsService.js`
@@ -280,6 +346,8 @@ Overview contribution card, and (with permission) the gated Commission block.
 - `routes/analyticsRoutes.js` — two new routes
 - `controllers/channelPartnerController.js` — accept `category` on create/update
 - `data/mumbaiLuxuryCPSeeder.js` — assign categories
+- `services/copilotFunctions.js` — two new copilot tools (definitions + implementations)
+- `services/aiCopilotService.js` — `FINANCIAL_FUNCTIONS` entry + `detectIntent()` branch
 
 **Frontend — modify**
 - `src/services/api.js` — two `analyticsAPI` methods
