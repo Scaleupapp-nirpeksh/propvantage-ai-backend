@@ -486,7 +486,15 @@ const projectSchema = new mongoose.Schema(
         alerts: [],
         pricingAdjustments: []
       })
-    }
+    },
+
+    // Developer public portfolio (SP2) — curation choices for this project.
+    portfolio: {
+      isPublished: { type: Boolean, default: false },
+      showPriceRange: { type: Boolean, default: true },
+      showConfigurations: { type: Boolean, default: true },
+      coverImageUrl: { type: String, default: null },
+    },
   },
   {
     timestamps: true,

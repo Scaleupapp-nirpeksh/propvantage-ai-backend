@@ -50,6 +50,11 @@ const organizationSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Developer public portfolio (SP2) — public-facing org profile (builder orgs).
+    portfolioProfile: {
+      logoUrl: { type: String, default: null },
+      about: { type: String, default: '' },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields
