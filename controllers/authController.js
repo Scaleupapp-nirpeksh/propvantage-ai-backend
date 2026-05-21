@@ -16,6 +16,7 @@ import { seedChannelPartnerRoles } from '../data/defaultChannelPartnerRoles.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
+const CP_CATEGORIES = ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'];
 
 // Account lockout configuration
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -38,8 +39,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Please provide all required fields');
   }
 
-  // 1b. Channel-partner-specific validation
-  const CP_CATEGORIES = ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'];
+  // 2. Channel-partner-specific validation
   let normalizedRera = null;
   if (type === 'channel_partner') {
     if (!CP_CATEGORIES.includes(category)) {
@@ -64,21 +64,21 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('Invalid organization type');
   }
 
-  // 2. Org name uniqueness
+  // 3. Org name uniqueness
   const orgExists = await Organization.findOne({ name: orgName });
   if (orgExists) {
     res.status(400);
     throw new Error('An organization with this name already exists');
   }
 
-  // 3. Email uniqueness (global)
+  // 4. Email uniqueness (global)
   const userExists = await User.findOne({ email });
   if (userExists) {
     res.status(400);
     throw new Error('A user with this email already exists');
   }
 
-  // 4. Create the organization
+  // 5. Create the organization
   const organization = await Organization.create({
     name: orgName,
     country,
@@ -89,7 +89,7 @@ const registerUser = asyncHandler(async (req, res) => {
       : {}),
   });
 
-  // 5. If organization is created, create the user
+  // 6. If organization is created, create the user
   if (organization) {
     const user = await User.create({
       organization: organization._id,
@@ -103,13 +103,13 @@ const registerUser = asyncHandler(async (req, res) => {
     });
 
     if (user) {
-      // 6. Seed default roles for this new organization
+      // 7. Seed default roles for this new organization
       const roles =
         type === 'channel_partner'
           ? await seedChannelPartnerRoles(organization._id, user._id)
           : await seedDefaultRoles(organization._id, user._id);
 
-      // 7. Assign the Organization Owner role to the first user
+      // 8. Assign the Organization Owner role to the first user
       const ownerRole = roles.find((r) => r.isOwnerRole);
       if (ownerRole) {
         user.roleRef = ownerRole._id;
@@ -287,6 +287,10 @@ const loginUser = asyncHandler(async (req, res) => {
 
   // Load organization for the response (need type in addition to _id/name)
   const org = await Organization.findById(user.organization).select('name type');
+  if (!org) {
+    res.status(401);
+    throw new Error('Organization not found');
+  }
 
   // Audit: successful login
   logAuditEvent({
@@ -314,9 +318,7 @@ const loginUser = asyncHandler(async (req, res) => {
           isOwnerRole: user.roleRef.isOwnerRole,
         }
       : null,
-    organization: org
-      ? { _id: org._id, name: org.name, type: org.type }
-      : user.organization,
+    organization: { _id: org._id, name: org.name, type: org.type },
     token,
   });
 });
