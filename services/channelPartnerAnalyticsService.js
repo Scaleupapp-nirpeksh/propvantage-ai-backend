@@ -225,8 +225,10 @@ export const getCommissionBreakdown = async ({ organization, projectFilter = {},
       },
     ];
     if (projectFilter.project) {
+      // The sale $lookup is repeated across the three aggregations when a project filter is active — acceptable for current data volumes; revisit with $facet if it becomes a hotspot.
       pipeline.push(
         { $lookup: { from: 'sales', localField: 'sale', foreignField: '_id', as: 'saleDoc' } },
+        // Intentional: without the sale, the record's project cannot be determined, so it is dropped from project-scoped results.
         { $unwind: { path: '$saleDoc', preserveNullAndEmptyArrays: false } },
         { $match: { 'saleDoc.project': projectFilter.project } }
       );
@@ -248,57 +250,65 @@ export const getCommissionBreakdown = async ({ organization, projectFilter = {},
     return pipeline;
   };
 
-  // Org-wide summary.
-  const summaryRows = await CommissionRecord.aggregate(
-    buildPipeline({
-      $group: {
-        _id: null,
-        grossAccrued: { $sum: '$grossAmount' },
-        tds: { $sum: '$tdsAmount' },
-        netAccrued: { $sum: '$netAmount' },
-        paid: { $sum: '$paidAmount' },
-      },
-    })
-  );
+  // All five queries are independent — run them concurrently.
+  const [
+    summaryRows,
+    statusRows,
+    firmRows,
+    salesByPartner,
+    partners,
+  ] = await Promise.all([
+    // Org-wide summary.
+    CommissionRecord.aggregate(
+      buildPipeline({
+        $group: {
+          _id: null,
+          grossAccrued: { $sum: '$grossAmount' },
+          tds: { $sum: '$tdsAmount' },
+          netAccrued: { $sum: '$netAmount' },
+          paid: { $sum: '$paidAmount' },
+        },
+      })
+    ),
+    // Payment status — count + net amount per CommissionRecord.status. Note the
+    // status:{$ne:'cancelled'} match means 'cancelled' never appears here, which
+    // is the intended behaviour for the analytics view.
+    CommissionRecord.aggregate(
+      buildPipeline({
+        $group: { _id: '$status', count: { $sum: 1 }, netAmount: { $sum: '$netAmount' } },
+      })
+    ),
+    // Per-firm commission.
+    CommissionRecord.aggregate(
+      buildPipeline({
+        $group: {
+          _id: '$channelPartner',
+          netCommission: { $sum: '$netAmount' },
+          paid: { $sum: '$paidAmount' },
+        },
+      })
+    ),
+    // CP-sourced booked revenue per firm — reuse the volume helper for ranking.
+    aggregateSalesByPartner({ organization, projectFilter, startDate, endDate }),
+    ChannelPartner.find({ organization }).select('firmName category').lean(),
+  ]);
+
   const s = summaryRows[0] || { grossAccrued: 0, tds: 0, netAccrued: 0, paid: 0 };
   const summary = {
     grossAccrued: Math.round(s.grossAccrued),
     tds: Math.round(s.tds),
     netAccrued: Math.round(s.netAccrued),
     paid: Math.round(s.paid),
-    pending: Math.round(s.netAccrued - s.paid),
+    pending: Math.max(0, Math.round(s.netAccrued - s.paid)),
   };
 
-  // Payment status — count + net amount per CommissionRecord.status. Note the
-  // status:{$ne:'cancelled'} match means 'cancelled' never appears here, which
-  // is the intended behaviour for the analytics view.
-  const statusRows = await CommissionRecord.aggregate(
-    buildPipeline({
-      $group: { _id: '$status', count: { $sum: 1 }, netAmount: { $sum: '$netAmount' } },
-    })
-  );
   const paymentStatus = statusRows.map((r) => ({
     status: r._id,
     count: r.count,
     netAmount: Math.round(r.netAmount),
   }));
 
-  // Per-firm commission.
-  const firmRows = await CommissionRecord.aggregate(
-    buildPipeline({
-      $group: {
-        _id: '$channelPartner',
-        netCommission: { $sum: '$netAmount' },
-        paid: { $sum: '$paidAmount' },
-      },
-    })
-  );
-
-  // CP-sourced booked revenue per firm — reuse the volume helper for ranking.
-  const salesByPartner = await aggregateSalesByPartner({ organization, projectFilter, startDate, endDate });
   const revenueMap = Object.fromEntries(salesByPartner.map((r) => [String(r._id), r.revenue || 0]));
-
-  const partners = await ChannelPartner.find({ organization }).select('firmName category').lean();
   const commMap = Object.fromEntries(firmRows.map((r) => [String(r._id), r]));
 
   const byFirm = partners
@@ -313,7 +323,7 @@ export const getCommissionBreakdown = async ({ organization, projectFilter = {},
         category: p.category || 'broker_firm',
         netCommission: net,
         paid,
-        pending: net - paid,
+        pending: Math.max(0, net - paid),
       };
     })
     .filter((r) => r.netCommission > 0)
