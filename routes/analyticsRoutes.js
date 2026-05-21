@@ -8,6 +8,10 @@ import {
   getDashboardAnalytics,
   getSalesReport
 } from '../controllers/analyticsController.js';
+import {
+  getChannelPartnerVolumeAnalytics,
+  getChannelPartnerCommissionAnalytics,
+} from '../controllers/channelPartnerAnalyticsController.js';
 
 // Import security middleware
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
@@ -54,6 +58,22 @@ router.get(
   '/sales-report',
   hasPermission(PERMISSIONS.ANALYTICS.REPORTS),
   getSalesReport
+);
+
+// @route GET /api/analytics/channel-partners/volume
+// @desc  Direct-vs-CP volume breakdown (counts/revenue) — open to Analytics users
+router.get(
+  '/channel-partners/volume',
+  hasPermission(PERMISSIONS.ANALYTICS.BASIC),
+  getChannelPartnerVolumeAnalytics
+);
+
+// @route GET /api/analytics/channel-partners/commission
+// @desc  CP commission + payment status — gated by CHANNEL_PARTNERS.VIEW
+router.get(
+  '/channel-partners/commission',
+  hasPermission(PERMISSIONS.CHANNEL_PARTNERS.VIEW),
+  getChannelPartnerCommissionAnalytics
 );
 
 export default router;
