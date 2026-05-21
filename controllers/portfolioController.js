@@ -28,10 +28,11 @@ export const updateMyPortfolioProfile = asyncHandler(async (req, res) => {
     throw new Error('Organization not found');
   }
   const { logoUrl, about, contactInfo } = req.body;
-  org.portfolioProfile = {
-    logoUrl: logoUrl !== undefined ? logoUrl : org.portfolioProfile?.logoUrl || null,
-    about: about !== undefined ? about : org.portfolioProfile?.about || '',
-  };
+  const existing = org.portfolioProfile?.toObject?.() || org.portfolioProfile || {};
+  const nextProfile = { ...existing };
+  if (logoUrl !== undefined) nextProfile.logoUrl = logoUrl;
+  if (about !== undefined) nextProfile.about = about;
+  org.portfolioProfile = nextProfile;
   if (contactInfo !== undefined) {
     org.contactInfo = {
       ...(org.contactInfo?.toObject?.() || org.contactInfo || {}),
@@ -59,7 +60,7 @@ export const updateProjectPortfolio = asyncHandler(async (req, res) => {
   const { isPublished, showPriceRange, showConfigurations, coverImageUrl } = req.body;
   const current = project.portfolio || {};
   project.portfolio = {
-    isPublished: isPublished !== undefined ? !!isPublished : current.isPublished || false,
+    isPublished: isPublished !== undefined ? !!isPublished : current.isPublished ?? false,
     showPriceRange:
       showPriceRange !== undefined ? !!showPriceRange : current.showPriceRange ?? true,
     showConfigurations:
@@ -67,7 +68,7 @@ export const updateProjectPortfolio = asyncHandler(async (req, res) => {
         ? !!showConfigurations
         : current.showConfigurations ?? true,
     coverImageUrl:
-      coverImageUrl !== undefined ? coverImageUrl : current.coverImageUrl || null,
+      coverImageUrl !== undefined ? coverImageUrl : current.coverImageUrl ?? null,
   };
   await project.save();
   res.json({ success: true, data: { id: project._id, portfolio: project.portfolio } });
