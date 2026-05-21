@@ -4,6 +4,7 @@
 import jwt from 'jsonwebtoken';
 import asyncHandler from 'express-async-handler';
 import User from '../models/userModel.js';
+import Organization from '../models/organizationModel.js';
 import ProjectAssignment from '../models/projectAssignmentModel.js';
 
 /**
@@ -188,4 +189,18 @@ const checkProjectAccess = (projectIdSource = 'params.id') => {
   };
 };
 
-export { protect, authorize, hasPermission, hasAnyPermission, checkProjectAccess };
+/**
+ * Restrict a route to organizations of a given type ('builder' | 'channel_partner').
+ * Unlike hasPermission, this is NOT bypassed by isOwner — it is a hard org-type gate.
+ */
+const requireOrgType = (requiredType) =>
+  asyncHandler(async (req, res, next) => {
+    const org = await Organization.findById(req.user.organization).select('type');
+    if (!org || org.type !== requiredType) {
+      res.status(403);
+      throw new Error('This area is not available for your organization type');
+    }
+    next();
+  });
+
+export { protect, authorize, hasPermission, hasAnyPermission, checkProjectAccess, requireOrgType };

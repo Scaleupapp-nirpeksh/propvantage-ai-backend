@@ -12,6 +12,7 @@ import {
 } from '../utils/generateToken.js';
 import RefreshToken from '../models/refreshTokenModel.js';
 import { seedDefaultRoles } from '../data/defaultRoles.js';
+import { seedChannelPartnerRoles } from '../data/defaultChannelPartnerRoles.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
@@ -26,22 +27,51 @@ const LOCK_DURATION_MINUTES = 15;
  * @access  Public
  */
 const registerUser = asyncHandler(async (req, res) => {
-  const { orgName, country, city, firstName, lastName, email, password } = req.body;
+  const {
+    orgName, country, city, firstName, lastName, email, password,
+    type = 'builder', category, reraRegistrationNumber,
+  } = req.body;
 
-  // 1. Validate input
+  // 1. Validate common required fields
   if (!orgName || !country || !city || !firstName || !lastName || !email || !password) {
     res.status(400);
     throw new Error('Please provide all required fields');
   }
 
-  // 2. Check if organization already exists
+  // 1b. Channel-partner-specific validation
+  const CP_CATEGORIES = ['individual_agent', 'broker_firm', 'corporate', 'digital_aggregator'];
+  let normalizedRera = null;
+  if (type === 'channel_partner') {
+    if (!CP_CATEGORIES.includes(category)) {
+      res.status(400);
+      throw new Error('Please select a valid channel partner category');
+    }
+    normalizedRera = (reraRegistrationNumber || '').trim().toUpperCase();
+    if (!normalizedRera) {
+      res.status(400);
+      throw new Error('RERA registration number is required');
+    }
+    const reraTaken = await Organization.findOne({
+      type: 'channel_partner',
+      reraRegistrationNumber: normalizedRera,
+    });
+    if (reraTaken) {
+      res.status(400);
+      throw new Error('A channel partner account already exists for this RERA registration number');
+    }
+  } else if (type !== 'builder') {
+    res.status(400);
+    throw new Error('Invalid organization type');
+  }
+
+  // 2. Org name uniqueness
   const orgExists = await Organization.findOne({ name: orgName });
   if (orgExists) {
     res.status(400);
     throw new Error('An organization with this name already exists');
   }
 
-  // 3. Check if user email already exists
+  // 3. Email uniqueness (global)
   const userExists = await User.findOne({ email });
   if (userExists) {
     res.status(400);
@@ -53,7 +83,10 @@ const registerUser = asyncHandler(async (req, res) => {
     name: orgName,
     country,
     city,
-    type: 'builder', // The initial signup is always for a 'builder'
+    type,
+    ...(type === 'channel_partner'
+      ? { category, reraRegistrationNumber: normalizedRera }
+      : {}),
   });
 
   // 5. If organization is created, create the user
@@ -71,7 +104,10 @@ const registerUser = asyncHandler(async (req, res) => {
 
     if (user) {
       // 6. Seed default roles for this new organization
-      const roles = await seedDefaultRoles(organization._id, user._id);
+      const roles =
+        type === 'channel_partner'
+          ? await seedChannelPartnerRoles(organization._id, user._id)
+          : await seedDefaultRoles(organization._id, user._id);
 
       // 7. Assign the Organization Owner role to the first user
       const ownerRole = roles.find((r) => r.isOwnerRole);
@@ -127,6 +163,7 @@ const registerUser = asyncHandler(async (req, res) => {
         organization: {
           _id: organization._id,
           name: organization.name,
+          type: organization.type,
         },
         token,
       });
@@ -248,6 +285,9 @@ const loginUser = asyncHandler(async (req, res) => {
   });
   setRefreshCookie(res, refreshTokenValue);
 
+  // Load organization for the response (need type in addition to _id/name)
+  const org = await Organization.findById(user.organization).select('name type');
+
   // Audit: successful login
   logAuditEvent({
     action: 'LOGIN_SUCCESS',
@@ -274,7 +314,9 @@ const loginUser = asyncHandler(async (req, res) => {
           isOwnerRole: user.roleRef.isOwnerRole,
         }
       : null,
-    organization: user.organization,
+    organization: org
+      ? { _id: org._id, name: org.name, type: org.type }
+      : user.organization,
     token,
   });
 });
