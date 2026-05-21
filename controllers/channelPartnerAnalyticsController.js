@@ -17,18 +17,25 @@ const resolveScope = (req, res) => {
   // Date range — explicit ISO params, else default to start-of-year → now.
   let startDate = null;
   let endDate = null;
-  if (req.query.dateFrom && req.query.dateTo) {
-    const from = new Date(req.query.dateFrom);
-    const to = new Date(req.query.dateTo);
-    if (!isNaN(from) && !isNaN(to)) {
-      startDate = from;
-      endDate = to;
-    }
+  const hasFrom = req.query.dateFrom !== undefined && req.query.dateFrom !== '';
+  const hasTo   = req.query.dateTo   !== undefined && req.query.dateTo   !== '';
+  if (hasFrom !== hasTo) {
+    res.status(400);
+    throw new Error('Provide both dateFrom and dateTo, or neither');
   }
-  if (!startDate) {
+  if (hasFrom && hasTo) {
+    const from = new Date(req.query.dateFrom);
+    const to   = new Date(req.query.dateTo);
+    if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+      res.status(400);
+      throw new Error('Invalid dateFrom/dateTo — expected ISO date strings');
+    }
+    startDate = from;
+    endDate   = to;
+  } else {
     const now = new Date();
     startDate = new Date(now.getFullYear(), 0, 1);
-    endDate = now;
+    endDate   = now;
   }
 
   // Project scope — start from the access filter; narrow if a valid project given.
