@@ -23,6 +23,15 @@ const registerSchema = Joi.object({
       'string.min': 'Password must be at least 8 characters',
       'string.pattern.name': 'Password must contain at least one {#name}',
     }),
+
+  // Organization type — selects the registration path; defaults to 'builder'.
+  // The channel-partner fields below must be declared here so `validate()`'s
+  // `stripUnknown` does not delete them before they reach registerUser, which
+  // performs the authoritative CP validation (category enum, RERA presence +
+  // uniqueness — see authController.registerUser / SP1 spec §6.2, §9).
+  type: Joi.string().valid('builder', 'channel_partner').default('builder'),
+  category: Joi.string().trim().max(40).optional(),
+  reraRegistrationNumber: Joi.string().trim().max(120).optional(),
 });
 
 const loginSchema = Joi.object({
