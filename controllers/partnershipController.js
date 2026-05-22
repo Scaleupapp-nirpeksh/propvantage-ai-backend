@@ -5,11 +5,14 @@
 //   enforces the appropriate permission (developer: channel_partners:*;
 //   channel partner: cp_partnerships:*).
 
+import crypto from 'crypto';
 import asyncHandler from 'express-async-handler';
 import mongoose from 'mongoose';
 import Organization from '../models/organizationModel.js';
 import Project from '../models/projectModel.js';
 import Partnership from '../models/partnershipModel.js';
+import ChannelPartner from '../models/channelPartnerModel.js';
+import User from '../models/userModel.js';
 import {
   validateTransition,
   applyTransition,
@@ -17,7 +20,7 @@ import {
   syncChannelPartnerStatus,
   notifyPartnership,
 } from '../services/partnershipService.js';
-import { CP_PERMISSIONS, PERMISSIONS } from '../config/permissions.js';
+import { CP_PERMISSIONS, PERMISSIONS, CP_CATEGORIES } from '../config/permissions.js';
 
 const PENDING_CAP = parseInt(process.env.CP_MAX_PENDING_APPLICATIONS, 10) || 10;
 
@@ -386,4 +389,195 @@ export const getPartnership = asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true, data: partnership });
+});
+
+// ─── Off-platform CP onboarding (developer-initiated invite link) ────────────
+
+// POST /api/partnerships/invite-new-cp — a developer invites a channel partner
+// that is NOT yet on the platform. Immediately creates a trackable ChannelPartner
+// registry record (so the developer's work is never blocked) and returns an
+// onboarding invite link. When the CP registers via that link they claim the
+// invite (claimInvite below) and the Partnership is created active.
+export const inviteNewCp = asyncHandler(async (req, res) => {
+  const callerOrg = await getCallerOrg(req);
+  if (!callerOrg || callerOrg.type !== 'builder') {
+    res.status(403);
+    throw new Error('Only developer organizations can invite channel partners');
+  }
+  if (!can(req, PERMISSIONS.CHANNEL_PARTNERS.CREATE)) {
+    res.status(403);
+    throw new Error('Missing required permission(s): channel_partners:create');
+  }
+
+  const { firmName, email, category, commissionTerms, projects } = req.body;
+  if (!firmName || !String(firmName).trim()) {
+    res.status(400);
+    throw new Error('Firm name is required');
+  }
+  const normEmail = String(email || '').trim().toLowerCase();
+  if (!normEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail)) {
+    res.status(400);
+    throw new Error('A valid contact email is required');
+  }
+  if (!CP_CATEGORIES.includes(category)) {
+    res.status(400);
+    throw new Error('A valid channel partner category is required');
+  }
+  // If the email already belongs to a platform user, the on-platform invite
+  // (the directory) should be used instead.
+  const existingUser = await User.findOne({ email: normEmail }).select('_id');
+  if (existingUser) {
+    res.status(409);
+    throw new Error('This email already belongs to a platform user — invite them from the directory instead.');
+  }
+  const ct = validateCommissionTerms(commissionTerms);
+  if (!ct.ok) {
+    res.status(400);
+    throw new Error(ct.message);
+  }
+  let projectsForDoc = [];
+  if (Array.isArray(projects) && projects.length > 0) {
+    const valid = await Project.countDocuments({ _id: { $in: projects }, organization: callerOrg._id });
+    if (valid !== projects.length) {
+      res.status(400);
+      throw new Error('One or more selected projects do not belong to your organization');
+    }
+    projectsForDoc = projects;
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const record = await ChannelPartner.create({
+    organization: callerOrg._id,
+    firmName: String(firmName).trim(),
+    category,
+    primaryContact: { email: normEmail },
+    status: 'active',
+    onboardedBy: req.user._id,
+    platformInvite: {
+      status: 'pending',
+      token,
+      email: normEmail,
+      invitedBy: req.user._id,
+      commissionTerms: ct.value,
+      projects: projectsForDoc,
+      invitedAt: new Date(),
+    },
+  });
+
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const inviteLink = `${baseUrl}/register/channel-partner?inviteToken=${token}&cpId=${record._id}`;
+  res.status(201).json({
+    success: true,
+    data: { channelPartnerId: record._id, firmName: record.firmName, inviteLink },
+  });
+});
+
+// GET /api/partnerships/invite/:channelPartnerId?token=... — PUBLIC. Returns the
+// off-platform invite details so the CP registration page can pre-fill itself.
+export const getOffPlatformInvite = asyncHandler(async (req, res) => {
+  const { token } = req.query;
+  if (!mongoose.isValidObjectId(req.params.channelPartnerId) || !token) {
+    res.status(400);
+    throw new Error('Invalid invitation link');
+  }
+  const record = await ChannelPartner.findOne({
+    _id: req.params.channelPartnerId,
+    'platformInvite.token': token,
+  }).populate('organization', 'name');
+  if (!record || record.platformInvite?.status !== 'pending') {
+    res.status(404);
+    throw new Error('This invitation is not valid or has already been used');
+  }
+  res.json({
+    success: true,
+    data: {
+      developerName: record.organization?.name || 'A developer',
+      firmName: record.firmName,
+      email: record.platformInvite.email,
+      category: record.category,
+    },
+  });
+});
+
+// POST /api/partnerships/claim-invite — the just-registered CP claims a
+// developer's off-platform invite: creates the (active) Partnership and links
+// the developer's pre-created ChannelPartner record.
+export const claimInvite = asyncHandler(async (req, res) => {
+  const { channelPartnerId, token } = req.body;
+  if (!mongoose.isValidObjectId(channelPartnerId) || !token) {
+    res.status(400);
+    throw new Error('Invalid invitation');
+  }
+  const callerOrg = await getCallerOrg(req);
+  if (!callerOrg || callerOrg.type !== 'channel_partner') {
+    res.status(403);
+    throw new Error('Only a channel-partner organization can claim this invitation');
+  }
+  const record = await ChannelPartner.findOne({
+    _id: channelPartnerId,
+    'platformInvite.token': token,
+  });
+  if (!record || record.platformInvite?.status !== 'pending') {
+    res.status(404);
+    throw new Error('This invitation is not valid or has already been used');
+  }
+
+  const developerOrgId = record.organization;
+  const channelPartnerOrgId = callerOrg._id;
+  const now = new Date();
+  const invitedAt = record.platformInvite.invitedAt || now;
+  const histInvited = {
+    status: 'pending', action: 'invited', actor: record.platformInvite.invitedBy,
+    actorOrg: developerOrgId, at: invitedAt, note: 'Off-platform invitation',
+  };
+  const histAccepted = {
+    status: 'active', action: 'accepted', actor: req.user._id,
+    actorOrg: channelPartnerOrgId, at: now, note: 'Joined the platform via invite link',
+  };
+
+  let partnership = await Partnership.findOne({
+    developerOrg: developerOrgId,
+    channelPartnerOrg: channelPartnerOrgId,
+  });
+  if (partnership) {
+    partnership.status = 'active';
+    partnership.initiatedBy = 'developer';
+    partnership.commissionTerms = record.platformInvite.commissionTerms;
+    partnership.projects = record.platformInvite.projects || [];
+    partnership.decidedAt = now;
+    partnership.decidedBy = req.user._id;
+    partnership.history.push(histInvited, histAccepted);
+    await partnership.save();
+  } else {
+    partnership = await Partnership.create({
+      developerOrg: developerOrgId,
+      channelPartnerOrg: channelPartnerOrgId,
+      status: 'active',
+      initiatedBy: 'developer',
+      projects: record.platformInvite.projects || [],
+      commissionTerms: record.platformInvite.commissionTerms,
+      requestedAt: invitedAt,
+      decidedAt: now,
+      decidedBy: req.user._id,
+      history: [histInvited, histAccepted],
+    });
+  }
+
+  // Link the developer's pre-created ChannelPartner record to the new CP org.
+  record.channelPartnerOrg = channelPartnerOrgId;
+  record.status = 'active';
+  record.platformInvite.status = 'accepted';
+  record.platformInvite.acceptedAt = now;
+  await record.save();
+
+  await notifyPartnership({
+    partnership,
+    recipientSide: 'developer',
+    type: 'partnership_update',
+    title: 'Channel partner onboarded',
+    message: `${callerOrg.name} has joined the platform — your partnership is now active.`,
+    actorUserId: req.user._id,
+  });
+
+  res.status(201).json({ success: true, data: partnership });
 });

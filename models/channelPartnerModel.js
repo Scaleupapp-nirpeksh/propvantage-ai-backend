@@ -56,6 +56,25 @@ const channelPartnerSchema = new mongoose.Schema(
     },
     agreementNotes: { type: String, trim: true, default: '' },
     onboardedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // SP3: developer-initiated off-platform onboarding. When a developer invites
+    // a channel partner that is not yet on the platform, this records the open
+    // invite. When the CP registers via the link, a Partnership is created and
+    // `channelPartnerOrg` above is linked. `status` is unset for ordinary,
+    // manually-managed registry records (no invite).
+    platformInvite: {
+      status: { type: String, enum: ['pending', 'accepted', 'expired'] },
+      token: { type: String, default: null },
+      email: { type: String, trim: true, lowercase: true, default: '' },
+      invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      commissionTerms: {
+        type: { type: String, enum: ['percentage', 'flat'] },
+        value: { type: Number, min: 0 },
+        notes: { type: String, trim: true, default: '' },
+      },
+      projects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
+      invitedAt: { type: Date, default: null },
+      acceptedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );
@@ -66,6 +85,8 @@ channelPartnerSchema.index({ organization: 1, firmName: 1 });
 channelPartnerSchema.index({ organization: 1, category: 1 });
 // SP3: reconciliation looks up a developer's shadow record by CP org.
 channelPartnerSchema.index({ organization: 1, channelPartnerOrg: 1 });
+// SP3: off-platform invite links are resolved by token.
+channelPartnerSchema.index({ 'platformInvite.token': 1 }, { sparse: true });
 
 // Field-level encryption for the payout bank account number (PII).
 channelPartnerSchema.plugin(encryptionPlugin, {
