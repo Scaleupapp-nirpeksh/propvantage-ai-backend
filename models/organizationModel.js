@@ -55,6 +55,15 @@ const organizationSchema = new mongoose.Schema(
       logoUrl: { type: String, default: null },
       about: { type: String, default: '' },
     },
+    // Channel-partner marketing profile (SP3) — public-facing CP profile
+    // (channel_partner orgs); surfaced in the marketplace CP directory and on
+    // partnership applications. Unused for builder orgs.
+    channelPartnerProfile: {
+      logoUrl: { type: String, default: null },
+      about: { type: String, default: '' },
+      areasServed: { type: [String], default: [] },
+      trackRecord: { type: String, default: '' },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

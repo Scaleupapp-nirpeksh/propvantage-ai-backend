@@ -13,6 +13,14 @@ const channelPartnerSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    // SP3: links this developer-side registry record to a channel-partner
+    // organization. Set during reconciliation when a Partnership becomes
+    // active. Null for legacy, manually-managed records.
+    channelPartnerOrg: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      default: null,
+    },
     firmName: {
       type: String,
       required: [true, 'Firm name is required'],
@@ -56,6 +64,8 @@ const channelPartnerSchema = new mongoose.Schema(
 channelPartnerSchema.index({ organization: 1, status: 1 });
 channelPartnerSchema.index({ organization: 1, firmName: 1 });
 channelPartnerSchema.index({ organization: 1, category: 1 });
+// SP3: reconciliation looks up a developer's shadow record by CP org.
+channelPartnerSchema.index({ organization: 1, channelPartnerOrg: 1 });
 
 // Field-level encryption for the payout bank account number (PII).
 channelPartnerSchema.plugin(encryptionPlugin, {

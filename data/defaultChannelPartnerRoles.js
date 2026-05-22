@@ -25,6 +25,8 @@ const CP_DEFAULT_ROLES = [
       CP_PERMISSIONS.ORG.VIEW,
       CP_PERMISSIONS.ORG.MANAGE,
       CP_PERMISSIONS.DASHBOARD.VIEW,
+      CP_PERMISSIONS.PARTNERSHIPS.VIEW,
+      CP_PERMISSIONS.PARTNERSHIPS.MANAGE,
     ],
   },
   {
@@ -33,7 +35,11 @@ const CP_DEFAULT_ROLES = [
     description: 'Works their own leads; views the org profile and dashboard.',
     level: 2,
     isOwnerRole: false,
-    permissions: [CP_PERMISSIONS.ORG.VIEW, CP_PERMISSIONS.DASHBOARD.VIEW],
+    permissions: [
+      CP_PERMISSIONS.ORG.VIEW,
+      CP_PERMISSIONS.DASHBOARD.VIEW,
+      CP_PERMISSIONS.PARTNERSHIPS.VIEW,
+    ],
   },
 ];
 

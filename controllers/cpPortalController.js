@@ -13,7 +13,7 @@ import { CP_CATEGORIES } from '../config/permissions.js';
 // GET /api/cp/org — the CP org's profile.
 export const getOrgProfile = asyncHandler(async (req, res) => {
   const org = await Organization.findById(req.user.organization).select(
-    'name type category reraRegistrationNumber country city contactInfo isActive'
+    'name type category reraRegistrationNumber country city contactInfo isActive channelPartnerProfile'
   );
   if (!org) {
     res.status(404);
@@ -29,7 +29,7 @@ export const updateOrgProfile = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Organization not found');
   }
-  const { name, category, country, city, contactInfo } = req.body;
+  const { name, category, country, city, contactInfo, channelPartnerProfile } = req.body;
 
   if (name !== undefined && String(name).trim()) org.name = String(name).trim();
   if (country !== undefined) org.country = country;
@@ -43,6 +43,24 @@ export const updateOrgProfile = asyncHandler(async (req, res) => {
   }
   if (contactInfo !== undefined) {
     org.contactInfo = { ...(org.contactInfo?.toObject?.() || org.contactInfo || {}), ...contactInfo };
+  }
+  // SP3: the public-facing CP marketing profile (logo, about, areas served,
+  // track record) — surfaced in the marketplace CP directory.
+  if (channelPartnerProfile !== undefined && channelPartnerProfile !== null) {
+    const existingProfile =
+      org.channelPartnerProfile?.toObject?.() || org.channelPartnerProfile || {};
+    const next = { ...existingProfile };
+    if (channelPartnerProfile.logoUrl !== undefined) next.logoUrl = channelPartnerProfile.logoUrl;
+    if (channelPartnerProfile.about !== undefined) next.about = channelPartnerProfile.about;
+    if (channelPartnerProfile.trackRecord !== undefined) {
+      next.trackRecord = channelPartnerProfile.trackRecord;
+    }
+    if (channelPartnerProfile.areasServed !== undefined) {
+      next.areasServed = Array.isArray(channelPartnerProfile.areasServed)
+        ? channelPartnerProfile.areasServed.map((a) => String(a).trim()).filter(Boolean)
+        : next.areasServed;
+    }
+    org.channelPartnerProfile = next;
   }
   // reraRegistrationNumber is intentionally NOT editable here.
   await org.save();

@@ -279,6 +279,10 @@ export const CP_PERMISSIONS = {
   DASHBOARD: {
     VIEW: 'cp_dashboard:view',
   },
+  PARTNERSHIPS: {
+    VIEW: 'cp_partnerships:view',
+    MANAGE: 'cp_partnerships:manage',
+  },
 };
 
 // Flat list of every CP permission — used to seed the CP Owner role.

@@ -349,50 +349,6 @@ const DEFAULT_ROLES = [
     ],
   },
   {
-    name: 'Channel Partner Manager',
-    slug: 'channel-partner-manager',
-    description: 'Manages channel partner relationships and external sales.',
-    level: 4,
-    permissions: [
-      'projects:view',
-      'towers:view',
-      'units:view', 'units:statistics',
-      'leads:view', 'leads:create', 'leads:update',
-      'leads:assign', 'leads:scoring_view',
-      'sales:view', 'sales:create', 'sales:update',
-      'sales:pipeline',
-      'commissions:view', 'commissions:create', 'commissions:manage_structures',
-      'commissions:approve', 'commissions:reject', 'commissions:hold',
-      'commissions:reports',
-      'documents:view', 'documents:upload', 'documents:update',
-      'documents:manage_categories', 'documents:approve',
-      'documents:version_control', 'documents:share',
-      'construction:view', 'construction:timeline',
-      'contractors:view', 'contractors:create', 'contractors:update',
-      'contractors:manage', 'contractors:documents', 'contractors:reviews',
-      'budgets:view', 'budgets:variance_view',
-      'analytics:basic',
-      'analytics:budget_vs_actual',
-      'users:view', 'users:update', 'users:invite',
-      'roles:view',
-      'ai:insights', 'ai:conversation', 'ai:copilot',
-      // Tasks
-      'tasks:view', 'tasks:view_team', 'tasks:create', 'tasks:update', 'tasks:assign',
-      // Chat
-      'chat:view', 'chat:send', 'chat:create_group',
-      // Project Access
-      'project_access:view',
-      // Approvals — view, approve, reject
-      'approvals:view', 'approvals:approve', 'approvals:reject',
-      // Competitive Analysis — view only
-      'competitive_analysis:view',
-      // Channel Partners — full (manages CP relationships and rules)
-      'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
-      'channel_partners:manage_commission_rules', 'channel_partners:attribute',
-      'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
-    ],
-  },
-  {
     name: 'Sales Executive',
     slug: 'sales-executive',
     description: 'Frontline sales staff handling leads and sales transactions.',
@@ -429,63 +385,6 @@ const DEFAULT_ROLES = [
       // Approvals — view only
       'approvals:view',
       // Channel Partners — view + attribute (can tag a lead's CP, not manage registry)
-      'channel_partners:view', 'channel_partners:attribute',
-    ],
-  },
-  {
-    name: 'Channel Partner Admin',
-    slug: 'channel-partner-admin',
-    description: 'Administrative access for channel partner organizations.',
-    level: 5,
-    permissions: [
-      'projects:view',
-      'towers:view',
-      'units:view', 'units:statistics',
-      'leads:view', 'leads:create', 'leads:update',
-      'sales:view',
-      'documents:view', 'documents:upload', 'documents:update',
-      'documents:version_control', 'documents:share',
-      'construction:view', 'construction:timeline',
-      'pricing:cost_sheet',
-      'budgets:view',
-      'users:view',
-      'ai:insights', 'ai:conversation', 'ai:copilot',
-      // Tasks
-      'tasks:view', 'tasks:create', 'tasks:update',
-      // Chat
-      'chat:view', 'chat:send',
-      // Project Access
-      'project_access:view',
-      // Approvals — view only
-      'approvals:view',
-      // Channel Partners — view + attribute (line sales role)
-      'channel_partners:view', 'channel_partners:attribute',
-    ],
-  },
-  {
-    name: 'Channel Partner Agent',
-    slug: 'channel-partner-agent',
-    description: 'External sales agents with limited access.',
-    level: 6,
-    permissions: [
-      'projects:view',
-      'towers:view',
-      'units:view',
-      'leads:view', 'leads:create',
-      'documents:view', 'documents:upload',
-      'documents:version_control', 'documents:share',
-      'construction:view', 'construction:timeline',
-      'pricing:cost_sheet',
-      'ai:copilot',
-      // Tasks
-      'tasks:view', 'tasks:create',
-      // Chat
-      'chat:view', 'chat:send',
-      // Project Access
-      'project_access:view',
-      // Approvals — view only
-      'approvals:view',
-      // Channel Partners — view + attribute (external agent, line sales role)
       'channel_partners:view', 'channel_partners:attribute',
     ],
   },
