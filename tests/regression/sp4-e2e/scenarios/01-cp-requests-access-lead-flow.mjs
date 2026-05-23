@@ -67,28 +67,28 @@ export default async function scenarioOne(ctx, log) {
 
   step(log, 'CP pushes the Prospect to the developer (creates pending Lead)');
   const push = await http('POST', `/cp/prospects/${prospect._id}/push`, { token: cp.token, expect: [200, 201], note: 'push to developer' });
-  const lead = push.data?.data?.lead || push.data?.data;
-  assert(log, 'Push response carries a Lead id', !!lead?._id, lead && { id: lead._id, status: lead.status });
-  assert(log, 'Created Lead has status="pending"', lead?.status === 'pending', { status: lead?.status });
-  log.artifacts.leadId = lead?._id;
-  track(ctx.manifest, 'leads', { id: lead?._id, scenarioId: log.scenarioId, status: lead?.status });
+  // Service returns { prospect, leadId } — controller wraps as { success, data: {...} }
+  const leadId = push.data?.data?.leadId;
+  assert(log, 'Push response carries a leadId', !!leadId, { leadId });
+  log.artifacts.leadId = leadId;
+  track(ctx.manifest, 'leads', { id: leadId, scenarioId: log.scenarioId, status: 'pending' });
 
   step(log, 'Developer sees the pending Lead in /api/leads/registrations');
   const regs = await http('GET', '/leads/registrations', { token: dev.token, expect: 200, note: 'developer registrations queue' });
-  const found = pickArr(regs, "leads").some((l) => String(l._id) === String(lead._id));
+  const found = pickArr(regs, "leads").some((l) => String(l._id) === String(leadId));
   assert(log, 'Pending Lead appears in developer registrations queue', found, { totalShown: pickArr(regs, "leads").length });
 
   step(log, 'Developer accepts the registration');
-  const accept = await http('PATCH', `/leads/${lead._id}/registration`, { token: dev.token, body: { action: 'accept' }, expect: 200, note: 'dev accepts registration' });
+  const accept = await http('PATCH', `/leads/${leadId}/registration`, { token: dev.token, body: { action: 'accept' }, expect: 200, note: 'dev accepts registration' });
   assert(log, 'Acceptance API returned ok', accept.ok);
   // Reload lead to confirm status flipped off pending
-  const reload = await http('GET', `/leads/${lead._id}`, { token: dev.token, expect: 200, note: 'reload lead post-accept' });
+  const reload = await http('GET', `/leads/${leadId}`, { token: dev.token, expect: 200, note: 'reload lead post-accept' });
   const leadAfterAccept = reload.data?.data || reload.data;
   assert(log, 'Lead status no longer "pending" after accept', leadAfterAccept?.status && leadAfterAccept.status !== 'pending', { status: leadAfterAccept?.status });
 
   step(log, 'CP can see the same Lead in its leads list (cross-org visibility via partnerAccessScope)');
   const cpLeads = await http('GET', '/leads?limit=100', { token: cp.token, expect: 200, note: 'cp lists leads (scoped)' });
-  const cpSawIt = pickArr(cpLeads).some((l) => String(l._id) === String(lead._id));
+  const cpSawIt = pickArr(cpLeads).some((l) => String(l._id) === String(leadId));
   assert(log, 'CP sees the cross-org lead in its own /leads list', cpSawIt, { totalScoped: pickArr(cpLeads).length });
 
   step(log, 'CP proposes a status change (Qualified)');
@@ -101,21 +101,21 @@ export default async function scenarioOne(ctx, log) {
   assert(log, 'Proposal accepted by API', propose.ok);
 
   step(log, 'Developer sees the proposed-status on the Lead');
-  const leadWithProp = await http('GET', `/leads/${lead._id}`, { token: dev.token, expect: 200, note: 'dev reads lead with proposal' });
+  const leadWithProp = await http('GET', `/leads/${leadId}`, { token: dev.token, expect: 200, note: 'dev reads lead with proposal' });
   const propStatus = (leadWithProp.data?.data || leadWithProp.data)?.proposedStatusChange?.status;
   assert(log, 'proposedStatusChange.status === "Qualified" from dev side', propStatus === 'Qualified', { propStatus });
 
   step(log, 'Developer accepts the proposed status change');
-  const decideProp = await http('PATCH', `/leads/${lead._id}/proposal`, { token: dev.token, body: { action: 'accept' }, expect: 200, note: 'dev accepts proposal' });
+  const decideProp = await http('PATCH', `/leads/${leadId}/proposal`, { token: dev.token, body: { action: 'accept' }, expect: 200, note: 'dev accepts proposal' });
   assert(log, 'Decide-proposal API returned ok', decideProp.ok);
-  const leadAfterProp = await http('GET', `/leads/${lead._id}`, { token: dev.token, expect: 200, note: 'reload lead post-proposal-accept' });
+  const leadAfterProp = await http('GET', `/leads/${leadId}`, { token: dev.token, expect: 200, note: 'reload lead post-proposal-accept' });
   const ls = (leadAfterProp.data?.data || leadAfterProp.data)?.status;
   const ps = (leadAfterProp.data?.data || leadAfterProp.data)?.proposedStatusChange;
   assert(log, 'Lead.status promoted to Qualified', ls === 'Qualified', { status: ls });
   assert(log, 'proposedStatusChange cleared after accept', !ps || !ps.status, { ps });
 
   step(log, 'Developer advances the lead status to Negotiating directly (cp_lead_status_changed should fire)');
-  const updLead = await http('PUT', `/leads/${lead._id}`, { token: dev.token, body: { status: 'Negotiating' }, expect: 200, note: 'dev updates lead status' });
+  const updLead = await http('PUT', `/leads/${leadId}`, { token: dev.token, body: { status: 'Negotiating' }, expect: 200, note: 'dev updates lead status' });
   assert(log, 'Lead status accepted as "Negotiating"', (updLead.data?.data || updLead.data)?.status === 'Negotiating');
 
   step(log, 'CP records a booking on the prospect');
@@ -139,10 +139,11 @@ export default async function scenarioOne(ctx, log) {
     token: cp.token, body: { amount: 350000, receivedAt: new Date().toISOString(), reference: 'NEFT-002', notes: 'Second tranche' }, expect: [200, 201], note: 'cp commission payment 2',
   });
   const afterPay = pay2.data?.data;
-  assert(log, 'paidAmount accumulates across payments', (afterPay?.commission?.paidAmount || 0) >= 700000, afterPay?.commission);
-  // status should be 'partial' (paid < expected) or 'paid' (>=)
+  const totalPaid = (afterPay?.commission?.payments || []).reduce((a, x) => a + (x.amount || 0), 0);
+  assert(log, 'sum of commission.payments[].amount >= 700000', totalPaid >= 700000, { totalPaid });
+  // status enum: 'pending' | 'partially_paid' | 'paid' | 'written_off'
   const cs = afterPay?.commission?.status;
-  assert(log, `commission.status reflects payment progress (got "${cs}")`, ['partial', 'paid'].includes(cs), { commissionStatus: cs });
+  assert(log, `commission.status reflects payment progress (got "${cs}")`, ['partially_paid', 'paid'].includes(cs), { commissionStatus: cs });
 
   step(log, 'Scenario 1 complete');
   note(log, 'Final artifacts', log.artifacts);

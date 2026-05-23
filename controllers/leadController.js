@@ -949,8 +949,8 @@ const decideLeadRegistration = asyncHandler(async (req, res) => {
     await Interaction.create({
       lead: lead._id,
       organization: req.user.organization,
-      type: 'note',
-      note: `Registration rejected${note ? ': ' + String(note).trim() : ''}`,
+      type: 'Note',
+      content: `Registration rejected${note ? ': ' + String(note).trim() : ''}`,
       createdBy: req.user._id,
       user: req.user._id,
     });
@@ -1044,8 +1044,8 @@ const decideLeadProposal = asyncHandler(async (req, res) => {
     await Interaction.create({
       lead: lead._id,
       organization: req.user.organization,
-      type: 'note',
-      note: `Status updated via CP proposal: ${oldStatus} → ${proposedStatus}${
+      type: 'Note',
+      content: `Status updated via CP proposal: ${oldStatus} → ${proposedStatus}${
         note ? ` — ${String(note).trim()}` : ''
       }${proposedNote ? ` (CP note: ${proposedNote})` : ''}`,
       createdBy: req.user._id,
@@ -1055,8 +1055,8 @@ const decideLeadProposal = asyncHandler(async (req, res) => {
     await Interaction.create({
       lead: lead._id,
       organization: req.user.organization,
-      type: 'note',
-      note: `Status proposal rejected: ${proposedStatus}${note ? ` — ${String(note).trim()}` : ''}`,
+      type: 'Note',
+      content: `Status proposal rejected: ${proposedStatus}${note ? ` — ${String(note).trim()}` : ''}`,
       createdBy: req.user._id,
       user: req.user._id,
     });

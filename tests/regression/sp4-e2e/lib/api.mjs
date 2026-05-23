@@ -58,13 +58,19 @@ export async function http(method, path, { token = null, body = null, expect = n
 // /leads → data.leads[], /notifications → data.notifications[],
 // /partnerships → data[], /channel-partners → data[], etc.
 export function pickArr(resp, ...keys) {
-  const d = resp?.data;
-  if (Array.isArray(d)) return d;
-  if (d && typeof d === 'object') {
-    for (const k of keys) if (Array.isArray(d[k])) return d[k];
-    // common defaults
-    for (const k of ['items', 'leads', 'notifications', 'developers', 'channelPartners', 'prospects', 'data', 'results', 'docs']) {
-      if (Array.isArray(d[k])) return d[k];
+  // Walk: resp.data → resp.data.data → recurse one level looking for arrays
+  // under the caller-supplied keys first, then common defaults. Real-world
+  // shapes seen on this API:
+  //   { data: [...] }                            ← /partnerships, /channel-partners
+  //   { data: { leads: [...] } }                 ← /leads
+  //   { data: { notifications: [...] } }         ← /notifications
+  //   { data: { developers: [...] } }            ← /marketplace/developers
+  const seeds = [resp?.data, resp?.data?.data].filter((x) => x !== undefined && x !== null);
+  const tryKeys = [...keys, 'items', 'leads', 'notifications', 'developers', 'channelPartners', 'prospects', 'results', 'docs'];
+  for (const d of seeds) {
+    if (Array.isArray(d)) return d;
+    if (typeof d === 'object') {
+      for (const k of tryKeys) if (Array.isArray(d[k])) return d[k];
     }
   }
   return [];

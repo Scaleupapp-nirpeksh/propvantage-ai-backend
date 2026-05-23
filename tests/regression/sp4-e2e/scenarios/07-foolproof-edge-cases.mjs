@@ -97,7 +97,7 @@ export default async function scenarioSeven(ctx, log) {
     assert(log, `Second push rejected with ${push2.status} (4xx)`, [400, 409].includes(push2.status));
 
     // accept the registration so we can exercise propose-status
-    const leadId = push1.data?.data?.lead?._id || push1.data?.data?._id;
+    const leadId = push1.data?.data?.leadId;
     if (leadId) {
       await http('PATCH', `/leads/${leadId}/registration`, { token: dev.token, body: { action: 'accept' }, expect: 200, note: 'dev accepts registration (edge)' });
 

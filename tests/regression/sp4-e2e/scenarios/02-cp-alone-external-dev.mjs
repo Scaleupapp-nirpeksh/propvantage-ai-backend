@@ -91,7 +91,9 @@ export default async function scenarioTwo(ctx, log) {
     note: 'cp full commission payment',
   });
   const finalP = pay.data?.data;
-  assert(log, 'commission.paidAmount = expectedAmount', finalP?.commission?.paidAmount === 142500);
+  // commission.paidAmount is NOT a persisted field; it's derived from payments[].
+  const totalPaid = (finalP?.commission?.payments || []).reduce((a, x) => a + (x.amount || 0), 0);
+  assert(log, 'sum of commission.payments[].amount = expectedAmount', totalPaid === 142500, { totalPaid });
   assert(log, 'commission.status="paid"', finalP?.commission?.status === 'paid', { status: finalP?.commission?.status });
 
   step(log, 'CP can list its prospects and the external-only one appears');
