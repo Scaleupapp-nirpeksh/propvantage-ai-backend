@@ -57,6 +57,7 @@ import cpPortalRoutes from './routes/cpPortalRoutes.js';
 import portfolioRoutes from './routes/portfolioRoutes.js';
 import partnershipRoutes from './routes/partnershipRoutes.js';
 import marketplaceRoutes from './routes/marketplaceRoutes.js';
+import prospectRoutes from './routes/prospectRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -169,6 +170,7 @@ app.use('/api/cp', cpPortalRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/partnerships', partnershipRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/cp/prospects', prospectRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
