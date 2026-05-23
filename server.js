@@ -66,6 +66,8 @@ import cpAnalyticsRoutes from './routes/cpAnalyticsRoutes.js';
 import devAnalyticsRoutes from './routes/devAnalyticsRoutes.js';
 import cpInsightRoutes from './routes/cpInsightRoutes.js';
 import cpAiUsageRoutes from './routes/cpAiUsageRoutes.js';
+// SP5 — scheduled weekly + monthly digest cron
+import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 
 // Load environment variables
 dotenv.config();
@@ -457,4 +459,11 @@ app.set('io', io);
 
 httpServer.listen(PORT, () => {
   console.log(`PropVantage AI Server running on port ${PORT}`);
+  // SP5 — schedule weekly + monthly digest cron jobs. Safe to call here:
+  // node-cron only fires at the cron-expression times, not immediately.
+  try {
+    registerScheduledInsightJobs();
+  } catch (err) {
+    console.error('[SP5] Failed to register scheduled insight jobs:', err.message);
+  }
 });
