@@ -60,8 +60,9 @@ import marketplaceRoutes from './routes/marketplaceRoutes.js';
 import prospectRoutes from './routes/prospectRoutes.js';
 import externalDeveloperRoutes from './routes/externalDeveloperRoutes.js';
 import externalDeveloperInviteRoutes from './routes/externalDeveloperInviteRoutes.js';
-// SP5 — CP-side analytics (Areas 1–5)
+// SP5 — CP-side analytics (Areas 1–5) + dev-side analytics (Areas 6–8)
 import cpAnalyticsRoutes from './routes/cpAnalyticsRoutes.js';
+import devAnalyticsRoutes from './routes/devAnalyticsRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -149,6 +150,11 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/ai/conversation', aiConversationRoutes); // NEW: AI Conversation intelligence
 app.use('/api/files', fileRoutes);
 app.use('/api/analytics', analyticsRoutes);
+// SP5 — dev-side analytics (Areas 6–8). Mounted on the same prefix as
+// analyticsRoutes; Express matches both routers in order, so the new
+// paths (cp-scorecard / commission-payouts / lead-quality) live alongside
+// the existing four endpoints without collision.
+app.use('/api/analytics', devAnalyticsRoutes);
 app.use('/api/payments', paymentRoutes);
 // DEPRECATED — legacy commission API removed; see /api/channel-partners
 // app.use('/api/commissions', commissionRoutes);
