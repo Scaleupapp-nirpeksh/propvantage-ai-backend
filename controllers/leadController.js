@@ -7,12 +7,15 @@ import asyncHandler from 'express-async-handler';
 import Lead from '../models/leadModel.js';
 import Interaction from '../models/interactionModel.js';
 import Project from '../models/projectModel.js';
+import Organization from '../models/organizationModel.js';
+import ChannelPartner from '../models/channelPartnerModel.js';
 import mongoose from 'mongoose';
 import {
   verifyProjectAccess,
   projectAccessFilter,
 } from '../utils/projectAccessHelper.js';
 import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichmentService.js';
+import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
 
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
@@ -737,6 +740,185 @@ const getLeadStats = asyncHandler(async (req, res) => {
 });
 
 // ====================================================================
+// SP4 — CROSS-ORG LEAD REGISTRATIONS QUEUE (developer-side)
+// ====================================================================
+
+/**
+ * @desc    Developer's queue of CP-pushed leads awaiting accept/reject.
+ *          Returns each lead enriched with CP org name, agent (User) info,
+ *          and a single best duplicate-match by recency (same project,
+ *          same email OR phone, status != 'pending', within 60 days).
+ * @route   GET /api/leads/registrations
+ * @access  Private — leads:view
+ */
+const getLeadRegistrations = asyncHandler(async (req, res) => {
+  const orgId = req.user.organization;
+  const baseFilter = {
+    organization: orgId,
+    status: 'pending',
+    sourceProspect: { $ne: null },
+    ...projectAccessFilter(req),
+  };
+
+  const leads = await Lead.find(baseFilter)
+    .populate('project', 'name')
+    .populate('sourceProspect', 'notes firstName lastName phone')
+    .populate('channelPartnerAttribution.partners.channelPartner', 'firmName channelPartnerOrg')
+    .populate('channelPartnerAttribution.partners.agentUser', 'firstName lastName email')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  const enriched = await Promise.all(
+    leads.map(async (lead) => {
+      // CP org display name via partners[0].channelPartner.channelPartnerOrg.
+      let cpOrgName = null;
+      const cpRecord = lead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
+      if (cpRecord?.channelPartnerOrg) {
+        const cpOrg = await Organization.findById(cpRecord.channelPartnerOrg)
+          .select('name')
+          .lean();
+        cpOrgName = cpOrg?.name || null;
+      }
+
+      // Single best duplicate-match by recency (SP4 plan Decision 3).
+      const dupOr = [];
+      if (lead.email) dupOr.push({ email: lead.email });
+      if (lead.phone) dupOr.push({ phone: lead.phone });
+      let duplicateMatch = null;
+      if (dupOr.length > 0 && (lead.project?._id || lead.project)) {
+        const dup = await Lead.findOne({
+          organization: orgId,
+          project: lead.project?._id || lead.project,
+          status: { $ne: 'pending' },
+          createdAt: { $gte: sixtyDaysAgo },
+          _id: { $ne: lead._id },
+          $or: dupOr,
+        })
+          .select('_id firstName lastName createdAt')
+          .sort({ createdAt: -1 })
+          .lean();
+        if (dup) {
+          const daysAgo = Math.round(
+            (Date.now() - new Date(dup.createdAt).getTime()) / (24 * 60 * 60 * 1000)
+          );
+          duplicateMatch = {
+            _id: dup._id,
+            name: `${dup.firstName} ${dup.lastName || ''}`.trim(),
+            lastContactedDaysAgo: daysAgo,
+          };
+        }
+      }
+
+      return { ...lead, cpOrgName, duplicateMatch };
+    })
+  );
+
+  res.json({ success: true, data: enriched });
+});
+
+/**
+ * @desc    Accept or reject a CP-submitted (pending) lead. Accept moves the
+ *          lead to status 'New' and approves attribution. Reject moves it to
+ *          'Lost', rejects attribution, and appends an Interaction note as
+ *          the audit trail.
+ * @route   PATCH /api/leads/:id/registration
+ * @access  Private — leads:update
+ */
+const decideLeadRegistration = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid lead id');
+  }
+  const { action, note } = req.body || {};
+  if (!['accept', 'reject'].includes(action)) {
+    res.status(400);
+    throw new Error('action must be "accept" or "reject"');
+  }
+
+  const lead = await Lead.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!lead) {
+    res.status(404);
+    throw new Error('Lead not found');
+  }
+  if (lead.status !== 'pending' || !lead.sourceProspect) {
+    res.status(409);
+    throw new Error('This lead is not in the registrations queue');
+  }
+
+  if (action === 'accept') {
+    lead.status = 'New';
+    if (lead.channelPartnerAttribution) {
+      lead.channelPartnerAttribution.status = 'approved';
+    }
+  } else {
+    lead.status = 'Lost';
+    if (lead.channelPartnerAttribution) {
+      lead.channelPartnerAttribution.status = 'rejected';
+    }
+    await Interaction.create({
+      lead: lead._id,
+      organization: req.user.organization,
+      type: 'note',
+      note: `Registration rejected${note ? ': ' + String(note).trim() : ''}`,
+      createdBy: req.user._id,
+      user: req.user._id,
+    });
+  }
+  await lead.save();
+
+  // Notify CP side — agent (single) + CP Manager/Owner (broadcast, agent excluded).
+  try {
+    const agentUserId = lead.channelPartnerAttribution?.partners?.[0]?.agentUser;
+    const cpRecordId = lead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
+    const cpRecord = cpRecordId
+      ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg').lean()
+      : null;
+    const cpOrgId = cpRecord?.channelPartnerOrg;
+
+    const type =
+      action === 'accept' ? 'lead_registration_accepted' : 'lead_registration_rejected';
+    const title = action === 'accept' ? 'Lead accepted by developer' : 'Lead rejected by developer';
+    const message =
+      `${lead.firstName} ${lead.lastName || ''}`.trim() +
+      (note ? ` — note: ${String(note).trim()}` : '');
+
+    if (cpOrgId && agentUserId) {
+      await createNotification({
+        organization: cpOrgId,
+        recipient: agentUserId,
+        type,
+        title,
+        message,
+        actionUrl: '/partner/prospects',
+        relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+        actor: req.user._id,
+      });
+    }
+    if (cpOrgId) {
+      await notifyUsersWithPermission({
+        organizationId: cpOrgId,
+        permission: 'cp_org:manage',
+        excludeUserIds: agentUserId ? [agentUserId] : [],
+        type,
+        title,
+        message,
+        actionUrl: '/partner/prospects',
+        relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+        actor: req.user._id,
+      });
+    }
+  } catch (notifyErr) {
+    console.error('[decideLeadRegistration] notification failed (non-fatal):', notifyErr?.message);
+  }
+
+  res.json({ success: true, data: lead.toObject() });
+});
+
+// ====================================================================
 // FIXED EXPORTS - ALL FUNCTIONS PROPERLY EXPORTED
 // ====================================================================
 
@@ -751,5 +933,8 @@ export {
   getLeadInteractions,       // FIXED: Now properly exported
   assignLead,
   bulkUpdateLeads,
-  getLeadStats
+  getLeadStats,
+  // SP4 — cross-org lead registrations queue
+  getLeadRegistrations,
+  decideLeadRegistration,
 };

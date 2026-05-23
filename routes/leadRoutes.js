@@ -10,7 +10,9 @@ import {
   updateLead,
   addInteractionToLead,
   getLeadInteractions,
-  deleteLead
+  deleteLead,
+  getLeadRegistrations,
+  decideLeadRegistration,
 } from '../controllers/leadController.js';
 import {
   getLeadScore,
@@ -37,6 +39,19 @@ router.use(protect);
 router.route('/')
   .post(hasPermission(PERMISSIONS.LEADS.CREATE), createLead)
   .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeads);
+
+// SP4 — registrations queue. MUST sit before `/:id` so `/registrations`
+// isn't captured as an `:id` param.
+router.get(
+  '/registrations',
+  hasPermission(PERMISSIONS.LEADS.VIEW),
+  getLeadRegistrations
+);
+router.patch(
+  '/:id/registration',
+  hasPermission(PERMISSIONS.LEADS.UPDATE),
+  decideLeadRegistration
+);
 
 router.route('/:id')
   .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadById)
