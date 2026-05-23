@@ -11,6 +11,11 @@
 import mongoose from 'mongoose';
 import Prospect from '../models/prospectModel.js';
 import User from '../models/userModel.js';
+import Lead from '../models/leadModel.js';
+import Partnership from '../models/partnershipModel.js';
+import ChannelPartner from '../models/channelPartnerModel.js';
+import { reconcileChannelPartnerRecord } from './partnershipService.js';
+import { notifyUsersWithPermission } from './notificationService.js';
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
@@ -367,6 +372,135 @@ export async function addCommissionPayment(id, paymentData, user) {
   await p.save();
   await p.populate(POPULATE_DETAIL);
   return p.toObject();
+}
+
+// ─── Push to developer (SP4 Phase G) ───────────────────────────────────────
+
+// POST /api/cp/prospects/:id/push — create a Lead in the developer's org
+// (status='pending') so it appears in their /api/leads/registrations queue
+// for accept/reject review. Sets the prospect's pushedToLead pointer + a
+// system activity. Notifies developer-side users with leads:update.
+export async function pushProspectToDeveloper(id, user) {
+  const p = await findInScope(id, user);
+
+  if (p.developerContext?.type !== 'platform') {
+    throw httpError(
+      409,
+      'Only platform-context prospects can be pushed to a developer'
+    );
+  }
+  if (p.pushedToLead) {
+    throw httpError(409, 'This prospect has already been pushed to the developer');
+  }
+  if (!p.developerContext?.partnership) {
+    throw httpError(409, 'Prospect has no partnership reference');
+  }
+  if (!p.project?.platform) {
+    throw httpError(
+      400,
+      'project.platform must be set before pushing this prospect (retagged off-platform prospects may need to be mapped to a real Project first)'
+    );
+  }
+
+  const partnership = await Partnership.findById(p.developerContext.partnership)
+    .select('developerOrg channelPartnerOrg status')
+    .lean();
+  if (!partnership) throw httpError(409, 'Partnership not found');
+  if (partnership.status !== 'active') {
+    throw httpError(409, 'Partnership is not active');
+  }
+  if (String(partnership.channelPartnerOrg) !== String(user.organization)) {
+    throw httpError(403, 'Partnership does not belong to your organization');
+  }
+
+  // Find (or reconcile, defensively) the dev-side ChannelPartner shadow.
+  let cpRecord = await ChannelPartner.findOne({
+    organization: partnership.developerOrg,
+    channelPartnerOrg: partnership.channelPartnerOrg,
+  })
+    .select('_id')
+    .lean();
+  if (!cpRecord) {
+    // Defensive — SP3 reconciliation should have created this on activation.
+    const created = await reconcileChannelPartnerRecord(
+      { ...partnership, projects: [] },
+      user._id
+    );
+    cpRecord = { _id: created._id };
+  }
+
+  const now = new Date();
+
+  // Create the Lead — minimal seed; the developer fills in details on accept.
+  const lead = await Lead.create({
+    organization: partnership.developerOrg,
+    project: p.project.platform,
+    firstName: p.firstName,
+    lastName: p.lastName,
+    email: p.email,
+    phone: p.phone,
+    source: 'channel_partner',
+    status: 'pending',
+    priority: p.priority,
+    budget: p.budget,
+    requirements: p.requirements,
+    notes: p.notes,
+    sourceProspect: p._id,
+    channelPartnerAttribution: {
+      viaChannelPartner: true,
+      partners: [
+        {
+          channelPartner: cpRecord._id,
+          agentUser: p.assignedAgent,
+          sharePct: 100,
+        },
+      ],
+      status: 'pending',
+      taggedBy: user._id,
+      taggedAt: now,
+    },
+  });
+
+  // Update the prospect.
+  p.pushedToLead = lead._id;
+  p.pushedAt = now;
+  p.pushedBy = user._id;
+  p.activities.push({
+    type: 'system',
+    note: 'Pushed to developer for review',
+    at: now,
+    by: user._id,
+  });
+  await p.save();
+
+  // Notify developer-side reviewers.
+  try {
+    await notifyUsersWithPermission({
+      organizationId: partnership.developerOrg,
+      permission: 'leads:update',
+      type: 'lead_registration_received',
+      title: 'New partnership lead',
+      message: `${p.firstName} ${p.lastName || ''} — submitted by a partnered channel partner.`.trim(),
+      actionUrl: '/leads/registrations',
+      relatedEntity: {
+        entityType: 'Lead',
+        entityId: lead._id,
+        displayLabel: `${p.firstName} ${p.lastName || ''}`.trim(),
+      },
+      actor: user._id,
+    });
+  } catch (notifyErr) {
+    console.error(
+      '[pushProspectToDeveloper] notification failed (non-fatal):',
+      notifyErr?.message
+    );
+  }
+
+  await p.populate(POPULATE_DETAIL);
+  return {
+    prospect: p.toObject(),
+    leadId: lead._id,
+  };
 }
 
 // PUT /api/cp/prospects/:id/commission — update agreement or trigger write-off.

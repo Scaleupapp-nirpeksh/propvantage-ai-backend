@@ -18,6 +18,7 @@ import {
   recordProspectBooking,
   addProspectCommissionPayment,
   updateProspectCommission,
+  pushProspect,
 } from '../controllers/prospectController.js';
 
 const router = express.Router();
@@ -71,6 +72,13 @@ router.put(
   '/:id/commission',
   hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
   updateProspectCommission
+);
+
+// SP4 Phase G — push prospect to developer (creates a status:'pending' Lead).
+router.post(
+  '/:id/push',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  pushProspect
 );
 
 export default router;

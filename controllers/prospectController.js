@@ -100,3 +100,12 @@ export const updateProspectCommission = asyncHandler(async (req, res) => {
   );
   res.json({ success: true, data });
 });
+
+// POST /api/cp/prospects/:id/push — push to the developer (creates a pending Lead).
+export const pushProspect = asyncHandler(async (req, res) => {
+  const data = await callService(
+    () => prospectService.pushProspectToDeveloper(req.params.id, req.user),
+    res
+  );
+  res.status(201).json({ success: true, data });
+});
