@@ -31,6 +31,9 @@ const CP_DEFAULT_ROLES = [
       CP_PERMISSIONS.PROSPECTS.VIEW,
       CP_PERMISSIONS.PROSPECTS.MANAGE,
       CP_PERMISSIONS.EXTERNAL_DEVELOPERS.MANAGE,
+      // SP5 — analytics view + team-wide agent breakdown
+      CP_PERMISSIONS.ANALYTICS.VIEW,
+      CP_PERMISSIONS.ANALYTICS.VIEW_TEAM,
     ],
   },
   {
@@ -46,6 +49,8 @@ const CP_DEFAULT_ROLES = [
       // SP4 — Agent works prospects (their own); no external developers mgmt
       CP_PERMISSIONS.PROSPECTS.VIEW,
       CP_PERMISSIONS.PROSPECTS.MANAGE,
+      // SP5 — analytics view only (auto-scoped to own data); no view_team
+      CP_PERMISSIONS.ANALYTICS.VIEW,
     ],
   },
 ];

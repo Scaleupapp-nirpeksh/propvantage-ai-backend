@@ -291,6 +291,15 @@ export const CP_PERMISSIONS = {
   EXTERNAL_DEVELOPERS: {
     MANAGE: 'cp_external_developers:manage',
   },
+  // SP5 — analytics, insights, and Copilot.
+  //   VIEW       — every CP role; CP Agent is automatically scoped to their
+  //                own data in the analytics services (via partnerAccessHelper).
+  //   VIEW_TEAM  — CP Owner + CP Manager only; gates the agent-breakdown
+  //                analytics endpoint (Area 3) so Agents cannot see peers.
+  ANALYTICS: {
+    VIEW:      'cp_analytics:view',
+    VIEW_TEAM: 'cp_analytics:view_team',
+  },
 };
 
 // Flat list of every CP permission — used to seed the CP Owner role.
