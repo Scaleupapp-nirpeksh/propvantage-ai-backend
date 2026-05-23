@@ -58,6 +58,8 @@ import portfolioRoutes from './routes/portfolioRoutes.js';
 import partnershipRoutes from './routes/partnershipRoutes.js';
 import marketplaceRoutes from './routes/marketplaceRoutes.js';
 import prospectRoutes from './routes/prospectRoutes.js';
+import externalDeveloperRoutes from './routes/externalDeveloperRoutes.js';
+import externalDeveloperInviteRoutes from './routes/externalDeveloperInviteRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -171,6 +173,8 @@ app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/partnerships', partnershipRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/cp/prospects', prospectRoutes);
+app.use('/api/cp/external-developers', externalDeveloperRoutes);
+app.use('/api/external-developer-invites', externalDeveloperInviteRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
