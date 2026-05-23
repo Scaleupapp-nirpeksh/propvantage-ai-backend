@@ -66,6 +66,7 @@ import cpAnalyticsRoutes from './routes/cpAnalyticsRoutes.js';
 import devAnalyticsRoutes from './routes/devAnalyticsRoutes.js';
 import cpInsightRoutes from './routes/cpInsightRoutes.js';
 import cpAiUsageRoutes from './routes/cpAiUsageRoutes.js';
+import cpCopilotRoutes from './routes/cpCopilotRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 
@@ -197,6 +198,8 @@ app.use('/api/cp/analytics', cpAnalyticsRoutes);
 app.use('/api/cp/insights', cpInsightRoutes);
 // SP5 — AI usage meter. NOT rate-limited (it's the data the meter drives).
 app.use('/api/cp/ai', cpAiUsageRoutes);
+// SP5 — CP-side Copilot chat (Phase 9). Also rate-limited.
+app.use('/api/cp/copilot', cpCopilotRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
