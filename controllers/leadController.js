@@ -385,6 +385,10 @@ const updateLead = asyncHandler(async (req, res) => {
   const scoreAffectingFields = ['budget', 'requirements', 'status', 'qualificationStatus'];
   const shouldRecalculateScore = updatedFields.some(field => scoreAffectingFields.includes(field));
 
+  // SP4 — remember the prior status so we can detect a developer-driven
+  // status change on a CP-attributed lead (fires cp_lead_status_changed).
+  const previousStatus = lead.status;
+
   // Update the lead
   const updatedLead = await Lead.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
@@ -396,11 +400,69 @@ const updateLead = asyncHandler(async (req, res) => {
     addLeadScoreUpdateJob(updatedLead._id, { delay: 1000 });
   }
 
+  // SP4 — when a developer changes the status of a CP-attributed lead,
+  // notify the CP agent + CP Manager/Owner. Best-effort (non-fatal).
+  try {
+    const statusChanged =
+      updatedLead.status &&
+      previousStatus &&
+      updatedLead.status !== previousStatus;
+    const viaCp = updatedLead.channelPartnerAttribution?.viaChannelPartner;
+    if (statusChanged && viaCp) {
+      const agentUserId =
+        updatedLead.channelPartnerAttribution?.partners?.[0]?.agentUser;
+      const cpRecordId =
+        updatedLead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
+      const cpRecord = cpRecordId
+        ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg').lean()
+        : null;
+      const cpOrgId = cpRecord?.channelPartnerOrg;
+      if (cpOrgId) {
+        const title = `Lead status updated: ${previousStatus} → ${updatedLead.status}`;
+        const message =
+          `${updatedLead.firstName} ${updatedLead.lastName || ''}`.trim();
+        if (agentUserId) {
+          await createNotification({
+            organization: cpOrgId,
+            recipient: agentUserId,
+            type: 'cp_lead_status_changed',
+            title,
+            message,
+            actionUrl: '/partner/prospects',
+            relatedEntity: {
+              entityType: 'Lead',
+              entityId: updatedLead._id,
+              displayLabel: updatedLead.firstName,
+            },
+            actor: req.user._id,
+          });
+        }
+        await notifyUsersWithPermission({
+          organizationId: cpOrgId,
+          permission: 'cp_org:manage',
+          excludeUserIds: agentUserId ? [agentUserId] : [],
+          type: 'cp_lead_status_changed',
+          title,
+          message,
+          actionUrl: '/partner/prospects',
+          relatedEntity: {
+            entityType: 'Lead',
+            entityId: updatedLead._id,
+            displayLabel: updatedLead.firstName,
+          },
+          actor: req.user._id,
+        });
+      }
+    }
+  } catch (notifyErr) {
+    console.error('[updateLead] cp_lead_status_changed notification failed:', notifyErr?.message);
+  }
+
   res.json({
     success: true,
     data: updatedLead,
-    message: shouldRecalculateScore ? 
-      'Lead updated successfully. Score recalculation in progress.' : 
+    message: shouldRecalculateScore ?
+      'Lead updated successfully. Score recalculation in progress.' :
       'Lead updated successfully.'
   });
 });
