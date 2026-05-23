@@ -918,6 +918,116 @@ const decideLeadRegistration = asyncHandler(async (req, res) => {
   res.json({ success: true, data: lead.toObject() });
 });
 
+/**
+ * @desc    Developer accepts or rejects a CP-proposed status change.
+ * @route   PATCH /api/leads/:id/proposal
+ * @access  Private — leads:update
+ */
+const decideLeadProposal = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    res.status(400);
+    throw new Error('Invalid lead id');
+  }
+  const { action, note } = req.body || {};
+  if (!['accept', 'reject'].includes(action)) {
+    res.status(400);
+    throw new Error('action must be "accept" or "reject"');
+  }
+
+  const lead = await Lead.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!lead) {
+    res.status(404);
+    throw new Error('Lead not found');
+  }
+  if (!lead.proposedStatusChange || !lead.proposedStatusChange.status) {
+    res.status(409);
+    throw new Error('No status proposal is currently pending on this lead');
+  }
+
+  const proposedStatus = lead.proposedStatusChange.status;
+  const proposedBy = lead.proposedStatusChange.proposedBy;
+  const proposedNote = lead.proposedStatusChange.note;
+
+  if (action === 'accept') {
+    const oldStatus = lead.status;
+    lead.status = proposedStatus;
+    await Interaction.create({
+      lead: lead._id,
+      organization: req.user.organization,
+      type: 'note',
+      note: `Status updated via CP proposal: ${oldStatus} → ${proposedStatus}${
+        note ? ` — ${String(note).trim()}` : ''
+      }${proposedNote ? ` (CP note: ${proposedNote})` : ''}`,
+      createdBy: req.user._id,
+      user: req.user._id,
+    });
+  } else {
+    await Interaction.create({
+      lead: lead._id,
+      organization: req.user.organization,
+      type: 'note',
+      note: `Status proposal rejected: ${proposedStatus}${note ? ` — ${String(note).trim()}` : ''}`,
+      createdBy: req.user._id,
+      user: req.user._id,
+    });
+  }
+  lead.proposedStatusChange = null;
+  await lead.save();
+
+  // Notify CP agent (single) + CP Manager/Owner (broadcast, agent excluded).
+  try {
+    const agentUserId = lead.channelPartnerAttribution?.partners?.[0]?.agentUser || proposedBy;
+    const cpRecordId = lead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
+    const cpRecord = cpRecordId
+      ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg').lean()
+      : null;
+    const cpOrgId = cpRecord?.channelPartnerOrg;
+
+    const type =
+      action === 'accept' ? 'lead_status_proposal_accepted' : 'lead_status_proposal_rejected';
+    const title =
+      action === 'accept'
+        ? `Proposal accepted: ${proposedStatus}`
+        : `Proposal rejected: ${proposedStatus}`;
+    const message =
+      `${lead.firstName} ${lead.lastName || ''}`.trim() +
+      (note ? ` — ${String(note).trim()}` : '');
+
+    if (cpOrgId && agentUserId) {
+      await createNotification({
+        organization: cpOrgId,
+        recipient: agentUserId,
+        type,
+        title,
+        message,
+        actionUrl: '/partner/prospects',
+        relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+        actor: req.user._id,
+      });
+    }
+    if (cpOrgId) {
+      await notifyUsersWithPermission({
+        organizationId: cpOrgId,
+        permission: 'cp_org:manage',
+        excludeUserIds: agentUserId ? [agentUserId] : [],
+        type,
+        title,
+        message,
+        actionUrl: '/partner/prospects',
+        relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+        actor: req.user._id,
+      });
+    }
+  } catch (notifyErr) {
+    console.error('[decideLeadProposal] notification failed (non-fatal):', notifyErr?.message);
+  }
+
+  res.json({ success: true, data: lead.toObject() });
+});
+
 // ====================================================================
 // FIXED EXPORTS - ALL FUNCTIONS PROPERLY EXPORTED
 // ====================================================================
@@ -937,4 +1047,6 @@ export {
   // SP4 — cross-org lead registrations queue
   getLeadRegistrations,
   decideLeadRegistration,
+  // SP4 — status proposal decision (developer side)
+  decideLeadProposal,
 };

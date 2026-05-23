@@ -13,6 +13,7 @@ import {
   deleteLead,
   getLeadRegistrations,
   decideLeadRegistration,
+  decideLeadProposal,
 } from '../controllers/leadController.js';
 import {
   getLeadScore,
@@ -51,6 +52,11 @@ router.patch(
   '/:id/registration',
   hasPermission(PERMISSIONS.LEADS.UPDATE),
   decideLeadRegistration
+);
+router.patch(
+  '/:id/proposal',
+  hasPermission(PERMISSIONS.LEADS.UPDATE),
+  decideLeadProposal
 );
 
 router.route('/:id')
