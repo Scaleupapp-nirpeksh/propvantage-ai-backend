@@ -21,6 +21,30 @@ const leadSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User', // Sales Executive or Manager
     },
+    // SP4: when this Lead was created by a CP pushing a Prospect, this links
+    // back to that source Prospect (in the CP's organization). Null for any
+    // lead created directly by the developer.
+    sourceProspect: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Prospect',
+      default: null,
+      index: { sparse: true },
+    },
+    // SP4: when a CP proposes a status change on a pushed lead, the proposal
+    // lives here until the developer accepts/rejects via
+    // PATCH /api/leads/:id/proposal. Null when no pending proposal.
+    proposedStatusChange: {
+      status: {
+        type: String,
+        enum: [
+          'pending', 'New', 'Contacted', 'Qualified', 'Site Visit Scheduled',
+          'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified',
+        ],
+      },
+      proposedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      proposedAt: { type: Date },
+      note: { type: String, trim: true },
+    },
     firstName: {
       type: String,
       required: [true, 'Please add a first name'],
@@ -57,6 +81,12 @@ const leadSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
+        // SP4: 'pending' is the awaiting-review state for CP-pushed leads
+        // (created by services/prospectService.pushProspectToDeveloper).
+        // The developer accepts → 'New'; rejects → 'Lost'. Pending leads are
+        // surfaced only via GET /api/leads/registrations; the default
+        // /api/leads list excludes them for non-CP callers.
+        'pending',
         'New',
         'Contacted',
         'Qualified',
@@ -330,6 +360,11 @@ const leadSchema = new mongoose.Schema(
         {
           channelPartner: { type: mongoose.Schema.Types.ObjectId, ref: 'ChannelPartner' },
           agent: { type: mongoose.Schema.Types.ObjectId, ref: 'ChannelPartnerAgent', default: null },
+          // SP4: the CP-side User who originated the lead. Used by
+          // partnerAccessScope to narrow CP Agents to their own attribution.
+          // Coexists with the legacy `agent` (ChannelPartnerAgent ref) for
+          // backward compatibility with pre-SP4 records.
+          agentUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
           sharePct: { type: Number, default: 0, min: 0, max: 100 },
         },
       ],
