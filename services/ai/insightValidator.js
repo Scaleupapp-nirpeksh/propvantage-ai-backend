@@ -25,7 +25,11 @@ const NUMERIC_TOLERANCE = Number(process.env.INSIGHT_VALIDATOR_NUMERIC_TOLERANCE
 //          1.4M / ₹14L (Indian short-forms parsed below).
 // Numbers in dates (2026-05-23) and IDs are filtered by surrounding context.
 
-const NUMBER_REGEX = /(?:₹\s*)?(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)\s*([%MmKkLlCr]+)?/g;
+// Two patterns merged via alternation: digits + percent, OR digits + Indian
+// short-form letter suffix that MUST be followed by a non-letter (so 'Q2
+// looks' is not parsed as '2' + Lakh-suffix from 'looks'), OR plain digits.
+// ₹ prefix is allowed on all three.
+const NUMBER_REGEX = /(?:₹\s*)?(\d{1,3}(?:[,\d]*\d)?(?:\.\d+)?)(%|Cr|cr|[KLMklm](?=[^a-zA-Z]|$))?/g;
 
 function parseShortform(raw, suffix) {
   const n = Number(String(raw).replace(/,/g, ''));
@@ -49,11 +53,16 @@ function extractNumbers(text) {
   while ((m = NUMBER_REGEX.exec(text)) !== null) {
     const raw = m[1];
     const suffix = m[2];
+    // Skip numbers immediately preceded by a letter (e.g. 'Q2', 'R&D2',
+    // 'A3-04') — these are identifiers, not claims. The position of the
+    // match start is m.index; if the character before is a letter, skip.
+    const startIdx = m.index + (m[0].startsWith('₹') ? m[0].indexOf(raw) : 0);
+    if (startIdx > 0) {
+      const prevChar = text[startIdx - 1];
+      if (prevChar && /[A-Za-z]/.test(prevChar)) continue;
+    }
     const parsed = parseShortform(raw, suffix);
     if (parsed === null) continue;
-    // Filter: numbers in date-like contexts (YYYY-MM-DD) tend to be 4-digit
-    // years or single-day numbers. We let those through and rely on the
-    // tolerance + entity check to neuter false positives.
     out.push({ value: parsed, raw: m[0], hasPercent: suffix === '%' });
   }
   return out;
