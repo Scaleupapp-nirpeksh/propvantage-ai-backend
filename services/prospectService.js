@@ -319,6 +319,11 @@ export async function recordBooking(id, bookingData, user) {
     currency: bookingData.currency || 'INR',
     notes: String(bookingData.notes || '').trim(),
   };
+  // SP4 — recording a booking implicitly closes the prospect as 'Booked'.
+  // CPs do not want to record a sale and then have to remember to also
+  // flip the status by hand. The QA E2E run surfaced this as Bug B.
+  const statusFlipped = p.status !== 'Booked';
+  p.status = 'Booked';
   recomputeCommission(p);
 
   p.activities.push({
@@ -326,7 +331,8 @@ export async function recordBooking(id, bookingData, user) {
     note:
       'Booking recorded' +
       (p.booking.unitInfo ? ` (${p.booking.unitInfo})` : '') +
-      (p.booking.salePrice != null ? ` — sale price ${p.booking.currency} ${p.booking.salePrice}` : ''),
+      (p.booking.salePrice != null ? ` — sale price ${p.booking.currency} ${p.booking.salePrice}` : '') +
+      (statusFlipped ? ' (status set to Booked)' : ''),
     at: new Date(),
     by: user._id,
   });
@@ -439,7 +445,12 @@ export async function pushProspectToDeveloper(id, user) {
     lastName: p.lastName,
     email: p.email,
     phone: p.phone,
-    source: 'channel_partner',
+    // SP4 — Lead.source enum doesn't include 'Channel Partner'; we use
+    // 'Referral' as the closest non-breaking value. The CP attribution is
+    // captured separately in channelPartnerAttribution.* below, which is
+    // the authoritative source-of-truth for "this lead came from a CP."
+    // (Surfaced by E2E QA run as Bug A.)
+    source: 'Referral',
     status: 'pending',
     priority: p.priority,
     budget: p.budget,
