@@ -60,9 +60,12 @@ import marketplaceRoutes from './routes/marketplaceRoutes.js';
 import prospectRoutes from './routes/prospectRoutes.js';
 import externalDeveloperRoutes from './routes/externalDeveloperRoutes.js';
 import externalDeveloperInviteRoutes from './routes/externalDeveloperInviteRoutes.js';
-// SP5 — CP-side analytics (Areas 1–5) + dev-side analytics (Areas 6–8)
+// SP5 — CP-side analytics (Areas 1–5) + dev-side analytics (Areas 6–8) +
+//        AI insights pipeline + usage meter
 import cpAnalyticsRoutes from './routes/cpAnalyticsRoutes.js';
 import devAnalyticsRoutes from './routes/devAnalyticsRoutes.js';
+import cpInsightRoutes from './routes/cpInsightRoutes.js';
+import cpAiUsageRoutes from './routes/cpAiUsageRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -187,6 +190,11 @@ app.use('/api/external-developer-invites', externalDeveloperInviteRoutes);
 // would otherwise shadow it; cpPortalRoutes uses '/' so the more-specific
 // '/api/cp/analytics' path is matched by Express's longest-prefix rule.
 app.use('/api/cp/analytics', cpAnalyticsRoutes);
+// SP5 — AI insights pipeline (Phase 7). Each route is rate-limited by
+// middleware/aiRateLimit which checks the AIUsageMeter on every call.
+app.use('/api/cp/insights', cpInsightRoutes);
+// SP5 — AI usage meter. NOT rate-limited (it's the data the meter drives).
+app.use('/api/cp/ai', cpAiUsageRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
