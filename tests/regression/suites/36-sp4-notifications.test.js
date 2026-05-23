@@ -11,9 +11,12 @@ const FAKE_ID = '000000000000000000000000';
 describe('SP4 — all 8 notification trigger sites are gated (no auth)', () => {
   beforeAll(() => setAuthToken(null));
 
+  // Note: POST /api/cp/prospects/:id/push (lead_registration_received) is
+  // covered by suite 33; external_developer_claimed fires from POST
+  // /api/auth/register (public) and is covered by suite 32. The four cases
+  // below cover the other 6 event types (each PATCH covers 2 events —
+  // accept and reject share the same gate).
   const cases = [
-    // lead_registration_received
-    ['POST', `/api/cp/prospects/${FAKE_ID}/push`],
     // lead_registration_accepted / lead_registration_rejected
     ['PATCH', `/api/leads/${FAKE_ID}/registration`, { action: 'accept' }],
     // cp_lead_status_changed (fires from updateLead when status changes on a CP-attributed lead)
@@ -22,9 +25,6 @@ describe('SP4 — all 8 notification trigger sites are gated (no auth)', () => {
     ['POST', `/api/cp/prospects/${FAKE_ID}/propose-status`, { status: 'Contacted' }],
     // lead_status_proposal_accepted / lead_status_proposal_rejected
     ['PATCH', `/api/leads/${FAKE_ID}/proposal`, { action: 'accept' }],
-    // external_developer_claimed fires from registerUser when a builder registers
-    // with a valid externalDeveloperInviteToken — POST /api/auth/register is
-    // public; it's covered in 32-sp4-claim-flow.test.js.
   ];
 
   test.each(cases)('%s %s rejects unauthenticated requests', async (method, path, body) => {
