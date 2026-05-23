@@ -16,6 +16,7 @@ import {
 } from '../utils/projectAccessHelper.js';
 import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichmentService.js';
 import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
+import { partnerAccessScope } from '../utils/partnerAccessHelper.js';
 
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
@@ -140,10 +141,28 @@ const getLeads = asyncHandler(async (req, res) => {
     channelPartner
   } = req.query;
 
-  // --- V1.1 Enhancement: Advanced RBAC Filtering ---
-  const query = { organization: req.user.organization, ...projectAccessFilter(req) };
+  // --- SP4: caller-type-aware base scoping ---
+  // CP callers don't OWN leads (leads live in developer orgs). Instead we
+  // scope them via partnerAccessScope — leads attributed to their CP's
+  // ChannelPartner shadow records in any active-partnership developer org,
+  // narrowed to their own attribution if the caller is a CP Agent.
+  // Non-CP callers keep the existing organization + projectAccessFilter
+  // path and additionally exclude 'pending' from default lists (those only
+  // surface via GET /api/leads/registrations unless explicitly requested).
+  const scope = await partnerAccessScope(req);
+  const isCp = scope !== null;
 
-  // Apply filters
+  let query;
+  if (isCp) {
+    query = { ...scope };
+  } else {
+    query = { organization: req.user.organization, ...projectAccessFilter(req) };
+    // Hide 'pending' from default non-CP lead lists; explicit ?status=pending overrides.
+    if (!status) query.status = { $ne: 'pending' };
+  }
+
+  // Apply filters (a status filter from the client overrides the
+  // pending-exclusion default above).
   if (status) query.status = status;
   if (source) query.source = source;
   if (assignedTo) query.assignedTo = assignedTo;
@@ -171,8 +190,10 @@ const getLeads = asyncHandler(async (req, res) => {
     ];
   }
 
-  // If the user is a Sales Executive, they should only see leads assigned to them.
-  if (req.user.role === 'Sales Executive') {
+  // If the user is a developer-side Sales Executive, only their own leads.
+  // (CP Agent narrowing already lives inside partnerAccessScope — skip here
+  // for CP callers to avoid double-scoping.)
+  if (!isCp && req.user.role === 'Sales Executive') {
     query.assignedTo = req.user._id;
   }
   
@@ -221,10 +242,14 @@ const getLeads = asyncHandler(async (req, res) => {
  * @access  Private
  */
 const getLeadById = asyncHandler(async (req, res) => {
-  const lead = await Lead.findOne({
-    _id: req.params.id,
-    organization: req.user.organization,
-  })
+  // SP4: for CP callers, scope via partnerAccessScope instead of the
+  // developer-org filter (cross-org leads live in the developer's org).
+  const scope = await partnerAccessScope(req);
+  const findFilter = scope === null
+    ? { _id: req.params.id, organization: req.user.organization }
+    : { _id: req.params.id, ...scope };
+
+  const lead = await Lead.findOne(findFilter)
     .populate('project', 'name targetRevenue location')
     .populate('assignedTo', 'firstName lastName email')
     .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
