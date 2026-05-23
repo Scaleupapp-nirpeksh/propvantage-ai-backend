@@ -5,6 +5,7 @@
 import mongoose from 'mongoose';
 import Notification, { NOTIFICATION_TYPES } from '../models/notificationModel.js';
 import User from '../models/userModel.js';
+import Role from '../models/roleModel.js';
 import Task from '../models/taskModel.js';
 
 // =============================================================================
@@ -57,6 +58,89 @@ export async function createNotification({
     console.error(`❌ [NotificationService] createNotification failed:`, error.message);
     return null;
   }
+}
+
+/**
+ * SP4 — notify every user in an organization who holds a given permission
+ * (or is the org owner). Resolves the audience via Role + User, then fires
+ * createNotification per recipient. Per-user notification-preferences and
+ * actor==recipient suppression are handled inside createNotification.
+ *
+ * Usage:
+ *   await notifyUsersWithPermission({
+ *     organizationId: developerOrg,        // ObjectId
+ *     permission: 'leads:update',          // a permission catalog string
+ *     excludeUserIds: [actor._id],         // optional — typically [actor]
+ *     type: 'lead_registration_received',  // NOTIFICATION_TYPES value
+ *     title: 'New partnership application',
+ *     message: '...',
+ *     actionUrl: '/leads/registrations',
+ *     relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: '...' },
+ *     actor: actor._id,
+ *   });
+ *
+ * Returns { sent: <number of notifications actually created> }.
+ */
+export async function notifyUsersWithPermission({
+  organizationId,
+  permission,
+  excludeUserIds = [],
+  type,
+  title,
+  message,
+  actionUrl,
+  relatedEntity,
+  priority = 'medium',
+  actor,
+  metadata,
+}) {
+  if (!organizationId || !permission || !type || !title) {
+    console.error('[notifyUsersWithPermission] missing required field(s)');
+    return { sent: 0 };
+  }
+
+  // 1. Roles in this org that grant the permission OR are the owner role.
+  const roles = await Role.find({
+    organization: organizationId,
+    $or: [{ isOwnerRole: true }, { permissions: permission }],
+  })
+    .select('_id')
+    .lean();
+  if (roles.length === 0) return { sent: 0 };
+
+  // 2. Active users in this org whose roleRef is one of those roles, minus
+  //    any explicit exclusions (typically the actor).
+  const excludeStrs = (excludeUserIds || []).filter(Boolean).map(String);
+  const userFilter = {
+    organization: organizationId,
+    isActive: true,
+    roleRef: { $in: roles.map((r) => r._id) },
+  };
+  if (excludeStrs.length > 0) {
+    userFilter._id = { $nin: excludeStrs };
+  }
+  const users = await User.find(userFilter).select('_id').lean();
+  if (users.length === 0) return { sent: 0 };
+
+  // 3. Fire createNotification per recipient in parallel — it handles
+  //    per-user preferences + the actor==recipient suppression.
+  const results = await Promise.all(
+    users.map((u) =>
+      createNotification({
+        organization: organizationId,
+        recipient: u._id,
+        type,
+        title,
+        message,
+        actionUrl,
+        relatedEntity,
+        priority,
+        actor,
+        metadata,
+      })
+    )
+  );
+  return { sent: results.filter(Boolean).length };
 }
 
 /**
