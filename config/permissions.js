@@ -283,6 +283,14 @@ export const CP_PERMISSIONS = {
     VIEW: 'cp_partnerships:view',
     MANAGE: 'cp_partnerships:manage',
   },
+  // SP4 — cross-org lead lifecycle & standalone CP workspace
+  PROSPECTS: {
+    VIEW: 'cp_prospects:view',
+    MANAGE: 'cp_prospects:manage',
+  },
+  EXTERNAL_DEVELOPERS: {
+    MANAGE: 'cp_external_developers:manage',
+  },
 };
 
 // Flat list of every CP permission — used to seed the CP Owner role.
