@@ -64,6 +64,15 @@ const organizationSchema = new mongoose.Schema(
       areasServed: { type: [String], default: [] },
       trackRecord: { type: String, default: '' },
     },
+    // SP5 — per-org AI quota overrides. When null, the rate-limit middleware
+    // falls back to INSIGHT_DEFAULT_DAILY_QUOTA / INSIGHT_DEFAULT_HOURLY_QUOTA
+    // from .env. The `plan` field is the SP6 monetization hook (e.g.
+    // 'default', 'pro', 'enterprise'); SP5 leaves it at 'default' everywhere.
+    aiQuota: {
+      dailyQuota:  { type: Number, default: null },
+      hourlyQuota: { type: Number, default: null },
+      plan:        { type: String, default: 'default' },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

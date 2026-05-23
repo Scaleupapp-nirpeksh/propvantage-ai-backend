@@ -182,6 +182,14 @@ const prospectSchema = new mongoose.Schema(
       payments: { type: [commissionPaymentSchema], default: [] },
       writeOffReason: { type: String, trim: true, default: '' }, // required when status='written_off'
     },
+
+    // SP5 — explicit reconciliation-review tracking. Set when a CP user
+    // confirms they've reviewed a reconciliation row (matched / cp_only /
+    // dev_only / mismatched). Surfaces in the reconciliation dashboard so
+    // teams can prioritise unreviewed rows. Set via the
+    // POST /api/cp/analytics/reconciliation/:prospectId/reviewed endpoint.
+    reconciliationReviewedAt: { type: Date, default: null },
+    reconciliationReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
 );
