@@ -62,7 +62,12 @@ export default async function scenarioThree(ctx, log) {
   log.artifacts.prospectIds = prospectIds;
 
   step(log, 'CP generates an invite link for the external developer');
-  const inv = await http('POST', `/cp/external-developers/${xdev._id}/invite`, { token: cp.token, expect: [200, 201], note: 'cp generates invite' });
+  const inv = await http('POST', `/cp/external-developers/${xdev._id}/invite`, {
+    token: cp.token,
+    body: { email: `aarav.${tag}@riverstone.test` },
+    expect: [200, 201],
+    note: 'cp generates invite',
+  });
   const inviteUrl = inv.data?.data?.inviteUrl || inv.data?.data?.url || inv.data?.url;
   const inviteToken = inv.data?.data?.token || (inviteUrl && (inviteUrl.match(/[a-f0-9]{64}/i) || [])[0]);
   assert(log, 'Invite URL returned', !!inviteUrl, { inviteUrl });
@@ -73,7 +78,7 @@ export default async function scenarioThree(ctx, log) {
 
   step(log, 'Public invite-lookup endpoint returns valid metadata for the token');
   const lookup = await http('GET', `/external-developer-invites/${inviteToken}`, { expect: 200, note: 'public lookup' });
-  assert(log, 'Lookup returns external dev name', (lookup.data?.data?.externalDeveloper?.name || lookup.data?.externalDeveloperName || '').includes('Riverstone'), lookup.data);
+  assert(log, 'Lookup returns external dev name', String(lookup.data?.data?.name || '').includes('Riverstone'), lookup.data?.data);
 
   step(log, 'Fresh developer org registers with the invite token (transactional claim)');
   const devEmail = `sp4qa-dev-${tag.replace(/[^a-z0-9]/gi, '')}@scaleupapp.club`;
@@ -83,8 +88,10 @@ export default async function scenarioThree(ctx, log) {
     lastName: 'Khanna',
     email: devEmail,
     password: devPassword,
-    organizationName: `Riverstone Group OnPlatform ${tag}`,
-    organizationType: 'builder',
+    orgName: `Riverstone Group OnPlatform ${tag}`,
+    country: 'India',
+    city: 'Bengaluru',
+    type: 'builder',
     externalDeveloperInviteToken: inviteToken,
   };
   const reg = await http('POST', '/auth/register', { body: regPayload, expect: [200, 201, 429], note: 'fresh dev registers with token' });

@@ -57,7 +57,11 @@ export async function listExternalDevelopers(query, user) {
     const re = new RegExp(escaped, 'i');
     filter.$or = [{ name: re }, { 'contact.person': re }, { city: re }];
   }
+  // SP4 Phase L finding #3 — populate claimedByOrg.name so the CP UI can
+  // render the actual on-platform org name on the "Claimed" drawer instead
+  // of the generic "Developer Org" fallback.
   const developers = await ExternalDeveloper.find(filter)
+    .populate('claimedByOrg', 'name type city')
     .sort({ updatedAt: -1 })
     .lean();
   return developers;
@@ -65,6 +69,7 @@ export async function listExternalDevelopers(query, user) {
 
 export async function getExternalDeveloper(id, user) {
   const doc = await findInScope(id, user);
+  await doc.populate({ path: 'claimedByOrg', select: 'name type city' });
   return doc.toObject();
 }
 

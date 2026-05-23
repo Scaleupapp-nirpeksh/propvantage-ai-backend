@@ -64,9 +64,16 @@ function sanitizeForWrite(data) {
 }
 
 // Common populate shape used by getProspect / listProspects.
+// SP4 Phase L finding #3 — nested-populate developerOrg.name so the CP UI
+// can render "PropVantage Demo Realty" instead of the bare ObjectId or
+// the "Platform Developer" fallback string.
 const POPULATE_LIST = [
   { path: 'assignedAgent', select: 'firstName lastName email' },
-  { path: 'developerContext.partnership', select: 'developerOrg channelPartnerOrg status' },
+  {
+    path: 'developerContext.partnership',
+    select: 'developerOrg channelPartnerOrg status',
+    populate: { path: 'developerOrg', select: 'name type city' },
+  },
   { path: 'developerContext.externalDeveloper', select: 'name city' },
   { path: 'project.platform', select: 'name location type' },
 ];
@@ -322,9 +329,23 @@ export async function recordBooking(id, bookingData, user) {
   // SP4 — recording a booking implicitly closes the prospect as 'Booked'.
   // CPs do not want to record a sale and then have to remember to also
   // flip the status by hand. The QA E2E run surfaced this as Bug B.
-  const statusFlipped = p.status !== 'Booked';
+  const oldStatus = p.status;
+  const statusFlipped = oldStatus !== 'Booked';
   p.status = 'Booked';
   recomputeCommission(p);
+
+  // SP4 Phase L finding #4 — also emit a 'status_change' activity when the
+  // booking flips the status so the Status Timeline (which filters to
+  // 'status_change') reflects the Booked transition. Without this, the
+  // timeline silently omitted the most important status transition.
+  if (statusFlipped) {
+    p.activities.push({
+      type: 'status_change',
+      note: `${oldStatus} → Booked (via booking)`,
+      at: new Date(),
+      by: user._id,
+    });
+  }
 
   p.activities.push({
     type: 'system',
