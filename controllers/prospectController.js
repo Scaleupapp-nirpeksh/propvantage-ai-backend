@@ -109,3 +109,22 @@ export const pushProspect = asyncHandler(async (req, res) => {
   );
   res.status(201).json({ success: true, data });
 });
+
+// POST /api/cp/prospects/:id/propose-status — propose a Lead.status change.
+export const proposeProspectStatus = asyncHandler(async (req, res) => {
+  const { status, note } = req.body || {};
+  const data = await callService(
+    () => prospectService.proposeStatusChange(req.params.id, status, note, req.user),
+    res
+  );
+  res.status(201).json({ success: true, data });
+});
+
+// DELETE /api/cp/prospects/:id/proposed-status — withdraw the pending proposal.
+export const withdrawProspectProposedStatus = asyncHandler(async (req, res) => {
+  const data = await callService(
+    () => prospectService.withdrawProposedStatusChange(req.params.id, req.user),
+    res
+  );
+  res.json({ success: true, data });
+});

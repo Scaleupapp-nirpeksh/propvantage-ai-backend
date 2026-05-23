@@ -15,7 +15,7 @@ import Lead from '../models/leadModel.js';
 import Partnership from '../models/partnershipModel.js';
 import ChannelPartner from '../models/channelPartnerModel.js';
 import { reconcileChannelPartnerRecord } from './partnershipService.js';
-import { notifyUsersWithPermission } from './notificationService.js';
+import { createNotification, notifyUsersWithPermission } from './notificationService.js';
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
@@ -501,6 +501,121 @@ export async function pushProspectToDeveloper(id, user) {
     prospect: p.toObject(),
     leadId: lead._id,
   };
+}
+
+// ─── Status proposal flow (SP4 Phase H) ────────────────────────────────────
+
+// Valid proposed-statuses are the Lead.status enum minus 'pending'.
+const VALID_PROPOSED_STATUSES = [
+  'New', 'Contacted', 'Qualified', 'Site Visit Scheduled',
+  'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified',
+];
+
+// POST /api/cp/prospects/:id/propose-status — CP proposes a Lead.status
+// change on a pushed Lead. Sets Lead.proposedStatusChange (until developer
+// accepts/rejects via PATCH /api/leads/:id/proposal). 409 when no Lead is
+// pushed, or when a proposal is already pending, or when the proposed
+// status matches the Lead's current status.
+export async function proposeStatusChange(prospectId, statusValue, note, user) {
+  const p = await findInScope(prospectId, user);
+  if (!p.pushedToLead) {
+    throw httpError(409, 'This prospect has not been pushed to a developer yet');
+  }
+  if (!VALID_PROPOSED_STATUSES.includes(statusValue)) {
+    throw httpError(400, `status must be one of: ${VALID_PROPOSED_STATUSES.join(', ')}`);
+  }
+  const lead = await Lead.findById(p.pushedToLead);
+  if (!lead) throw httpError(409, 'The pushed lead no longer exists');
+  if (lead.status === statusValue) {
+    throw httpError(409, 'The lead is already at that status');
+  }
+  if (lead.proposedStatusChange && lead.proposedStatusChange.status) {
+    throw httpError(409, 'A status proposal is already pending — withdraw it before proposing another');
+  }
+
+  const now = new Date();
+  lead.proposedStatusChange = {
+    status: statusValue,
+    proposedBy: user._id,
+    proposedAt: now,
+    note: String(note || '').trim(),
+  };
+  await lead.save();
+
+  p.activities.push({
+    type: 'status_change',
+    note: `Proposed status: ${statusValue}${note ? ` — ${String(note).trim()}` : ''}`,
+    at: now,
+    by: user._id,
+  });
+  await p.save();
+
+  // Notify the lead's assignedTo (single) + dev Manager/Owner (broadcast).
+  try {
+    const message = `${p.firstName} ${p.lastName || ''} — proposed status: ${statusValue}`.trim();
+    const payload = {
+      organizationId: lead.organization,
+      permission: 'leads:update',
+      excludeUserIds: lead.assignedTo ? [lead.assignedTo] : [],
+      type: 'lead_status_proposed',
+      title: 'Channel partner proposed a status change',
+      message,
+      actionUrl: `/leads/${lead._id}`,
+      relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+      actor: user._id,
+    };
+    if (lead.assignedTo) {
+      await createNotification({
+        organization: lead.organization,
+        recipient: lead.assignedTo,
+        type: 'lead_status_proposed',
+        title: payload.title,
+        message,
+        actionUrl: payload.actionUrl,
+        relatedEntity: payload.relatedEntity,
+        actor: user._id,
+      });
+    }
+    await notifyUsersWithPermission(payload);
+  } catch (notifyErr) {
+    console.error('[proposeStatusChange] notification failed:', notifyErr?.message);
+  }
+
+  return { prospect: p.toObject(), lead: lead.toObject() };
+}
+
+// DELETE /api/cp/prospects/:id/proposed-status — CP withdraws their pending
+// proposal. Allowed for the original proposer OR any CP Manager/Owner of
+// the same CP org. Silent — no notification (the developer hasn't acted yet).
+export async function withdrawProposedStatusChange(prospectId, user) {
+  const p = await findInScope(prospectId, user);
+  if (!p.pushedToLead) {
+    throw httpError(409, 'This prospect has not been pushed to a developer yet');
+  }
+  const lead = await Lead.findById(p.pushedToLead);
+  if (!lead) throw httpError(409, 'The pushed lead no longer exists');
+  if (!lead.proposedStatusChange || !lead.proposedStatusChange.status) {
+    throw httpError(409, 'No status proposal is currently pending');
+  }
+
+  // Authorisation: original proposer OR any CP Manager/Owner of the same CP org.
+  const isProposer = String(lead.proposedStatusChange.proposedBy) === String(user._id);
+  if (!isProposer && isCpAgent(user)) {
+    throw httpError(403, 'Only the proposer or a CP Manager/Owner may withdraw this proposal');
+  }
+
+  lead.proposedStatusChange = null;
+  await lead.save();
+
+  p.activities.push({
+    type: 'system',
+    note: 'Status proposal withdrawn',
+    at: new Date(),
+    by: user._id,
+  });
+  await p.save();
+
+  return { prospect: p.toObject(), lead: lead.toObject() };
 }
 
 // PUT /api/cp/prospects/:id/commission — update agreement or trigger write-off.

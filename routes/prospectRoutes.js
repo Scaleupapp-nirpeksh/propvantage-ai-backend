@@ -19,6 +19,8 @@ import {
   addProspectCommissionPayment,
   updateProspectCommission,
   pushProspect,
+  proposeProspectStatus,
+  withdrawProspectProposedStatus,
 } from '../controllers/prospectController.js';
 
 const router = express.Router();
@@ -79,6 +81,18 @@ router.post(
   '/:id/push',
   hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
   pushProspect
+);
+
+// SP4 Phase H — CP proposes / withdraws a status change on the pushed Lead.
+router.post(
+  '/:id/propose-status',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  proposeProspectStatus
+);
+router.delete(
+  '/:id/proposed-status',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  withdrawProspectProposedStatus
 );
 
 export default router;
