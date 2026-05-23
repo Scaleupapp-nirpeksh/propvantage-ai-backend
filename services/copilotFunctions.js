@@ -629,6 +629,52 @@ export const copilotTools = [
       },
     },
   },
+
+  // ─── SP5 — Channel-partner analytics (Areas 6–8 served via new dev-side
+  //         service services/analytics/devAnalyticsService.js). Adds 3 tools
+  //         to the existing dev Copilot; no new controller, no new UI.
+  {
+    type: 'function',
+    function: {
+      name: 'get_channel_partner_scorecard',
+      description: 'SP5 — performance scorecard for the dev org\'s active channel partners over a range (leadsSubmitted, acceptRate, conversionRate, avgTimeToDecisionHours, commissionPaidYtd, partnerQualityScore). Optional channelPartnerId filter.',
+      parameters: {
+        type: 'object',
+        properties: {
+          range: { type: 'string', enum: ['7d', '30d', '90d', '6m', '12m', 'ytd', 'all'], description: 'Date range; default 30d.' },
+          channelPartnerId: { type: 'string', description: 'Optional CP shadow record id to filter to.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_commission_paid_out',
+      description: 'SP5 — commission payout summary for the dev org (paidThisPeriod, outstanding, cpsPaid, avgPayoutPerCp) with breakdowns by CP and project + monthly time series.',
+      parameters: {
+        type: 'object',
+        properties: {
+          range:   { type: 'string', enum: ['7d', '30d', '90d', '6m', '12m', 'ytd', 'all'] },
+          groupBy: { type: 'string', enum: ['cp', 'project', 'month'], description: 'Optional grouping hint.' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_lead_quality_by_partner',
+      description: 'SP5 — per-partner lead quality (acceptRate, top rejection reasons, duplicateFlagRate, proposalsSubmitted, leadQualityScore).',
+      parameters: {
+        type: 'object',
+        properties: {
+          range:            { type: 'string', enum: ['7d', '30d', '90d', '6m', '12m', 'ytd', 'all'] },
+          channelPartnerId: { type: 'string', description: 'Optional CP shadow record id to filter to.' },
+        },
+      },
+    },
+  },
 ];
 
 // =============================================================================
@@ -2225,6 +2271,26 @@ const functionImplementations = {
         ? 'Limited competitive data. Add more competitors or run AI Research for better recommendations.'
         : `Based on ${competitors.length} competitor projects in ${params.area}, ${params.city}.`,
     };
+  },
+
+  // ─── SP5 — Channel-partner analytics tools (Areas 6, 7, 8) ────────────
+  //   These are thin wrappers around services/analytics/devAnalyticsService.
+  //   No `organizationId` is read from params — scoping is always
+  //   user.organization (asserted by 45-sp5-cross-tenant-safety.test.js).
+
+  get_channel_partner_scorecard: async (params, user) => {
+    const { getChannelPartnerScorecard } = await import('./analytics/devAnalyticsService.js');
+    return getChannelPartnerScorecard(user.organization, params || {}, user);
+  },
+
+  get_commission_paid_out: async (params, user) => {
+    const { getCommissionPayouts } = await import('./analytics/devAnalyticsService.js');
+    return getCommissionPayouts(user.organization, params || {}, user);
+  },
+
+  get_lead_quality_by_partner: async (params, user) => {
+    const { getLeadQuality } = await import('./analytics/devAnalyticsService.js');
+    return getLeadQuality(user.organization, params || {}, user);
   },
 };
 
