@@ -71,3 +71,32 @@ export const addProspectActivity = asyncHandler(async (req, res) => {
   );
   res.status(201).json({ success: true, data });
 });
+
+// ─── Commission tracking (SP4 Phase D) ─────────────────────────────────────
+
+// POST /api/cp/prospects/:id/booking — set booking + recompute commission.
+export const recordProspectBooking = asyncHandler(async (req, res) => {
+  const data = await callService(
+    () => prospectService.recordBooking(req.params.id, req.body, req.user),
+    res
+  );
+  res.json({ success: true, data });
+});
+
+// POST /api/cp/prospects/:id/commission/payments — append payment receipt.
+export const addProspectCommissionPayment = asyncHandler(async (req, res) => {
+  const data = await callService(
+    () => prospectService.addCommissionPayment(req.params.id, req.body, req.user),
+    res
+  );
+  res.status(201).json({ success: true, data });
+});
+
+// PUT /api/cp/prospects/:id/commission — update agreement or trigger write-off.
+export const updateProspectCommission = asyncHandler(async (req, res) => {
+  const data = await callService(
+    () => prospectService.updateCommission(req.params.id, req.body, req.user),
+    res
+  );
+  res.json({ success: true, data });
+});

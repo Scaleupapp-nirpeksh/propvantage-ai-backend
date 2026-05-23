@@ -15,6 +15,9 @@ import {
   updateProspect,
   deleteProspect,
   addProspectActivity,
+  recordProspectBooking,
+  addProspectCommissionPayment,
+  updateProspectCommission,
 } from '../controllers/prospectController.js';
 
 const router = express.Router();
@@ -51,6 +54,23 @@ router.post(
   '/:id/activities',
   hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
   addProspectActivity
+);
+
+// SP4 Phase D — commission tracking (manual ledger; works on/off platform)
+router.post(
+  '/:id/booking',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  recordProspectBooking
+);
+router.post(
+  '/:id/commission/payments',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  addProspectCommissionPayment
+);
+router.put(
+  '/:id/commission',
+  hasPermission(CP_PERMISSIONS.PROSPECTS.MANAGE),
+  updateProspectCommission
 );
 
 export default router;

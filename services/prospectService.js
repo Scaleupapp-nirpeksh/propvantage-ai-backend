@@ -248,3 +248,179 @@ export async function addActivity(id, activityData, user) {
   await p.save();
   return p.toObject();
 }
+
+// ─── Commission tracking (SP4 Phase D) ─────────────────────────────────────
+
+// Private — recompute commission.expectedAmount + commission.status from
+// the current agreement + booking + payments. Never overwrites 'written_off'
+// (which is set only via an explicit updateCommission call).
+function recomputeCommission(p) {
+  if (p.commission?.status === 'written_off') return;
+
+  const agreement = p.commissionAgreement;
+  let expected = null;
+  if (agreement?.type === 'percentage') {
+    const sale = p.booking?.salePrice;
+    if (typeof sale === 'number' && sale >= 0 && typeof agreement.value === 'number') {
+      expected = sale * (agreement.value / 100);
+    }
+  } else if (agreement?.type === 'flat') {
+    if (typeof agreement.value === 'number') expected = agreement.value;
+  }
+  p.commission.expectedAmount = expected;
+
+  const totalPaid = (p.commission.payments || []).reduce(
+    (s, x) => s + (Number(x.amount) || 0),
+    0
+  );
+  if (totalPaid <= 0) p.commission.status = 'pending';
+  else if (expected != null && totalPaid >= expected) p.commission.status = 'paid';
+  else p.commission.status = 'partially_paid';
+}
+
+// POST /api/cp/prospects/:id/booking — set booking; recompute commission.
+export async function recordBooking(id, bookingData, user) {
+  const p = await findInScope(id, user);
+  if (!bookingData || typeof bookingData !== 'object') {
+    throw httpError(400, 'booking payload is required');
+  }
+  const salePrice = bookingData.salePrice;
+  if (
+    salePrice !== undefined &&
+    salePrice !== null &&
+    (!Number.isFinite(Number(salePrice)) || Number(salePrice) < 0)
+  ) {
+    throw httpError(400, 'booking.salePrice must be a non-negative number');
+  }
+  p.booking = {
+    bookedAt: bookingData.bookedAt ? new Date(bookingData.bookedAt) : new Date(),
+    unitInfo: String(bookingData.unitInfo || '').trim(),
+    salePrice: salePrice !== undefined && salePrice !== null ? Number(salePrice) : null,
+    currency: bookingData.currency || 'INR',
+    notes: String(bookingData.notes || '').trim(),
+  };
+  recomputeCommission(p);
+
+  p.activities.push({
+    type: 'system',
+    note:
+      'Booking recorded' +
+      (p.booking.unitInfo ? ` (${p.booking.unitInfo})` : '') +
+      (p.booking.salePrice != null ? ` — sale price ${p.booking.currency} ${p.booking.salePrice}` : ''),
+    at: new Date(),
+    by: user._id,
+  });
+
+  await p.save();
+  await p.populate(POPULATE_DETAIL);
+  return p.toObject();
+}
+
+// POST /api/cp/prospects/:id/commission/payments — append a payment receipt;
+// recompute commission status.
+export async function addCommissionPayment(id, paymentData, user) {
+  const p = await findInScope(id, user);
+  const amount = Number(paymentData?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw httpError(400, 'amount must be a positive number');
+  }
+  if (!paymentData?.receivedAt) {
+    throw httpError(400, 'receivedAt is required');
+  }
+  const ALLOWED_METHODS = ['bank_transfer', 'cheque', 'cash', 'upi', 'other'];
+  if (paymentData.method && !ALLOWED_METHODS.includes(paymentData.method)) {
+    throw httpError(400, `method must be one of: ${ALLOWED_METHODS.join(', ')}`);
+  }
+  p.commission.payments.push({
+    amount,
+    receivedAt: new Date(paymentData.receivedAt),
+    method: paymentData.method,
+    referenceNumber: String(paymentData.referenceNumber || '').trim(),
+    notes: String(paymentData.notes || '').trim(),
+    recordedBy: user._id,
+    recordedAt: new Date(),
+  });
+  recomputeCommission(p);
+
+  p.activities.push({
+    type: 'system',
+    note: `Commission payment recorded — ${p.commission.payments[p.commission.payments.length - 1].amount}`,
+    at: new Date(),
+    by: user._id,
+  });
+
+  await p.save();
+  await p.populate(POPULATE_DETAIL);
+  return p.toObject();
+}
+
+// PUT /api/cp/prospects/:id/commission — update agreement or trigger write-off.
+// Write-off requires CP Manager/Owner role + writeOffReason. All other status
+// transitions are server-derived; pending/partially_paid/paid cannot be set
+// explicitly.
+export async function updateCommission(id, data, user) {
+  const p = await findInScope(id, user);
+  if (!data || typeof data !== 'object') {
+    throw httpError(400, 'commission update payload is required');
+  }
+
+  // 1. Agreement update (set or clear).
+  if (data.commissionAgreement !== undefined) {
+    if (data.commissionAgreement === null) {
+      p.commissionAgreement = null;
+    } else {
+      const a = data.commissionAgreement;
+      if (!['percentage', 'flat'].includes(a.type)) {
+        throw httpError(400, 'commissionAgreement.type must be "percentage" or "flat"');
+      }
+      const value = Number(a.value);
+      if (!Number.isFinite(value) || value < 0) {
+        throw httpError(400, 'commissionAgreement.value must be a non-negative number');
+      }
+      if (a.type === 'percentage' && value > 100) {
+        throw httpError(400, 'percentage commission cannot exceed 100');
+      }
+      p.commissionAgreement = {
+        type: a.type,
+        value,
+        currency: a.currency || 'INR',
+        notes: String(a.notes || '').trim(),
+      };
+    }
+  }
+
+  // 2. Explicit status change — only 'written_off' is honoured.
+  let didWriteOff = false;
+  if (data.status !== undefined) {
+    if (data.status !== 'written_off') {
+      throw httpError(
+        400,
+        'Only "written_off" can be set explicitly; pending/partially_paid/paid are server-derived'
+      );
+    }
+    if (isCpAgent(user)) {
+      throw httpError(403, 'Only CP Manager or Owner can write off a commission');
+    }
+    const reason = String(data.writeOffReason || '').trim();
+    if (!reason) {
+      throw httpError(400, 'writeOffReason is required when writing off a commission');
+    }
+    p.commission.status = 'written_off';
+    p.commission.writeOffReason = reason;
+    p.activities.push({
+      type: 'system',
+      note: `Commission written off: ${reason}`,
+      at: new Date(),
+      by: user._id,
+    });
+    didWriteOff = true;
+  }
+
+  // 3. Recompute when not writing off (recompute also no-ops on written_off
+  //    as a safety net).
+  if (!didWriteOff) recomputeCommission(p);
+
+  await p.save();
+  await p.populate(POPULATE_DETAIL);
+  return p.toObject();
+}
