@@ -78,34 +78,52 @@ export const applyTransition = (partnership, transition, { actorUserId, actorOrg
  * record exists in the developer's org so the existing attribution / commission
  * / analytics engines keep working. Idempotent on the channelPartnerOrg link —
  * re-activation after terminate→re-apply→approve never duplicates the record.
+ *
+ * Optional `options.session` (SP4) — when provided (Mongo transaction), all
+ * reads/writes participate in the transaction. SP3 callers pass nothing and
+ * the function behaves exactly as before.
  */
-export const reconcileChannelPartnerRecord = async (partnership, actorUserId) => {
-  const existing = await ChannelPartner.findOne({
-    organization: partnership.developerOrg,
-    channelPartnerOrg: partnership.channelPartnerOrg,
-  });
+export const reconcileChannelPartnerRecord = async (partnership, actorUserId, options = {}) => {
+  const session = options.session;
+  const sessionOpt = session ? { session } : {};
+
+  const existing = await ChannelPartner.findOne(
+    {
+      organization: partnership.developerOrg,
+      channelPartnerOrg: partnership.channelPartnerOrg,
+    },
+    null,
+    sessionOpt
+  );
   if (existing) {
     existing.status = 'active';
     if (partnership.projects && partnership.projects.length > 0) {
       existing.approvedProjects = partnership.projects;
     }
-    await existing.save();
+    if (session) existing.$session(session);
+    await existing.save({ session });
     return existing;
   }
-  const cpOrg = await Organization.findById(partnership.channelPartnerOrg).select(
-    'name category contactInfo reraRegistrationNumber'
+  const cpOrg = await Organization.findById(partnership.channelPartnerOrg, null, sessionOpt)
+    .select('name category contactInfo reraRegistrationNumber');
+
+  const created = await ChannelPartner.create(
+    [
+      {
+        organization: partnership.developerOrg,
+        channelPartnerOrg: partnership.channelPartnerOrg,
+        firmName: cpOrg?.name || 'Channel Partner',
+        category: cpOrg?.category || 'broker_firm',
+        reraRegistrationNumber: cpOrg?.reraRegistrationNumber || '',
+        primaryContact: { phone: cpOrg?.contactInfo?.phone || '' },
+        approvedProjects: partnership.projects || [],
+        status: 'active',
+        onboardedBy: actorUserId || partnership.decidedBy || null,
+      },
+    ],
+    sessionOpt
   );
-  return ChannelPartner.create({
-    organization: partnership.developerOrg,
-    channelPartnerOrg: partnership.channelPartnerOrg,
-    firmName: cpOrg?.name || 'Channel Partner',
-    category: cpOrg?.category || 'broker_firm',
-    reraRegistrationNumber: cpOrg?.reraRegistrationNumber || '',
-    primaryContact: { phone: cpOrg?.contactInfo?.phone || '' },
-    approvedProjects: partnership.projects || [],
-    status: 'active',
-    onboardedBy: actorUserId || partnership.decidedBy || null,
-  });
+  return created[0];
 };
 
 /**

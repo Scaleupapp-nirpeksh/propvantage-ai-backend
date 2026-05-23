@@ -12,6 +12,9 @@ import mongoose from 'mongoose';
 import ExternalDeveloper from '../models/externalDeveloperModel.js';
 import Prospect from '../models/prospectModel.js';
 import Organization from '../models/organizationModel.js';
+import Partnership from '../models/partnershipModel.js';
+import { reconcileChannelPartnerRecord } from './partnershipService.js';
+import { notifyUsersWithPermission } from './notificationService.js';
 
 const INVITE_EXPIRY_DAYS = 90;
 const INVITE_EXPIRY_MS = INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
@@ -186,4 +189,181 @@ export async function getInviteByToken(token) {
     projects: doc.projects || [],
     invitedByOrgName: invitingOrg?.name || 'A channel partner',
   };
+}
+
+// ─── Claim (SP4 Phase F) ───────────────────────────────────────────────────
+
+/**
+ * Transactional claim flow — called from registerUser when a newly-created
+ * builder org has an externalDeveloperInviteToken on its registration body.
+ *
+ * Atomic across:
+ *   1. Mark the ExternalDeveloper claimed (clear invite.token to invalidate).
+ *   2. Upsert an active Partnership for (developerOrg, channelPartnerOrg).
+ *   3. SP3 reconciliation — ensure the dev-side ChannelPartner shadow record
+ *      exists with channelPartnerOrg linked.
+ *   4. Bulk-retag every linked Prospect: developerContext.type='platform',
+ *      partnership=<new>, externalDeveloper cleared, system activity pushed.
+ *
+ * The notification fan-out runs OUTSIDE the transaction (best-effort —
+ * a notification failure doesn't roll back the claim).
+ *
+ * @param {string}    token            — 64-hex invite token from the registration body
+ * @param {ObjectId}  newDeveloperOrgId — the just-created builder org's _id
+ * @param {Object}    actorUser        — the just-created owner User (req.user)
+ * @returns {Promise<{externalDeveloper, partnership}>}
+ *
+ * Errors:
+ *  - 404 — token unknown / malformed
+ *  - 410 — token already claimed or expired
+ *  - any Mongoose validation / network error inside the transaction aborts
+ *    the entire operation and rethrows.
+ */
+export async function claimExternalDeveloper(token, newDeveloperOrgId, actorUser) {
+  if (!token || !/^[a-f0-9]{64}$/i.test(token)) {
+    throw httpError(404, 'Invitation not found');
+  }
+  if (!actorUser?._id) {
+    throw httpError(400, 'actorUser is required');
+  }
+  if (!mongoose.isValidObjectId(newDeveloperOrgId)) {
+    throw httpError(400, 'Invalid developer organization id');
+  }
+
+  let result;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // 1. Find + validate the invite (with session).
+      const doc = await ExternalDeveloper.findOne(
+        { 'invite.token': token },
+        null,
+        { session }
+      );
+      if (!doc) throw httpError(404, 'Invitation not found');
+      if (doc.claimedByOrg) throw httpError(410, 'This invitation has already been used');
+      if (doc.invite?.expiresAt && doc.invite.expiresAt.getTime() < Date.now()) {
+        throw httpError(410, 'This invitation has expired');
+      }
+
+      const now = new Date();
+
+      // 2. Mark claimed + invalidate the token so it cannot be reused.
+      doc.claimedByOrg = newDeveloperOrgId;
+      doc.claimedAt = now;
+      if (doc.invite) doc.invite.token = null;
+      doc.$session(session);
+      await doc.save({ session });
+
+      // 3. Upsert Partnership(developerOrg, channelPartnerOrg).
+      const histAccepted = {
+        status: 'active',
+        action: 'accepted',
+        actor: actorUser._id,
+        actorOrg: newDeveloperOrgId,
+        at: now,
+        note: 'Off-platform CP invited developer to platform; claimed via registration link',
+      };
+      let partnership = await Partnership.findOne(
+        {
+          developerOrg: newDeveloperOrgId,
+          channelPartnerOrg: doc.organization,
+        },
+        null,
+        { session }
+      );
+      if (partnership) {
+        // Reopen if previously rejected/terminated; leave alone if already active/pending/suspended.
+        if (['rejected', 'terminated'].includes(partnership.status)) {
+          partnership.status = 'active';
+          partnership.initiatedBy = 'channel_partner';
+          partnership.decidedAt = now;
+          partnership.decidedBy = actorUser._id;
+          partnership.history.push(histAccepted);
+          partnership.$session(session);
+          await partnership.save({ session });
+        }
+        // If status is 'active'/'pending'/'suspended' we keep it as-is — the
+        // claim just adds the ChannelPartner shadow + retags prospects.
+      } else {
+        const created = await Partnership.create(
+          [
+            {
+              developerOrg: newDeveloperOrgId,
+              channelPartnerOrg: doc.organization,
+              status: 'active',
+              initiatedBy: 'channel_partner',
+              projects: [],
+              requestedAt: doc.invite?.invitedAt || now,
+              decidedAt: now,
+              decidedBy: actorUser._id,
+              history: [histAccepted],
+            },
+          ],
+          { session }
+        );
+        partnership = created[0];
+      }
+
+      // 4. SP3 reconciliation — ensure the dev-side ChannelPartner shadow.
+      await reconcileChannelPartnerRecord(partnership, actorUser._id, { session });
+
+      // 5. Bulk-retag linked Prospects (single aggregation-pipeline update).
+      const systemActivity = {
+        type: 'system',
+        note: 'Developer joined the platform',
+        at: now,
+        by: null,
+      };
+      await Prospect.updateMany(
+        {
+          organization: doc.organization,
+          'developerContext.externalDeveloper': doc._id,
+        },
+        [
+          {
+            $set: {
+              'developerContext.type': 'platform',
+              'developerContext.partnership': partnership._id,
+              activities: { $concatArrays: ['$activities', [systemActivity]] },
+            },
+          },
+          { $unset: 'developerContext.externalDeveloper' },
+        ],
+        { session }
+      );
+
+      result = {
+        externalDeveloper: doc.toObject(),
+        partnership: partnership.toObject(),
+      };
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  // 6. Notify the inviting CP's Manager/Owner — outside the transaction.
+  try {
+    await notifyUsersWithPermission({
+      organizationId: result.externalDeveloper.organization,
+      permission: 'cp_partnerships:manage',
+      type: 'external_developer_claimed',
+      title: 'Off-platform developer joined the platform',
+      message: `${result.externalDeveloper.name} has registered — your partnership is now active and any linked prospects have been re-tagged.`,
+      actionUrl: '/partner/partnerships',
+      relatedEntity: {
+        entityType: 'ExternalDeveloper',
+        entityId: result.externalDeveloper._id,
+        displayLabel: result.externalDeveloper.name,
+      },
+      actor: actorUser._id,
+    });
+  } catch (notifyErr) {
+    console.error(
+      '[claimExternalDeveloper] notification fan-out failed (non-fatal):',
+      notifyErr?.message
+    );
+  }
+
+  return result;
 }

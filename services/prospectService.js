@@ -144,6 +144,13 @@ export async function createProspect(data, user) {
   safe.organization = user.organization;
   safe.assignedAgent = agentId;
 
+  // SP4 — service-level check (the model's pre-save no longer enforces
+  // project.platform for platform-context prospects, so the SP4 claim
+  // retag flow can bulk-update without violating it).
+  if (safe.developerContext?.type === 'platform' && !safe.project?.platform) {
+    throw httpError(400, 'project.platform is required when creating a platform-context prospect');
+  }
+
   // Optional initial creation note — kept simple; the UI usually just creates
   // a bare prospect and adds activities afterwards.
   const initialActivities = [];
@@ -189,6 +196,14 @@ export async function updateProspect(id, data, user) {
         throw httpError(400, 'assignedAgent must be a user in your organization');
       }
     }
+  }
+
+  // SP4 — same service-level check on updates that flip context to 'platform'
+  // without providing a Project mapping (retag flow is a separate path).
+  const nextCtxType = safe?.developerContext?.type ?? p.developerContext?.type;
+  const nextPlatformProject = safe?.project?.platform ?? p.project?.platform;
+  if (nextCtxType === 'platform' && !nextPlatformProject) {
+    throw httpError(400, 'project.platform is required when developerContext.type is "platform"');
   }
 
   // Record a status_change activity if status moved.

@@ -210,10 +210,17 @@ prospectSchema.pre('save', async function preSaveValidate(next) {
       if (!this.developerContext?.partnership) {
         return next(new Error('developerContext.partnership is required when developerContext.type is "platform"'));
       }
-      if (!this.project?.platform) {
-        return next(new Error('project.platform is required when developerContext.type is "platform"'));
-      }
-      // Active-partnership + scope check on first save (or on context change).
+      // NOTE: `project.platform` is required at *create-time* for new
+      // platform-context prospects — that check lives in prospectService
+      // (createProspect / updateProspect). It deliberately does NOT run
+      // here because the SP4 claim flow retags external-context prospects
+      // into platform-context in bulk (via updateMany) without yet having
+      // a Project mapping; those retagged prospects keep their original
+      // project.external info and may be mapped to a Project later
+      // (deferred — likely SP5 UX).
+      //
+      // Active-partnership + same-CP-org check on first save (or on
+      // partnership change) — still enforced for safety.
       if (this.isNew || this.isModified('developerContext.partnership')) {
         // Lazy-require to avoid an import cycle (Partnership service-side
         // logic may import Prospect later).
