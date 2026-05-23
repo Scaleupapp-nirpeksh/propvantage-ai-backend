@@ -36,6 +36,15 @@ export const NOTIFICATION_TYPES = [
   // Marketplace partnerships (SP3)
   'partnership_request', // a new application or invite arrived
   'partnership_update',  // a decision or lifecycle change
+  // Cross-org lead lifecycle (SP4)
+  'lead_registration_received',       // → developer: a CP pushed a new lead for review
+  'lead_registration_accepted',       // → CP agent + CP Manager/Owner
+  'lead_registration_rejected',       // → CP agent + CP Manager/Owner
+  'cp_lead_status_changed',           // → CP agent + CP Manager/Owner — developer moved a CP-attributed lead
+  'lead_status_proposed',             // → developer lead owner + dev Manager/Owner
+  'lead_status_proposal_accepted',    // → CP agent
+  'lead_status_proposal_rejected',    // → CP agent
+  'external_developer_claimed',       // → CP Manager/Owner of the inviting CP org
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -43,6 +52,8 @@ export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 export const RELATED_ENTITY_TYPES = [
   'Task', 'Lead', 'Sale', 'Installment', 'ConstructionMilestone', 'Invoice', 'Project',
   'Conversation', 'ApprovalRequest', 'Partnership',
+  // SP4 — cross-org lead lifecycle entities
+  'Prospect', 'ExternalDeveloper',
 ];
 
 // =============================================================================
