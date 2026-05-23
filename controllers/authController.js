@@ -15,6 +15,7 @@ import { seedDefaultRoles } from '../data/defaultRoles.js';
 import { seedChannelPartnerRoles } from '../data/defaultChannelPartnerRoles.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
 import { CP_CATEGORIES } from '../config/permissions.js';
+import { claimExternalDeveloper } from '../services/externalDeveloperService.js';
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
@@ -144,6 +145,25 @@ const registerUser = asyncHandler(async (req, res) => {
         req,
       });
 
+      // SP4: if the registering builder org came via an off-platform CP's
+      // invite link, claim it now — establishes the Partnership and retags
+      // the CP's existing Prospects from external to platform context.
+      // Non-fatal: a failure here attaches `claimWarning` to the response
+      // but the registration itself stands.
+      let claimWarning = null;
+      const inviteToken = req.body.externalDeveloperInviteToken;
+      if (inviteToken && organization.type === 'builder') {
+        try {
+          await claimExternalDeveloper(inviteToken, organization._id, user);
+        } catch (claimErr) {
+          claimWarning = claimErr?.message || 'Could not claim the developer invite.';
+          console.error(
+            '[registerUser] claimExternalDeveloper failed (non-fatal):',
+            claimErr
+          );
+        }
+      }
+
       res.status(201).json({
         _id: user._id,
         firstName: user.firstName,
@@ -166,6 +186,7 @@ const registerUser = asyncHandler(async (req, res) => {
           type: organization.type,
         },
         token,
+        ...(claimWarning ? { claimWarning } : {}),
       });
     } else {
       // Rollback organization creation if user creation fails

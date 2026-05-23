@@ -32,6 +32,13 @@ const registerSchema = Joi.object({
   type: Joi.string().valid('builder', 'channel_partner').default('builder'),
   category: Joi.string().trim().max(40).optional(),
   reraRegistrationNumber: Joi.string().trim().max(120).optional(),
+
+  // SP4 — when a builder org registers via an off-platform CP's invite link,
+  // this token triggers claimExternalDeveloper (Partnership + ChannelPartner
+  // reconciliation + Prospect retag) at the end of registerUser. Must be
+  // declared here so `validate()`'s stripUnknown doesn't drop it before it
+  // reaches the controller (same gotcha SP1 hit — see commit a2fb417).
+  externalDeveloperInviteToken: Joi.string().hex().length(64).optional(),
 });
 
 const loginSchema = Joi.object({
