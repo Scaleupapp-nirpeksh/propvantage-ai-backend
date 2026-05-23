@@ -60,6 +60,8 @@ import marketplaceRoutes from './routes/marketplaceRoutes.js';
 import prospectRoutes from './routes/prospectRoutes.js';
 import externalDeveloperRoutes from './routes/externalDeveloperRoutes.js';
 import externalDeveloperInviteRoutes from './routes/externalDeveloperInviteRoutes.js';
+// SP5 — CP-side analytics (Areas 1–5)
+import cpAnalyticsRoutes from './routes/cpAnalyticsRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -175,6 +177,10 @@ app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/cp/prospects', prospectRoutes);
 app.use('/api/cp/external-developers', externalDeveloperRoutes);
 app.use('/api/external-developer-invites', externalDeveloperInviteRoutes);
+// SP5 — CP-side analytics. Mounted BEFORE the generic /api/cp catch-all
+// would otherwise shadow it; cpPortalRoutes uses '/' so the more-specific
+// '/api/cp/analytics' path is matched by Express's longest-prefix rule.
+app.use('/api/cp/analytics', cpAnalyticsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
