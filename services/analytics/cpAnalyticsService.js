@@ -393,5 +393,257 @@ export async function getCommissionOverview(orgId, params, user) {
   });
 }
 
-// Areas 3–4 follow in subsequent commits (T2.3, T2.4).
-export default { getPipelineHealth, getCommissionOverview };
+// ─── Area 3 — Agent Performance ────────────────────────────────────────────
+
+/**
+ * Per-agent KPIs + composite score. Requires CP_ANALYTICS.VIEW_TEAM at the
+ * route layer; we don't double-check here, but we do honour CP Agent self-only
+ * narrowing as a defence-in-depth (a CP Agent calling this should only see
+ * their own row even if route-gating fails).
+ *
+ * compositeScore = 0.4 * normalised(conversionRate)
+ *                + 0.3 * normalised(activityVolume30d)
+ *                + 0.3 * normalised(commissionGenerated)
+ * Each component is min-max normalised across the agents returned in this call,
+ * so the score is always 0..1.
+ */
+export async function getAgentPerformance(orgId, params, user) {
+  const { range } = parseRange(params?.range);
+  const agentFilter = agentScopeMatch(user);
+  const orgFilter = { organization: toObjectId(orgId), ...agentFilter };
+  const cacheKey = `agents:${orgId}:${range}:${isCpAgent(user) ? user._id : 'org'}`;
+
+  return withCache(cacheKey, async () => {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const agents = await Prospect.aggregate([
+      { $match: orgFilter },
+      {
+        $project: {
+          assignedAgent: 1,
+          status: 1,
+          createdAt: 1,
+          bookedAt: '$booking.bookedAt',
+          expectedAmount: { $ifNull: ['$commission.expectedAmount', 0] },
+          activityCount30d: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$activities', []] },
+                as: 'a',
+                cond: { $gte: ['$$a.at', thirtyDaysAgo] },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$assignedAgent',
+          prospectsActive: { $sum: { $cond: [{ $in: ['$status', TERMINAL_STATUSES] }, 0, 1] } },
+          prospectsBooked: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, 1, 0] } },
+          totalProspects: { $sum: 1 },
+          activityVolume30d: { $sum: '$activityCount30d' },
+          commissionGenerated: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, '$expectedAmount', 0] } },
+          totalTimeToBookingDays: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$status', 'Booked'] }, { $ne: ['$bookedAt', null] }] },
+                { $divide: [{ $subtract: ['$bookedAt', '$createdAt'] }, 1000 * 60 * 60 * 24] },
+                0,
+              ],
+            },
+          },
+        },
+      },
+      { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'agent' } },
+      { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          userId: '$_id',
+          name: {
+            $trim: { input: { $concat: [{ $ifNull: ['$agent.firstName', ''] }, ' ', { $ifNull: ['$agent.lastName', ''] }] } },
+          },
+          prospectsActive: 1,
+          prospectsBooked: 1,
+          totalProspects: 1,
+          conversionRate: { $cond: [{ $gt: ['$totalProspects', 0] }, { $divide: ['$prospectsBooked', '$totalProspects'] }, 0] },
+          avgTimeToBookingDays: { $cond: [{ $gt: ['$prospectsBooked', 0] }, { $divide: ['$totalTimeToBookingDays', '$prospectsBooked'] }, 0] },
+          activityVolume30d: 1,
+          commissionGenerated: 1,
+        },
+      },
+    ]);
+
+    // Min-max normalisation for composite score.
+    const norm = (vals) => {
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const span = max - min;
+      return (v) => (span > 0 ? (v - min) / span : 0);
+    };
+    if (agents.length > 0) {
+      const normConv = norm(agents.map((a) => a.conversionRate));
+      const normAct = norm(agents.map((a) => a.activityVolume30d));
+      const normCom = norm(agents.map((a) => a.commissionGenerated));
+      for (const a of agents) {
+        a.compositeScore = round2(
+          0.4 * normConv(a.conversionRate) +
+          0.3 * normAct(a.activityVolume30d) +
+          0.3 * normCom(a.commissionGenerated)
+        );
+        a.conversionRate = round2(a.conversionRate);
+        a.avgTimeToBookingDays = round2(a.avgTimeToBookingDays);
+        a.commissionGenerated = round2(a.commissionGenerated);
+      }
+      agents.sort((a, b) => b.compositeScore - a.compositeScore);
+    }
+
+    return { agents, generatedAt: new Date().toISOString(), range };
+  });
+}
+
+// ─── Area 4 — Developer Performance ────────────────────────────────────────
+
+/**
+ * Per-developer KPIs + delta-vs-overall. Lists both 'external' and 'platform'
+ * developers. Returns rows sorted by conversionRate DESC.
+ */
+export async function getDeveloperPerformance(orgId, params, user) {
+  const { range } = parseRange(params?.range);
+  const agentFilter = agentScopeMatch(user);
+  const orgFilter = { organization: toObjectId(orgId), ...agentFilter };
+  const cacheKey = `developers:${orgId}:${range}:${isCpAgent(user) ? user._id : 'org'}`;
+
+  return withCache(cacheKey, async () => {
+    // Overall org conversion rate — denominator for deltaVsOverall.
+    const overallAgg = await Prospect.aggregate([
+      { $match: orgFilter },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          booked: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, 1, 0] } },
+        },
+      },
+    ]);
+    const overall = overallAgg[0] || { total: 0, booked: 0 };
+    const overallConversion = safeDiv(overall.booked, overall.total);
+
+    const baseProject = {
+      status: 1,
+      bookedAt: '$booking.bookedAt',
+      createdAt: 1,
+      expectedAmount: { $ifNull: ['$commission.expectedAmount', 0] },
+      paidAmount: {
+        $sum: { $map: { input: { $ifNull: ['$commission.payments', []] }, as: 'p', in: '$$p.amount' } },
+      },
+      pushedToLead: 1,
+    };
+
+    // Platform-context per-developer.
+    const platform = await Prospect.aggregate([
+      { $match: { ...orgFilter, 'developerContext.type': 'platform' } },
+      { $project: { ...baseProject, partnership: '$developerContext.partnership' } },
+      { $lookup: { from: 'partnerships', localField: 'partnership', foreignField: '_id', as: 'p' } },
+      { $unwind: { path: '$p', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'organizations', localField: 'p.developerOrg', foreignField: '_id', as: 'devOrg' } },
+      { $unwind: { path: '$devOrg', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { id: '$devOrg._id', name: '$devOrg.name' },
+          prospects: { $sum: 1 },
+          booked: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, 1, 0] } },
+          totalTimeToBookingDays: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$status', 'Booked'] }, { $ne: ['$bookedAt', null] }] },
+                { $divide: [{ $subtract: ['$bookedAt', '$createdAt'] }, 1000 * 60 * 60 * 24] },
+                0,
+              ],
+            },
+          },
+          commissionRealised: { $sum: '$paidAmount' },
+          pushed: { $sum: { $cond: [{ $ne: ['$pushedToLead', null] }, 1, 0] } },
+        },
+      },
+      // For leadAcceptanceRate we'd join Leads. Skipped here for cost; the
+      // ratio is approximated as bookings/pushed (acceptance ~ pushed and not
+      // immediately rejected). True acceptance lookup deferred to T2.4-bis if
+      // needed; the spec calls this a 'platform-only' field.
+      {
+        $project: {
+          _id: 0,
+          context: { $literal: 'platform' },
+          id: '$_id.id',
+          name: '$_id.name',
+          prospects: 1,
+          conversionRate: { $cond: [{ $gt: ['$prospects', 0] }, { $divide: ['$booked', '$prospects'] }, 0] },
+          avgTimeToBookingDays: { $cond: [{ $gt: ['$booked', 0] }, { $divide: ['$totalTimeToBookingDays', '$booked'] }, 0] },
+          commissionRealised: 1,
+          leadAcceptanceRate: { $cond: [{ $gt: ['$pushed', 0] }, { $divide: ['$booked', '$pushed'] }, 0] },
+        },
+      },
+    ]);
+
+    // External-context per-developer.
+    const external = await Prospect.aggregate([
+      { $match: { ...orgFilter, 'developerContext.type': 'external' } },
+      { $project: { ...baseProject, xId: '$developerContext.externalDeveloper' } },
+      { $lookup: { from: 'externaldevelopers', localField: 'xId', foreignField: '_id', as: 'x' } },
+      { $unwind: { path: '$x', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { id: '$x._id', name: '$x.name' },
+          prospects: { $sum: 1 },
+          booked: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, 1, 0] } },
+          totalTimeToBookingDays: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$status', 'Booked'] }, { $ne: ['$bookedAt', null] }] },
+                { $divide: [{ $subtract: ['$bookedAt', '$createdAt'] }, 1000 * 60 * 60 * 24] },
+                0,
+              ],
+            },
+          },
+          commissionRealised: { $sum: '$paidAmount' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          context: { $literal: 'external' },
+          id: '$_id.id',
+          name: '$_id.name',
+          prospects: 1,
+          conversionRate: { $cond: [{ $gt: ['$prospects', 0] }, { $divide: ['$booked', '$prospects'] }, 0] },
+          avgTimeToBookingDays: { $cond: [{ $gt: ['$booked', 0] }, { $divide: ['$totalTimeToBookingDays', '$booked'] }, 0] },
+          commissionRealised: 1,
+          leadAcceptanceRate: { $literal: null }, // N/A for off-platform devs
+        },
+      },
+    ]);
+
+    const developers = [...platform, ...external].map((d) => ({
+      ...d,
+      conversionRate: round2(d.conversionRate),
+      deltaVsOverall: round2(d.conversionRate - overallConversion),
+      avgTimeToBookingDays: round2(d.avgTimeToBookingDays),
+      commissionRealised: round2(d.commissionRealised),
+      leadAcceptanceRate: d.leadAcceptanceRate == null ? null : round2(d.leadAcceptanceRate),
+    }));
+    developers.sort((a, b) => b.conversionRate - a.conversionRate);
+
+    return {
+      developers,
+      overallConversion: round2(overallConversion),
+      generatedAt: new Date().toISOString(),
+      range,
+    };
+  });
+}
+
+export default {
+  getPipelineHealth,
+  getCommissionOverview,
+  getAgentPerformance,
+  getDeveloperPerformance,
+};
