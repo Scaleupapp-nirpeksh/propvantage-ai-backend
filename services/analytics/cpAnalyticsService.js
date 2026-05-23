@@ -189,5 +189,209 @@ export async function getPipelineHealth(orgId, params, user) {
   });
 }
 
-// Areas 2–4 follow in subsequent commits (T2.2, T2.3, T2.4).
-export default { getPipelineHealth };
+// ─── Area 2 — Commission Overview ──────────────────────────────────────────
+
+/**
+ * Commission summary for a CP org. Per-currency rollup so INR + USD
+ * deals are never conflated.
+ *
+ * @returns {Promise<{summary: {byCurrency: [{currency, expected, received,
+ *   outstanding, writtenOff, realisationRate}]}, breakdowns: {byStatus,
+ *   byDeveloper, byAgent?}, series: {byMonth: [{month, currency, received}]}}>}
+ */
+export async function getCommissionOverview(orgId, params, user) {
+  const { range } = parseRange(params?.range);
+  const agentFilter = agentScopeMatch(user);
+  const orgFilter = { organization: toObjectId(orgId), ...agentFilter };
+  const cacheKey = `commission:${orgId}:${range}:${isCpAgent(user) ? user._id : 'org'}`;
+
+  return withCache(cacheKey, async () => {
+    // 1. Per-currency summary (every prospect with a commissionAgreement contributes).
+    const summaryAgg = await Prospect.aggregate([
+      { $match: orgFilter },
+      {
+        $project: {
+          currency: { $ifNull: ['$commissionAgreement.currency', 'INR'] },
+          expectedAmount: { $ifNull: ['$commission.expectedAmount', 0] },
+          paidAmount: {
+            $sum: {
+              $map: { input: { $ifNull: ['$commission.payments', []] }, as: 'p', in: '$$p.amount' },
+            },
+          },
+          isWrittenOff: { $eq: ['$commission.status', 'written_off'] },
+        },
+      },
+      {
+        $group: {
+          _id: '$currency',
+          expected: { $sum: '$expectedAmount' },
+          received: { $sum: '$paidAmount' },
+          writtenOff: { $sum: { $cond: ['$isWrittenOff', '$expectedAmount', 0] } },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          currency: '$_id',
+          expected: 1,
+          received: 1,
+          writtenOff: 1,
+          outstanding: { $subtract: ['$expected', '$received'] },
+        },
+      },
+    ]);
+    const byCurrency = summaryAgg.map((c) => ({
+      ...c,
+      expected: round2(c.expected),
+      received: round2(c.received),
+      writtenOff: round2(c.writtenOff),
+      outstanding: round2(c.outstanding),
+      realisationRate: round2(safeDiv(c.received, c.expected)),
+    }));
+
+    // 2. By status (counts across statuses; values aggregated per status).
+    const byStatusAgg = await Prospect.aggregate([
+      { $match: orgFilter },
+      {
+        $group: {
+          _id: '$commission.status',
+          count: { $sum: 1 },
+          expected: { $sum: { $ifNull: ['$commission.expectedAmount', 0] } },
+        },
+      },
+      { $project: { _id: 0, status: '$_id', count: 1, expected: { $round: ['$expected', 2] } } },
+    ]);
+
+    // 3. By developer (platform → Partnership.developerOrg.name; external →
+    //    developerContext.externalDeveloper.name). Two pipelines combined.
+    const byDeveloperPlatform = await Prospect.aggregate([
+      { $match: { ...orgFilter, 'developerContext.type': 'platform' } },
+      { $lookup: { from: 'partnerships', localField: 'developerContext.partnership', foreignField: '_id', as: 'p' } },
+      { $unwind: { path: '$p', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'organizations', localField: 'p.developerOrg', foreignField: '_id', as: 'devOrg' } },
+      { $unwind: { path: '$devOrg', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { devOrgId: '$devOrg._id', name: '$devOrg.name' },
+          expected: { $sum: { $ifNull: ['$commission.expectedAmount', 0] } },
+          received: { $sum: { $sum: { $map: { input: { $ifNull: ['$commission.payments', []] }, as: 'p', in: '$$p.amount' } } } },
+          prospects: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          context: { $literal: 'platform' },
+          developerId: '$_id.devOrgId',
+          developerName: '$_id.name',
+          expected: { $round: ['$expected', 2] },
+          received: { $round: ['$received', 2] },
+          prospects: 1,
+        },
+      },
+    ]);
+    const byDeveloperExternal = await Prospect.aggregate([
+      { $match: { ...orgFilter, 'developerContext.type': 'external' } },
+      { $lookup: { from: 'externaldevelopers', localField: 'developerContext.externalDeveloper', foreignField: '_id', as: 'x' } },
+      { $unwind: { path: '$x', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { xId: '$x._id', name: '$x.name' },
+          expected: { $sum: { $ifNull: ['$commission.expectedAmount', 0] } },
+          received: { $sum: { $sum: { $map: { input: { $ifNull: ['$commission.payments', []] }, as: 'p', in: '$$p.amount' } } } },
+          prospects: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          context: { $literal: 'external' },
+          developerId: '$_id.xId',
+          developerName: '$_id.name',
+          expected: { $round: ['$expected', 2] },
+          received: { $round: ['$received', 2] },
+          prospects: 1,
+        },
+      },
+    ]);
+    const byDeveloper = [...byDeveloperPlatform, ...byDeveloperExternal]
+      .sort((a, b) => b.received - a.received);
+
+    // 4. By agent (skip if CP Agent — they can only see their own).
+    let byAgent = [];
+    if (!isCpAgent(user)) {
+      byAgent = await Prospect.aggregate([
+        { $match: orgFilter },
+        { $lookup: { from: 'users', localField: 'assignedAgent', foreignField: '_id', as: 'agent' } },
+        { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: { agentId: '$agent._id', firstName: '$agent.firstName', lastName: '$agent.lastName' },
+            expected: { $sum: { $ifNull: ['$commission.expectedAmount', 0] } },
+            received: { $sum: { $sum: { $map: { input: { $ifNull: ['$commission.payments', []] }, as: 'p', in: '$$p.amount' } } } },
+            prospects: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            agentId: '$_id.agentId',
+            agentName: {
+              $trim: {
+                input: { $concat: [{ $ifNull: ['$_id.firstName', ''] }, ' ', { $ifNull: ['$_id.lastName', ''] }] },
+              },
+            },
+            expected: { $round: ['$expected', 2] },
+            received: { $round: ['$received', 2] },
+            prospects: 1,
+          },
+        },
+        { $sort: { received: -1 } },
+      ]);
+    }
+
+    // 5. Time-series — received commission, last 12 months, per currency.
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    const byMonth = await Prospect.aggregate([
+      { $match: orgFilter },
+      { $unwind: { path: '$commission.payments', preserveNullAndEmptyArrays: false } },
+      { $match: { 'commission.payments.receivedAt': { $gte: twelveMonthsAgo } } },
+      {
+        $project: {
+          month: {
+            $dateToString: { format: '%Y-%m', date: '$commission.payments.receivedAt', timezone: 'Asia/Kolkata' },
+          },
+          currency: { $ifNull: ['$commissionAgreement.currency', 'INR'] },
+          amount: '$commission.payments.amount',
+        },
+      },
+      {
+        $group: {
+          _id: { month: '$month', currency: '$currency' },
+          received: { $sum: '$amount' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          month: '$_id.month',
+          currency: '$_id.currency',
+          received: { $round: ['$received', 2] },
+        },
+      },
+      { $sort: { month: 1 } },
+    ]);
+
+    return {
+      summary: { byCurrency },
+      breakdowns: { byStatus: byStatusAgg, byDeveloper, byAgent },
+      series: { byMonth },
+      generatedAt: new Date().toISOString(),
+      range,
+    };
+  });
+}
+
+// Areas 3–4 follow in subsequent commits (T2.3, T2.4).
+export default { getPipelineHealth, getCommissionOverview };
