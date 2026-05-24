@@ -611,6 +611,16 @@ async function seedConstructionMilestones(org, users, projects) {
 // MAIN
 // =============================================================================
 
+// Exported so the master seeder (data/seedFullDemo.js) can compose these
+// without invoking the standalone main() at the bottom of this file.
+export {
+  seedSales,
+  seedCompetitors,
+  seedCompetitiveAnalysis,
+  seedTasksAndNotifications,
+  seedConstructionMilestones,
+};
+
 async function main() {
   const cleanOnly = process.argv.includes('--clean');
 
@@ -659,4 +669,6 @@ async function main() {
   }
 }
 
-main();
+// Only run as a script when invoked directly (not when imported by master seeder).
+const isDirectInvocation = import.meta.url === `file://${process.argv[1]}`;
+if (isDirectInvocation) main();

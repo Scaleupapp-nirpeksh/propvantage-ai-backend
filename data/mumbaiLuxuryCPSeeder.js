@@ -119,23 +119,38 @@ async function cleanCPData(orgId) {
 }
 
 // ─── Seed ─────────────────────────────────────────────────────
-async function main() {
-  const cleanOnly = process.argv.includes('--clean');
-  await connect();
-
+// Exported so the master seeder (data/seedFullDemo.js) can run the CP seeding
+// step without managing its own connection / disconnection. Standalone `main()`
+// (below) still calls connect/disconnect for its own CLI lifecycle.
+export async function seedCPDataForDemoOrg({ cleanOnly = false, skipCleanup = false, manageConnection = false } = {}) {
+  if (manageConnection) await connect();
   try {
     const org = await Organization.findOne({ name: DEMO_ORG_NAME });
     if (!org) {
       console.error(`❌ Demo org "${DEMO_ORG_NAME}" not found. Run the Mumbai demo seeder first.`);
-      process.exitCode = 1;
-      return;
+      return null;
     }
 
-    await cleanCPData(org._id);
+    if (!skipCleanup) {
+      await cleanCPData(org._id);
+    }
     if (cleanOnly) {
       console.log('\n✅ --clean done.');
-      return;
+      return null;
     }
+
+    // Defer to the original inline body via the legacy main() — but extracted.
+    return await _seedCPDataForDemoOrgInner(org);
+  } finally {
+    if (manageConnection) {
+      await mongoose.disconnect();
+      console.log('Disconnected.');
+    }
+  }
+}
+
+async function _seedCPDataForDemoOrgInner(org) {
+  try {
 
     const projects = await Project.find({ organization: org._id });
     const users = await User.find({ organization: org._id });
@@ -392,11 +407,22 @@ async function main() {
     console.log('═══════════════════════════════════════════════════\n');
   } catch (err) {
     console.error('\n💥 Seeder failed:', err);
-    process.exitCode = 1;
-  } finally {
-    await mongoose.disconnect();
-    console.log('Disconnected.');
+    throw err;
   }
 }
 
-main();
+// Standalone CLI entry — preserved for backward compat (node data/mumbaiLuxuryCPSeeder.js).
+async function main() {
+  const cleanOnly = process.argv.includes('--clean');
+  try {
+    await seedCPDataForDemoOrg({ cleanOnly, manageConnection: true });
+  } catch (err) {
+    process.exitCode = 1;
+  }
+}
+
+export { main as cpSeederMain };
+
+// Only run as a script when invoked directly (not when imported by master seeder).
+const isDirectInvocation = import.meta.url === `file://${process.argv[1]}`;
+if (isDirectInvocation) main();

@@ -51,7 +51,11 @@ const ctx = {
   runId,
   manifest,
   creds: {
-    cp:    { email: process.env.SP4_CP_EMAIL    || 'nirpeksh+offcp@scaleupapp.club',     password: process.env.SP4_CP_PASSWORD    || 'Demo@1234' },
+    // 2026-05-24 demo-reseed: the full-demo seeder created Mumbai Realty Network
+    // as an active partner of PropVantage Demo Realty (the dev). Raghav Saraf
+    // is the CP Owner there. The previous Offplatform Test Partner user
+    // (nirpeksh+offcp@scaleupapp.club) was wiped during the reseed.
+    cp:    { email: process.env.SP4_CP_EMAIL    || 'raghav.saraf@mrn-cp.com',            password: process.env.SP4_CP_PASSWORD    || 'Demo@1234' },
     dev:   { email: process.env.SP4_DEV_EMAIL   || 'rohan.marwah@propvantage-demo.com',  password: process.env.SP4_DEV_PASSWORD   || 'Demo@1234' },
     // Optional second-developer (Vikram for sales-head role checks)
     devSalesHead: { email: 'vikram.khanna@propvantage-demo.com', password: 'Demo@1234' },

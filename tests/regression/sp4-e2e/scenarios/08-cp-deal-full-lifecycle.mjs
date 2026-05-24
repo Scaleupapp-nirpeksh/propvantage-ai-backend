@@ -45,22 +45,31 @@ export default async function scenarioEight(ctx, log) {
   assert(log, 'Active partnership resolved', !!partnership, partnership && { id: partnership._id });
   log.artifacts.partnershipId = partnership?._id;
 
-  // Pick an active project. Either restricted-to-partnership project, or any
-  // dev project visible to the dev (we need an available unit on it).
-  const projectId = (partnership?.approvedProjects?.[0]?._id || partnership?.approvedProjects?.[0])
-    || '6a0c587913c90085c7abfb35'; // Heliconia BKC fallback
-  log.artifacts.projectId = projectId;
-
-  step(log, 'Dev locates an available unit on the project');
-  const unitsResp = await http('GET', `/units?project=${projectId}&status=available&limit=5`, { token: dev.token, expect: 200, note: 'dev lists available units' });
-  const candidateUnits = pickArr(unitsResp).filter((u) => u.status === 'available');
+  // Pick an active project + available unit. 2026-05-24 demo-reseed update:
+  // the previous hardcoded fallback projectId was wiped during the reseed, so
+  // we now discover dynamically — query units?status=available&limit=20 across
+  // the entire dev org and pick the first one. That implicitly chooses a
+  // project that has available inventory. If the partnership restricts to a
+  // subset of projects (partnership.approvedProjects), prefer those; otherwise
+  // any project the dev owns works.
+  const unitsResp = await http('GET', `/units?status=available&limit=20`, { token: dev.token, expect: 200, note: 'dev lists available units across all projects' });
+  const allCandidateUnits = pickArr(unitsResp).filter((u) => u.status === 'available');
+  const partnershipProjectIds = (partnership?.approvedProjects || []).map((p) => String(p?._id || p));
+  const candidateUnits = partnershipProjectIds.length
+    ? allCandidateUnits.filter((u) => partnershipProjectIds.includes(String(u.project?._id || u.project)))
+    : allCandidateUnits;
   if (!candidateUnits.length) {
-    warn(log, 'No available units on the project — cannot exercise booking step. Aborting scenario.');
+    warn(log, 'No available units found — cannot exercise booking step. Aborting scenario.');
     return;
   }
   const unit = candidateUnits[0];
+  const projectId = unit.project?._id || unit.project;
+  log.artifacts.projectId = projectId;
   log.artifacts.unitId = unit._id;
-  note(log, 'Unit chosen', { id: unit._id, number: unit.unitNumber, currentPrice: unit.currentPrice });
+  note(log, 'Unit chosen', { id: unit._id, number: unit.unitNumber, currentPrice: unit.currentPrice, projectId });
+
+  step(log, 'Dev locates an available unit on the project');
+  pass(log, 'Available unit located', { unitNumber: unit.unitNumber, projectId });
 
   step(log, 'CP creates a platform-context Prospect with a commissionAgreement');
   const tag = `s8-${ctx.runId.slice(0, 12)}`;
