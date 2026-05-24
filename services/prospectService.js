@@ -16,6 +16,7 @@ import Partnership from '../models/partnershipModel.js';
 import ChannelPartner from '../models/channelPartnerModel.js';
 import { reconcileChannelPartnerRecord } from './partnershipService.js';
 import { createNotification, notifyUsersWithPermission } from './notificationService.js';
+import { addLeadScoreUpdateJob } from './backgroundJobService.js';
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
@@ -458,17 +459,27 @@ export async function pushProspectToDeveloper(id, user) {
 
   const now = new Date();
 
-  // Map prospect shape → lead shape. Two shape mismatches between the two
-  // models that the previous push payload silently dropped:
-  //  • Prospect.requirements is a free-text String; Lead.requirements is an
-  //    object { timeline, propertyType, ... }. Folded into Lead.notes instead.
+  // Map prospect shape → lead shape. After SP4+ requirements-parity work:
+  //  • Prospect.requirements is now the SAME structured shape as
+  //    Lead.requirements ({ timeline, unitType, floor, facing, amenities,
+  //    specialRequirements }) — copied field-for-field below.
+  //  • Prospect.notes is still free text → copies into Lead.notes.
   //  • Prospect.budget = {min, max, currency}; Lead.budget has those + extra
   //    fields (isValidated, budgetSource). Direct copy works (extras default).
   //  • Priority enums overlap on Low/Medium/High — direct copy works when set.
-  const composedNotes = [p.notes, p.requirements]
-    .map((s) => String(s || '').trim())
-    .filter(Boolean)
-    .join('\n\nRequirements: ');
+  const composedNotes = String(p.notes || '').trim();
+  const reqs = p.requirements || {};
+  const mappedRequirements = {
+    timeline: reqs.timeline || undefined,
+    unitType: reqs.unitType || undefined,
+    floor: {
+      preference: reqs.floor?.preference || 'any',
+      specific: reqs.floor?.specific ?? null,
+    },
+    facing: reqs.facing || 'Any',
+    amenities: Array.isArray(reqs.amenities) ? reqs.amenities : [],
+    specialRequirements: reqs.specialRequirements || '',
+  };
 
   // Create the Lead — minimal seed; the developer fills in details on accept.
   const lead = await Lead.create({
@@ -490,9 +501,8 @@ export async function pushProspectToDeveloper(id, user) {
     priority: p.priority || 'Medium',
     // SP4 push-bug fix: only forward fields that share a compatible shape.
     budget: p.budget,
-    // Prospect.notes + Prospect.requirements folded into Lead.notes (free text)
-    // so the dev still sees what the CP told them, without breaking
-    // Lead.requirements's structured-object schema.
+    // SP4+ — requirements now share a shape; field-for-field copy.
+    requirements: mappedRequirements,
     notes: composedNotes,
     sourceProspect: p._id,
     channelPartnerAttribution: {
@@ -509,6 +519,12 @@ export async function pushProspectToDeveloper(id, user) {
       taggedAt: now,
     },
   });
+
+  // Score the freshly created Lead so the dev sees a meaningful number
+  // on the registrations queue (not 0/100). Profile-only signals at this
+  // stage; engagement signals will refine it after acceptance + activity.
+  // Best-effort; non-fatal.
+  try { addLeadScoreUpdateJob(lead._id, { delay: 1500 }); } catch { /* fallback no-op */ }
 
   // Update the prospect.
   p.pushedToLead = lead._id;

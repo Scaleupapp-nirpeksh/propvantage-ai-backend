@@ -290,7 +290,10 @@ const getLeadById = asyncHandler(async (req, res) => {
     .populate('project', 'name targetRevenue location')
     .populate('assignedTo', 'firstName lastName email')
     .populate('channelPartnerAttribution.partners.channelPartner', 'firmName')
-    .populate('channelPartnerAttribution.partners.agent', 'name');
+    .populate('channelPartnerAttribution.partners.agent', 'name')
+    // SP4+ — CP push uses `agentUser` (User ref). Populate so the dev UI can
+    // render the agent's name on LeadDetail instead of "Agent: —".
+    .populate('channelPartnerAttribution.partners.agentUser', 'firstName lastName email');
 
   if (!lead) {
     res.status(404);
@@ -984,6 +987,11 @@ const decideLeadRegistration = asyncHandler(async (req, res) => {
     if (lead.channelPartnerAttribution) {
       lead.channelPartnerAttribution.status = 'approved';
     }
+    // SP4+ — auto-assign the lead to the developer user who accepted it.
+    // They explicitly chose to take it; better than leaving 'Unassigned'.
+    if (!lead.assignedTo) {
+      lead.assignedTo = req.user._id;
+    }
   } else {
     lead.status = 'Lost';
     if (lead.channelPartnerAttribution) {
@@ -1002,6 +1010,12 @@ const decideLeadRegistration = asyncHandler(async (req, res) => {
 
   // Sync the source Prospect on the CP side so the CP doesn't see a stale status.
   await syncProspectStatusFromLead(lead, lead.status, req.user);
+
+  // Kick the lead-scoring job so the dev sees a meaningful score (not 0/100)
+  // shortly after acceptance. Best-effort; non-fatal.
+  if (action === 'accept') {
+    try { addLeadScoreUpdateJob(lead._id, { delay: 1500 }); } catch { /* fallback no-op */ }
+  }
 
   // Notify CP side — agent (single) + CP Manager/Owner (broadcast, agent excluded).
   try {

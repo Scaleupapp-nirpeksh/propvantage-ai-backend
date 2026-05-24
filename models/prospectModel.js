@@ -140,7 +140,35 @@ const prospectSchema = new mongoose.Schema(
       max: { type: Number, default: null },
       currency: { type: String, default: 'INR' },
     },
-    requirements: { type: String, trim: true, default: '' },
+    // SP4+ — structured to mirror Lead.requirements so the CP captures the
+    // same customer detail the dev would, and push can map field-for-field.
+    // Legacy free-text values were migrated into `specialRequirements` by
+    // data/migrateProspectRequirementsToStructured.js.
+    requirements: {
+      timeline: {
+        type: String,
+        enum: ['immediate', '1-3_months', '3-6_months', '6-12_months', '12+_months'],
+      },
+      unitType: { type: String, trim: true }, // e.g. '2BHK', '3BHK', 'Villa'
+      floor: {
+        preference: {
+          type: String,
+          enum: ['low', 'medium', 'high', 'any'],
+          default: 'any',
+        },
+        specific: { type: Number, default: null },
+      },
+      facing: {
+        type: String,
+        enum: [
+          'North', 'South', 'East', 'West',
+          'North-East', 'North-West', 'South-East', 'South-West', 'Any',
+        ],
+        default: 'Any',
+      },
+      amenities: [{ type: String, trim: true }],
+      specialRequirements: { type: String, trim: true, default: '' },
+    },
     notes: { type: String, trim: true, default: '' },
 
     activities: { type: [activitySchema], default: [] },

@@ -23,7 +23,12 @@ const APPEND_MARKER = '— synced from CP prospect —';
 
 const composeProspectBlock = (p) => {
   const notes = String(p.notes || '').trim();
-  const reqs = String(p.requirements || '').trim();
+  // SP4+ — Prospect.requirements is now structured. Surface specialRequirements
+  // (the free-text subfield) into the backfilled Lead.notes block so the dev
+  // sees any extra detail. The other structured subfields (timeline/unitType
+  // /floor/facing/amenities) are copied into Lead.requirements directly by
+  // the live push path and don't belong here.
+  const reqs = String(p.requirements?.specialRequirements || '').trim();
   if (!notes && !reqs) return '';
   const parts = [];
   if (notes) parts.push(notes);
