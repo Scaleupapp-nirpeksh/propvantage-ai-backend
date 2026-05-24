@@ -265,6 +265,52 @@ const syncCommissionForSale = async (saleId, userId = null) => {
         }
       }
     }
+    // 2026-05-24 lifecycle-repair: bidirectional sync — mirror the dev-side
+    // CommissionRecord state back to the CP-side Prospect.commission ledger
+    // so the SP5 reconciliation page shows 'matched' without requiring the CP
+    // to manually update their own ledger. This is the "no hiccups, no manual
+    // re-tagging" requirement applied to the CP-side view of the deal.
+    //
+    // Best-effort: a failure here doesn't block the dev-side accrual.
+    if (sale.lead) {
+      try {
+        const { default: Lead } = await import('../models/leadModel.js');
+        const { default: Prospect } = await import('../models/prospectModel.js');
+        const lead = await Lead.findById(sale.lead).select('sourceProspect').lean();
+        if (lead?.sourceProspect) {
+          const prospect = await Prospect.findById(lead.sourceProspect);
+          if (prospect) {
+            // Re-aggregate this CP's records (after the loop above ran).
+            const cpRecords = await CommissionRecord.find({
+              sale: sale._id,
+              status: { $ne: 'cancelled' },
+            });
+            const totalGross = cpRecords.reduce((s, r) => s + (r.grossAmount || 0), 0);
+
+            // Mirror expected amount to the prospect.
+            prospect.commission = prospect.commission || {};
+            prospect.commission.expectedAmount = totalGross;
+
+            // Mirror booking snapshot only if the CP hasn't recorded one yet
+            // (don't stomp CP-side edits — they're the source of truth for
+            // their own working notes).
+            if (!prospect.booking?.bookedAt) {
+              prospect.booking = {
+                bookedAt: sale.bookingDate || new Date(),
+                unitInfo: prospect.booking?.unitInfo || '',
+                salePrice: sale.salePrice || 0,
+                currency: prospect.booking?.currency || 'INR',
+                notes: prospect.booking?.notes || '',
+              };
+            }
+
+            await prospect.save();
+          }
+        }
+      } catch (mirrorErr) {
+        console.warn(`[Commission] CP-side ledger mirror failed (non-fatal):`, mirrorErr.message);
+      }
+    }
   } catch (err) {
     console.error(`[Commission] syncCommissionForSale failed for ${saleId}:`, err.message);
   }

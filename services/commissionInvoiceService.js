@@ -544,6 +544,40 @@ async function cascadeInvoicePaidToRecord(inv, user) {
     });
     record.recomputeStatus();
     await record.save();
+
+    // 2026-05-24 lifecycle-repair: mirror the payout to the CP-side
+    // Prospect.commission.payments[] ledger so the CP sees received funds
+    // without manually entering them, and the SP5 reconciliation page
+    // shows 'matched' end-to-end. Idempotent — skip if a payment with the
+    // same reference already exists.
+    if (inv.prospect) {
+      try {
+        const prospect = await Prospect.findById(inv.prospect);
+        if (prospect) {
+          prospect.commission = prospect.commission || {};
+          prospect.commission.payments = prospect.commission.payments || [];
+          const ref = String(inv.paymentReference || '').trim();
+          const alreadyRecorded = prospect.commission.payments.some(
+            (p) => ref && String(p.referenceNumber || '').trim() === ref
+          );
+          if (!alreadyRecorded) {
+            prospect.commission.payments.push({
+              amount: payout.amount,
+              receivedAt: inv.paidAt || new Date(),
+              method: inv.paymentMethod || 'bank_transfer',
+              referenceNumber: ref,
+              notes: `Auto-recorded from CommissionInvoice ${inv.invoiceNumber}`,
+              recordedBy: user._id,
+              recordedAt: new Date(),
+            });
+            await prospect.save();
+          }
+        }
+      } catch (mirrorErr) {
+        console.warn('[cascadeInvoicePaidToRecord] CP-side payment mirror failed (non-fatal):', mirrorErr.message);
+      }
+    }
+
     return { recordId: record._id, payoutLabel: payout.label };
   } catch (err) {
     console.warn('[cascadeInvoicePaidToRecord] failed (non-fatal):', err.message);
