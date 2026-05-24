@@ -480,6 +480,78 @@ export async function decide(invoiceId, action, decisionNote, user) {
 }
 
 /**
+ * 2026-05-24 lifecycle-repair (Phase 4): cascade an invoice-paid event to the
+ * linked CommissionRecord. Marks the next pending payout as paid + recomputes
+ * record status. Best-effort: returns silently on lookup failures.
+ *
+ * Resolution order for the linked record:
+ *   1. inv.commissionRecord FK (set by createDraft on or after Phase 3).
+ *   2. Fallback: look up CommissionRecord by (sale=inv.sale, channelPartner-
+ *      shadow-for-cpOrg). For legacy invoices created before Phase 3.
+ *
+ * For multi-tranche commission rules, closes the FIRST pending payout —
+ * subsequent invoices will close subsequent payouts. The existing per-payout
+ * `markPayoutPaid` endpoint remains available for manual adjustments.
+ *
+ * @param {object} inv — the CommissionInvoice doc, already marked paid
+ * @param {object} user — req.user (paidBy attribution)
+ * @returns {Promise<{recordId: ObjectId, payoutLabel: string}|null>}
+ */
+async function cascadeInvoicePaidToRecord(inv, user) {
+  try {
+    let record = null;
+    if (inv.commissionRecord) {
+      record = await CommissionRecord.findById(inv.commissionRecord);
+    }
+    if (!record) {
+      // Legacy fallback — resolve via shadow CP.
+      const shadow = await ChannelPartner.findOne({
+        organization: inv.developerOrg,
+        channelPartnerOrg: inv.cpOrg,
+      }).select('_id').lean();
+      if (shadow) {
+        record = await CommissionRecord.findOne({
+          sale: inv.sale,
+          channelPartner: shadow._id,
+        });
+      }
+    }
+    if (!record) {
+      console.warn(`[cascadeInvoicePaidToRecord] no CommissionRecord found for invoice ${inv._id}`);
+      return null;
+    }
+
+    const pendingIdx = (record.payouts || []).findIndex((p) => p.status === 'pending');
+    if (pendingIdx === -1) {
+      // All payouts already paid — leave the record alone but log.
+      record.history.push({
+        by: user._id,
+        action: 'invoice_paid_no_pending_payout',
+        note: `Invoice ${inv.invoiceNumber} paid but record has no pending payouts.`,
+      });
+      await record.save();
+      return { recordId: record._id, payoutLabel: null };
+    }
+
+    const payout = record.payouts[pendingIdx];
+    payout.status = 'paid';
+    payout.paidOn = inv.paidAt || new Date();
+    payout.paidBy = user._id;
+    record.history.push({
+      by: user._id,
+      action: 'payout_paid_via_invoice',
+      note: `Payout "${payout.label}" closed by CommissionInvoice ${inv.invoiceNumber} (ref ${inv.paymentReference}).`,
+    });
+    record.recomputeStatus();
+    await record.save();
+    return { recordId: record._id, payoutLabel: payout.label };
+  } catch (err) {
+    console.warn('[cascadeInvoicePaidToRecord] failed (non-fatal):', err.message);
+    return null;
+  }
+}
+
+/**
  * Developer records payment against an approved invoice.
  */
 export async function recordPayment(invoiceId, paymentData, user) {
@@ -506,6 +578,12 @@ export async function recordPayment(invoiceId, paymentData, user) {
   inv.paymentMethod = paymentData.method || 'bank_transfer';
   appendHistory(inv, 'paid', user, `Ref ${inv.paymentReference}`);
   await inv.save();
+
+  // 2026-05-24 lifecycle-repair (Phase 4): cascade to CommissionRecord so the
+  // dev no longer has to mark payout paid in two places. The old behaviour
+  // left invoices marked paid while the underlying CommissionRecord still
+  // showed "accrued" forever — broken reconciliation, broken CP visibility.
+  await cascadeInvoicePaidToRecord(inv, user);
 
   // Notify CP.
   try {

@@ -361,8 +361,16 @@ const markPayoutPaid = asyncHandler(async (req, res) => {
     throw new Error('Payout not found');
   }
   if (payout.status === 'paid') {
-    res.status(400);
-    throw new Error('Payout is already paid');
+    // 2026-05-24 lifecycle-repair (B5): make this idempotent. The
+    // CommissionInvoice.recordPayment cascade (Phase 4) may have already
+    // marked this payout paid; calling this endpoint after that shouldn't
+    // be an error. Return success with a hint so the UI can stop calling.
+    return res.json({
+      success: true,
+      data: record,
+      alreadyPaid: true,
+      message: 'Payout was already paid (possibly via a CommissionInvoice).',
+    });
   }
   payout.status = 'paid';
   payout.paidOn = new Date();
