@@ -114,6 +114,14 @@ const saleSchema = new mongoose.Schema(
     cancelledAt: {
       type: Date,
     },
+    // SP5+ — set the first time cumulative customer payments cross the
+    // developer-org's invoicePolicy.commissionInvoiceTriggerPct threshold.
+    // Guards against re-notifying the CP on every subsequent payment.
+    commissionInvoiceTriggered: {
+      at:      { type: Date, default: null },
+      paidPct: { type: Number, default: null },
+      cpOrg:   { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+    },
   },
   {
     timestamps: true,

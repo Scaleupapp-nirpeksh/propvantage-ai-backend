@@ -413,10 +413,21 @@ const processPayment = async (paymentData, allocations, userId) => {
     
     // Recalculate payment plan
     await recalculatePaymentPlan(paymentData.paymentPlan);
-    
+
     await session.commitTransaction();
     session.endSession();
-    
+
+    // SP5+ — fire commission-invoice notification if cumulative paid now
+    // crosses the dev-org threshold (default 20%). Non-blocking; errors
+    // are caught inside checkAndFireTrigger so a notification bug never
+    // fails the payment.
+    try {
+      const { checkAndFireTrigger } = await import('./commissionInvoiceTriggerService.js');
+      await checkAndFireTrigger(paymentData.paymentPlan, userId);
+    } catch (triggerErr) {
+      console.warn('[paymentService] commissionInvoiceTrigger failed (non-fatal):', triggerErr.message);
+    }
+
     return {
       transaction,
       message: 'Payment processed successfully'
