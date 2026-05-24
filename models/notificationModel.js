@@ -51,6 +51,13 @@ export const NOTIFICATION_TYPES = [
   'commission_invoice_approved',      // → CP: dev approved their invoice
   'commission_invoice_rejected',      // → CP: dev rejected (with reason)
   'commission_invoice_paid',          // → CP: dev recorded payment against the invoice
+  // Lifecycle-repair (2026-05-24) — events that should already have been
+  // notifying but were dropped on the floor or never wired.
+  'commission_invoice_due',           // → dev: heads-up that a CP-attributed sale crossed the threshold
+  'sale_cancelled',                   // → CP: a CP-attributed sale was cancelled by the developer
+  'commission_record_created',        // → CP: dev booked a sale; commission accruing
+  'commission_rule_missing',          // → dev: a CP-attributed sale has no applicable CommissionRule → record at ₹0
+  'cp_sale_booked',                   // → CP: pushed prospect converted to a Sale (the deal-of-the-year notification)
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];

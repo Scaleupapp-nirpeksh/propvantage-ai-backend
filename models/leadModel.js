@@ -74,6 +74,7 @@ const leadSchema = new mongoose.Schema(
         'Social Media',
         'Advertisement',
         'Cold Call',
+        'Channel Partner',
         'Other',
       ],
       default: 'Other',
@@ -387,18 +388,20 @@ const leadSchema = new mongoose.Schema(
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields
-    // NEW: Add indexing for better performance
-    indexes: [
-      { score: -1 }, // Descending score for leaderboards
-      { priority: 1, score: -1 }, // Priority + score composite
-      { organization: 1, assignedTo: 1 }, // Organization + assignedTo composite
-      { organization: 1, status: 1 }, // Organization + status composite
-      { lastScoreUpdate: -1 }, // Recent score updates
-      { 'followUpSchedule.nextFollowUpDate': 1 }, // Follow-up scheduling
-      { createdAt: -1 } // Recent leads
-    ]
   }
 );
+
+// ====================================================================
+// INDEXES — real schema.index() calls (the previous `indexes:[]` block
+// inside schema options was inert; Mongoose only honors .index()).
+// ====================================================================
+leadSchema.index({ score: -1 });                              // Descending score for leaderboards
+leadSchema.index({ priority: 1, score: -1 });                 // Priority + score composite
+leadSchema.index({ organization: 1, assignedTo: 1 });         // Organization + assignedTo composite
+leadSchema.index({ organization: 1, status: 1 });             // Organization + status composite
+leadSchema.index({ lastScoreUpdate: -1 });                    // Recent score updates
+leadSchema.index({ 'followUpSchedule.nextFollowUpDate': 1 }); // Follow-up scheduling
+leadSchema.index({ createdAt: -1 });                          // Recent leads
 
 // ====================================================================
 // VIRTUAL FIELDS - COMPUTED PROPERTIES

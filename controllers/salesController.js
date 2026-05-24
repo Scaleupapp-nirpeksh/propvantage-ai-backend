@@ -249,7 +249,8 @@ const createSale = asyncHandler(async (req, res) => {
     console.log('✅ Unit status updated to sold');
 
     lead.status = 'Booked';
-    lead.lastContactDate = new Date();
+    // `lastContactDate` is not a field on the Lead schema — Mongoose strict mode
+    // silently drops the write. Removed 2026-05-24 to avoid confusing readers.
     await lead.save({ session });
     console.log('✅ Lead status updated to Booked');
 

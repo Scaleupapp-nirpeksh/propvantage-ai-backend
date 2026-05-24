@@ -113,7 +113,7 @@ export async function createDraft(input, user) {
 
   // Find the Sale for this Lead. If there's no Sale yet, the dev hasn't
   // booked — invoice generation is premature.
-  const sale = await Sale.findOne({ lead: lead._id }).select('_id organization totalAmount finalAmount').lean();
+  const sale = await Sale.findOne({ lead: lead._id }).select('_id organization salePrice').lean();
   if (!sale) {
     throw httpError(409, 'No Sale exists for this lead yet — invoice generation requires a booked sale');
   }
@@ -396,7 +396,7 @@ const POPULATE_DETAIL = [
   { path: 'cpOrg', select: 'name type city' },
   { path: 'prospect', select: 'firstName lastName phone email assignedAgent' },
   { path: 'lead', select: 'firstName lastName phone email status project' },
-  { path: 'sale', select: 'totalAmount finalAmount bookingDate' },
+  { path: 'sale', select: 'salePrice bookingDate' },
   { path: 'createdBy', select: 'firstName lastName' },
   { path: 'submittedBy', select: 'firstName lastName' },
   { path: 'decidedBy', select: 'firstName lastName' },

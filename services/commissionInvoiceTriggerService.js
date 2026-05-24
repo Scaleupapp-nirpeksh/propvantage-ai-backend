@@ -55,14 +55,17 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
     if (!plan?.sale) return;
 
     const sale = await Sale.findById(plan.sale)
-      .select('_id organization lead totalAmount finalAmount commissionInvoiceTriggered')
+      .select('_id organization lead salePrice commissionInvoiceTriggered')
       .lean();
     if (!sale) return;
 
     // Already triggered → don't re-fire.
     if (sale.commissionInvoiceTriggered?.at) return;
 
-    const total = Number(sale.totalAmount ?? sale.finalAmount ?? 0);
+    // Sale's authoritative price field is `salePrice` (per models/salesModel.js).
+    // Earlier code read `totalAmount`/`finalAmount` which don't exist on the
+    // schema; that silent-zero made the trigger never fire. Fixed 2026-05-24.
+    const total = Number(sale.salePrice ?? 0);
     if (total <= 0) return;
 
     const paid = await cumulativePaidForSale(sale._id);
