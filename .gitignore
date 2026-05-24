@@ -14,3 +14,14 @@ lerna-debug.log*
 
 # Test coverage
 coverage/
+
+# macOS metadata
+.DS_Store
+
+# Local tooling — Claude Code session state, Playwright MCP cache, MCP server config
+.claude/
+.mcp.json
+.playwright-mcp/
+
+# Stray debug screenshots at repo root (test reports under tests/ remain tracked)
+/*.png
