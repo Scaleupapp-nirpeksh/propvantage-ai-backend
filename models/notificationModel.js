@@ -45,6 +45,12 @@ export const NOTIFICATION_TYPES = [
   'lead_status_proposal_accepted',    // → CP agent
   'lead_status_proposal_rejected',    // → CP agent
   'external_developer_claimed',       // → CP Manager/Owner of the inviting CP org
+  // SP5+ — Commission invoice lifecycle (cross-org).
+  'commission_invoice_ready',         // → CP: customer payment crossed threshold; CP can generate an invoice now
+  'commission_invoice_submitted',     // → dev: CP submitted an invoice for review
+  'commission_invoice_approved',      // → CP: dev approved their invoice
+  'commission_invoice_rejected',      // → CP: dev rejected (with reason)
+  'commission_invoice_paid',          // → CP: dev recorded payment against the invoice
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -54,6 +60,8 @@ export const RELATED_ENTITY_TYPES = [
   'Conversation', 'ApprovalRequest', 'Partnership',
   // SP4 — cross-org lead lifecycle entities
   'Prospect', 'ExternalDeveloper',
+  // SP5+ — commission invoice
+  'CommissionInvoice',
 ];
 
 // =============================================================================
