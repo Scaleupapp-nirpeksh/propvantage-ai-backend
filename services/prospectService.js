@@ -458,6 +458,18 @@ export async function pushProspectToDeveloper(id, user) {
 
   const now = new Date();
 
+  // Map prospect shape → lead shape. Two shape mismatches between the two
+  // models that the previous push payload silently dropped:
+  //  • Prospect.requirements is a free-text String; Lead.requirements is an
+  //    object { timeline, propertyType, ... }. Folded into Lead.notes instead.
+  //  • Prospect.budget = {min, max, currency}; Lead.budget has those + extra
+  //    fields (isValidated, budgetSource). Direct copy works (extras default).
+  //  • Priority enums overlap on Low/Medium/High — direct copy works when set.
+  const composedNotes = [p.notes, p.requirements]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join('\n\nRequirements: ');
+
   // Create the Lead — minimal seed; the developer fills in details on accept.
   const lead = await Lead.create({
     organization: partnership.developerOrg,
@@ -473,10 +485,15 @@ export async function pushProspectToDeveloper(id, user) {
     // (Surfaced by E2E QA run as Bug A.)
     source: 'Referral',
     status: 'pending',
-    priority: p.priority,
+    // SP4 push-bug fix: priority defaults to 'Medium' on Prospect; both
+    // enums share Low/Medium/High so this is safe.
+    priority: p.priority || 'Medium',
+    // SP4 push-bug fix: only forward fields that share a compatible shape.
     budget: p.budget,
-    requirements: p.requirements,
-    notes: p.notes,
+    // Prospect.notes + Prospect.requirements folded into Lead.notes (free text)
+    // so the dev still sees what the CP told them, without breaking
+    // Lead.requirements's structured-object schema.
+    notes: composedNotes,
     sourceProspect: p._id,
     channelPartnerAttribution: {
       viaChannelPartner: true,

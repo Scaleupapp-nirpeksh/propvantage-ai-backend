@@ -18,6 +18,43 @@ import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichm
 import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
 import { partnerAccessScope } from '../utils/partnerAccessHelper.js';
 
+// ─── Cross-org status sync helper ─────────────────────────────────────────
+// When a developer updates a CP-attributed Lead.status (via proposal accept,
+// registration accept, or direct PUT), the source Prospect on the CP side
+// must mirror that change. Without this sync the CP sees a stale status
+// indefinitely (the SP4 design intends both sides to stay in lockstep).
+//
+// Lead.status enum is a strict superset of Prospect.status — we only sync
+// when the new value is in Prospect's enum. 'pending' is dev-only and
+// never propagates back.
+const PROSPECT_STATUS_VALUES = new Set([
+  'New', 'Contacted', 'Qualified', 'Site Visit Scheduled',
+  'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified',
+]);
+
+async function syncProspectStatusFromLead(lead, newStatus, devUser) {
+  if (!lead?.sourceProspect || !newStatus) return;
+  if (!PROSPECT_STATUS_VALUES.has(newStatus)) return;
+  try {
+    const { default: Prospect } = await import('../models/prospectModel.js');
+    const prospect = await Prospect.findById(lead.sourceProspect);
+    if (!prospect) return;
+    if (prospect.status === newStatus) return; // nothing to do
+    const oldStatus = prospect.status;
+    prospect.status = newStatus;
+    prospect.activities.push({
+      type: 'status_change',
+      note: `${oldStatus} → ${newStatus} (synced from developer side)`,
+      at: new Date(),
+      by: devUser?._id || null,
+    });
+    await prospect.save();
+  } catch (err) {
+    // Non-fatal — never block the dev's action because the CP-side sync hit a snag.
+    console.warn('[syncProspectStatusFromLead] failed (non-fatal):', err.message);
+  }
+}
+
 // Import background job service if it exists, otherwise provide fallback
 let addLeadScoreUpdateJob, addEngagementMetricsUpdateJob;
 try {
@@ -402,12 +439,18 @@ const updateLead = asyncHandler(async (req, res) => {
 
   // SP4 — when a developer changes the status of a CP-attributed lead,
   // notify the CP agent + CP Manager/Owner. Best-effort (non-fatal).
+  // Also sync the source Prospect.status so the CP doesn't see a stale value.
   try {
     const statusChanged =
       updatedLead.status &&
       previousStatus &&
       updatedLead.status !== previousStatus;
     const viaCp = updatedLead.channelPartnerAttribution?.viaChannelPartner;
+    if (statusChanged) {
+      // Sync prospect even when not viaCp — covers edge case where attribution
+      // is set differently but sourceProspect still points back to a CP prospect.
+      await syncProspectStatusFromLead(updatedLead, updatedLead.status, req.user);
+    }
     if (statusChanged && viaCp) {
       const agentUserId =
         updatedLead.channelPartnerAttribution?.partners?.[0]?.agentUser;
@@ -957,6 +1000,9 @@ const decideLeadRegistration = asyncHandler(async (req, res) => {
   }
   await lead.save();
 
+  // Sync the source Prospect on the CP side so the CP doesn't see a stale status.
+  await syncProspectStatusFromLead(lead, lead.status, req.user);
+
   // Notify CP side — agent (single) + CP Manager/Owner (broadcast, agent excluded).
   try {
     const agentUserId = lead.channelPartnerAttribution?.partners?.[0]?.agentUser;
@@ -1063,6 +1109,12 @@ const decideLeadProposal = asyncHandler(async (req, res) => {
   }
   lead.proposedStatusChange = null;
   await lead.save();
+
+  // Sync the source Prospect on the CP side (only on accept; reject doesn't
+  // change the lead's effective status so nothing to mirror).
+  if (action === 'accept') {
+    await syncProspectStatusFromLead(lead, lead.status, req.user);
+  }
 
   // Notify CP agent (single) + CP Manager/Owner (broadcast, agent excluded).
   try {
