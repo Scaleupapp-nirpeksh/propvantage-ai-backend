@@ -73,6 +73,13 @@ const organizationSchema = new mongoose.Schema(
       hourlyQuota: { type: Number, default: null },
       plan:        { type: String, default: 'default' },
     },
+    // SP5+ — developer-org commission invoice policy. The trigger threshold
+    // determines when the system fires `commission_invoice_ready` to the
+    // CP (cumulative customer payments ≥ this fraction of Sale.totalAmount).
+    // Used only for builder orgs; channel-partner orgs ignore it.
+    invoicePolicy: {
+      commissionInvoiceTriggerPct: { type: Number, default: 0.20, min: 0, max: 1 },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields
