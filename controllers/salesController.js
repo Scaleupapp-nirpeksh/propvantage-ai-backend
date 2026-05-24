@@ -8,6 +8,8 @@ import Unit from '../models/unitModel.js';
 import Lead from '../models/leadModel.js';
 import Project from '../models/projectModel.js';
 import User from '../models/userModel.js';
+import Interaction from '../models/interactionModel.js';
+import ChannelPartner from '../models/channelPartnerModel.js';
 import { generateCostSheetForUnit } from '../services/pricingService.js';
 import { createPaymentPlan } from '../services/paymentService.js';
 import {
@@ -19,6 +21,8 @@ import {
   createApprovalRequest,
 } from '../services/approvalService.js';
 import { syncCommissionForSale } from '../services/commissionService.js';
+import { buildSaleAttributionFromLead } from '../services/salesAttributionHelper.js';
+import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
 
 /**
  * @desc    Create a new sale (book a unit) - UPDATED for frontend compatibility
@@ -86,6 +90,24 @@ const createSale = asyncHandler(async (req, res) => {
       throw new Error('Lead not found or not accessible.');
     }
 
+    // 3a. 2026-05-24 lifecycle-repair (B1, B7, B15): compute the
+    // channelPartnerAttribution sub-doc ONCE, before either of the
+    // Pending-Approval / Booked branches uses it. The helper:
+    //   • Inherits from lead.channelPartnerAttribution when the body doesn't
+    //     send one (THE root cause fix — prevents silent attribution drop).
+    //   • Validates partners[].sharePct sums to 100%.
+    //   • Validates an active Partnership exists for each platform CP.
+    //   • Returns null for direct (non-CP) sales — the existing behaviour
+    //     is preserved bit-for-bit.
+    // Throws with statusCode 400/409 on validation errors; asyncHandler
+    // will surface them (the transaction abort below catches and rethrows).
+    const attributionDoc = await buildSaleAttributionFromLead({
+      lead,
+      bodyAttribution: channelPartnerAttribution,
+      user: req.user,
+      saleOrgId: req.user.organization,
+    });
+
     // 4. Generate or use provided cost sheet
     let costSheet;
     if (costSheetSnapshot) {
@@ -145,18 +167,9 @@ const createSale = asyncHandler(async (req, res) => {
           status: 'Pending Approval',
           bookingDate: new Date(),
           paymentPlanSnapshot: paymentPlanSnapshot,
-          ...(channelPartnerAttribution && channelPartnerAttribution.viaChannelPartner
-            ? {
-                channelPartnerAttribution: {
-                  viaChannelPartner: true,
-                  partners: channelPartnerAttribution.partners || [],
-                  status: 'tagged',
-                  taggedBy: req.user._id,
-                  taggedAt: new Date(),
-                  history: [{ by: req.user._id, action: 'tagged', note: 'Set at booking creation.' }],
-                },
-              }
-            : {}),
+          // 2026-05-24 lifecycle-repair: attribution computed once via the
+          // helper above (B15 — deduplicated the two near-identical write paths).
+          ...(attributionDoc ? { channelPartnerAttribution: attributionDoc } : {}),
         });
         const createdPendingSale = await pendingSale.save({ session });
 
@@ -226,18 +239,9 @@ const createSale = asyncHandler(async (req, res) => {
       bookingDate: new Date(),
       // Store the payment plan snapshot for reference
       paymentPlanSnapshot: paymentPlanSnapshot,
-      ...(channelPartnerAttribution && channelPartnerAttribution.viaChannelPartner
-        ? {
-            channelPartnerAttribution: {
-              viaChannelPartner: true,
-              partners: channelPartnerAttribution.partners || [],
-              status: 'tagged',
-              taggedBy: req.user._id,
-              taggedAt: new Date(),
-              history: [{ by: req.user._id, action: 'tagged', note: 'Set at booking creation.' }],
-            },
-          }
-        : {})
+      // 2026-05-24 lifecycle-repair: attribution computed once via the
+      // helper above (B15 — deduplicated the two near-identical write paths).
+      ...(attributionDoc ? { channelPartnerAttribution: attributionDoc } : {}),
     });
 
     const createdSale = await sale.save({ session });
@@ -256,34 +260,28 @@ const createSale = asyncHandler(async (req, res) => {
 
     // 8. 🔥 CREATE PAYMENT PLAN AUTOMATICALLY
     console.log('💳 Creating payment plan...');
-    
-    let paymentPlanResult = null;
-    
-    try {
-      // Extract template name from frontend payload
-      const templateName = paymentPlanSnapshot?.templateName || 'standard';
-      
-      console.log('📋 Creating payment plan with template:', templateName);
-      
-      paymentPlanResult = await createPaymentPlan(
-        createdSale, 
-        templateName, 
-        req.user._id
-      );
-      
-      console.log('✅ Payment plan created:', paymentPlanResult.paymentPlan._id);
-      console.log('✅ Installments created:', paymentPlanResult.installments.length);
-      
-      // Update sale with payment plan reference
-      createdSale.paymentPlan = paymentPlanResult.paymentPlan._id;
-      await createdSale.save({ session });
-      console.log('✅ Sale updated with payment plan reference');
-      
-    } catch (paymentPlanError) {
-      console.error('❌ Payment plan creation failed:', paymentPlanError.message);
-      // Don't fail the entire transaction for payment plan issues
-      // The sale is still valid even if payment plan creation fails
-    }
+
+    // 2026-05-24 lifecycle-repair (B22): payment plan failure now ABORTS
+    // the transaction. The previous code swallowed the error with a
+    // console.error, leaving zombie sales without payment plans — and
+    // those sales could never fire the 20% commission trigger because
+    // checkAndFireTrigger needs a paymentPlanId. Loud failure is correct.
+    const templateName = paymentPlanSnapshot?.templateName || 'standard';
+    console.log('📋 Creating payment plan with template:', templateName);
+
+    const paymentPlanResult = await createPaymentPlan(
+      createdSale,
+      templateName,
+      req.user._id
+    );
+
+    console.log('✅ Payment plan created:', paymentPlanResult.paymentPlan._id);
+    console.log('✅ Installments created:', paymentPlanResult.installments.length);
+
+    // Update sale with payment plan reference
+    createdSale.paymentPlan = paymentPlanResult.paymentPlan._id;
+    await createdSale.save({ session });
+    console.log('✅ Sale updated with payment plan reference');
     
     // 9. Commit the transaction
     await session.commitTransaction();
@@ -292,6 +290,107 @@ const createSale = asyncHandler(async (req, res) => {
 
     // Generate channel-partner commission records for the new booking.
     await syncCommissionForSale(createdSale._id, req.user._id);
+
+    // 2026-05-24 lifecycle-repair: audit + notifications. Best-effort —
+    // never fail the booking response because a notification or interaction
+    // log entry failed. Each step is in its own try/catch.
+
+    // 9a. Audit log on the Lead: "Sale created from this Lead".
+    try {
+      const ipNote = attributionDoc
+        ? `Booked via channel partner${attributionDoc.partners?.length > 1 ? 's' : ''}.`
+        : 'Direct sale (no channel partner).';
+      await Interaction.create({
+        lead: leadId,
+        user: req.user._id,
+        organization: req.user.organization,
+        type: 'Note',
+        content: `Sale created from this lead (Sale #${String(createdSale._id).slice(-6).toUpperCase()}). ${ipNote}`,
+      });
+    } catch (interactionErr) {
+      console.warn('[createSale] interaction log failed (non-fatal):', interactionErr.message);
+    }
+
+    // 9b. Notifications.
+    //   • Dev side: `sale_booked` to dev sales team — heads-up.
+    //   • CP side (only if attributionDoc): `cp_sale_booked` to the CP agent
+    //     + CP managers — this is the deal-of-the-year notification the CP
+    //     was never receiving before today.
+    try {
+      // Dev-side broadcast — keep it lightweight; only to users with the
+      // generic sales:read perm in the same dev org.
+      await notifyUsersWithPermission({
+        organizationId: req.user.organization,
+        permission: 'sales:read',
+        excludeUserIds: [req.user._id], // the booker doesn't need to ping themselves
+        type: 'sale_booked',
+        title: `New booking confirmed`,
+        message: `Sale of ₹${Number(createdSale.salePrice).toLocaleString('en-IN')} booked${attributionDoc ? ' via channel partner' : ''}.`,
+        actionUrl: `/sales/${createdSale._id}`,
+        relatedEntity: { type: 'Sale', id: createdSale._id },
+        priority: 'medium',
+        actor: req.user._id,
+      });
+    } catch (notifyErr) {
+      console.warn('[createSale] sale_booked notify failed (non-fatal):', notifyErr.message);
+    }
+
+    if (attributionDoc) {
+      try {
+        // Resolve the CP firm name(s) for a more helpful notification body.
+        const cpIds = (attributionDoc.partners || [])
+          .map((p) => p.channelPartner)
+          .filter(Boolean);
+        const cpDocs = cpIds.length
+          ? await ChannelPartner.find({ _id: { $in: cpIds } })
+              .select('firmName channelPartnerOrg')
+              .lean()
+          : [];
+        const firmLabel = cpDocs.length
+          ? cpDocs.map((c) => c.firmName).filter(Boolean).join(', ') || 'a channel partner'
+          : 'a channel partner';
+
+        // Primary recipient: the originating CP agent (User ref).
+        const primaryAgentUserId =
+          lead.channelPartnerAttribution?.partners?.[0]?.agentUser || null;
+
+        // Group all platform CP-orgs we should notify (the partner orgs, not the dev's org).
+        const cpOrgIds = cpDocs
+          .map((c) => c.channelPartnerOrg)
+          .filter(Boolean);
+
+        const baseProps = {
+          type: 'cp_sale_booked',
+          title: 'Your prospect was booked',
+          message:
+            `A booking of ₹${Number(createdSale.salePrice).toLocaleString('en-IN')} was confirmed ` +
+            `with ${firmLabel}. Commission is now accruing on this sale.`,
+          actionUrl: `/partner/prospects`,
+          relatedEntity: { type: 'Sale', id: createdSale._id },
+          priority: 'high',
+          actor: req.user._id,
+        };
+
+        if (primaryAgentUserId && cpOrgIds[0]) {
+          await createNotification({
+            organization: cpOrgIds[0],
+            recipient: primaryAgentUserId,
+            ...baseProps,
+          });
+        }
+        for (const cpOrgId of cpOrgIds) {
+          await notifyUsersWithPermission({
+            organizationId: cpOrgId,
+            permission: 'cp_commission_invoices:manage',
+            excludeUserIds: primaryAgentUserId ? [primaryAgentUserId] : [],
+            organization: cpOrgId,
+            ...baseProps,
+          });
+        }
+      } catch (notifyErr) {
+        console.warn('[createSale] cp_sale_booked notify failed (non-fatal):', notifyErr.message);
+      }
+    }
 
     // 10. Return populated sale data as expected by frontend
     const populatedSale = await Sale.findById(createdSale._id)
