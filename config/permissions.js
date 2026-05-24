@@ -171,6 +171,13 @@ export const PERMISSIONS = {
     LEADERSHIP: 'dashboard:leadership',
   },
 
+  // ─── COMMISSION INVOICES (dev side, SP5+) ─────────────
+  COMMISSION_INVOICES: {
+    VIEW:    'commission_invoices:view',     // see invoices CPs have raised
+    APPROVE: 'commission_invoices:approve',  // approve/reject submitted invoices
+    PAY:     'commission_invoices:pay',      // record payment against approved
+  },
+
   // ─── USERS ─────────────────────────────────────────────
   USERS: {
     VIEW: 'users:view',
@@ -299,6 +306,12 @@ export const CP_PERMISSIONS = {
   ANALYTICS: {
     VIEW:      'cp_analytics:view',
     VIEW_TEAM: 'cp_analytics:view_team',
+  },
+  // SP5+ — CP-side commission invoice management. Manage = create, edit,
+  // submit, cancel. CP Agent is auto-scoped to their own prospects' invoices.
+  COMMISSION_INVOICES: {
+    VIEW:   'cp_commission_invoices:view',
+    MANAGE: 'cp_commission_invoices:manage',
   },
 };
 

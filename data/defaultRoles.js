@@ -55,6 +55,8 @@ const DEFAULT_ROLES = [
       'commissions:view', 'commissions:create', 'commissions:manage_structures',
       'commissions:approve', 'commissions:reject', 'commissions:hold',
       'commissions:record_payment', 'commissions:reports', 'commissions:recalculate',
+      // SP5+ — CP commission invoices (Project Director)
+      'commission_invoices:view', 'commission_invoices:approve', 'commission_invoices:pay',
       // Documents — full
       'documents:view', 'documents:upload', 'documents:update', 'documents:delete',
       'documents:manage_categories', 'documents:approve',
@@ -125,6 +127,8 @@ const DEFAULT_ROLES = [
       'commissions:view', 'commissions:create', 'commissions:manage_structures',
       'commissions:approve', 'commissions:reject', 'commissions:hold',
       'commissions:reports', 'commissions:recalculate',
+      // SP5+ — CP commission invoices (Sales Head)
+      'commission_invoices:view', 'commission_invoices:approve', 'commission_invoices:pay',
       'documents:view', 'documents:upload', 'documents:update', 'documents:delete',
       'documents:manage_categories', 'documents:approve',
       'documents:version_control', 'documents:share',

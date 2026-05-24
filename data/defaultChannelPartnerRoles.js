@@ -34,6 +34,9 @@ const CP_DEFAULT_ROLES = [
       // SP5 — analytics view + team-wide agent breakdown
       CP_PERMISSIONS.ANALYTICS.VIEW,
       CP_PERMISSIONS.ANALYTICS.VIEW_TEAM,
+      // SP5+ — commission invoices (full manage for Manager)
+      CP_PERMISSIONS.COMMISSION_INVOICES.VIEW,
+      CP_PERMISSIONS.COMMISSION_INVOICES.MANAGE,
     ],
   },
   {
@@ -51,6 +54,9 @@ const CP_DEFAULT_ROLES = [
       CP_PERMISSIONS.PROSPECTS.MANAGE,
       // SP5 — analytics view only (auto-scoped to own data); no view_team
       CP_PERMISSIONS.ANALYTICS.VIEW,
+      // SP5+ — agents can create invoices for their own prospects
+      CP_PERMISSIONS.COMMISSION_INVOICES.VIEW,
+      CP_PERMISSIONS.COMMISSION_INVOICES.MANAGE,
     ],
   },
 ];
