@@ -16,9 +16,9 @@ import mongoose from 'mongoose';
  */
 export function parseRange(rangeParam) {
   const now = new Date();
-  const range = (rangeParam || '30d').toString().toLowerCase();
-  let from;
-  switch (range) {
+  const requested = (rangeParam || '30d').toString().toLowerCase();
+  let from, range = requested;
+  switch (requested) {
     case '7d':  from = new Date(now.getTime() - 7  * 24 * 60 * 60 * 1000); break;
     case '30d': from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
     case '90d': from = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); break;
@@ -26,7 +26,11 @@ export function parseRange(rangeParam) {
     case '12m': from = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
     case 'ytd': from = new Date(now.getFullYear(), 0, 1); break;
     case 'all': from = null; break;
-    default:    from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    default:
+      // Unknown range → silently fall back to 30d (and normalise the
+      // returned range string so the client sees the actual window used).
+      from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      range = '30d';
   }
   return { from, to: now, range };
 }

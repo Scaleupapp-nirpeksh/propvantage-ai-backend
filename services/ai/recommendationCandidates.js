@@ -265,8 +265,7 @@ export function collect(surface, factsPack) {
   return candidates.slice(0, topN);
 }
 
-export default {
-  collect,
-  // Export individual rules for unit testing.
-  rules: RULES,
-};
+// Export individual rules for unit testing.
+export const rules = RULES;
+
+export default { collect, rules: RULES };
