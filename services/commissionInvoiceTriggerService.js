@@ -102,8 +102,16 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
 
     // Atomically mark Sale.commissionInvoiceTriggered so concurrent payment
     // hooks don't both fire. Use findOneAndUpdate to make it race-safe.
+    //
+    // 2026-05-24 lifecycle-repair (live-test fix): the previous filter used
+    // `{ $exists: false }` which never matched on newly-created Sales because
+    // the schema defaults commissionInvoiceTriggered.at = null (so the field
+    // exists with a null value). MongoDB's null-equality matches both
+    // null-valued AND missing fields, so `: null` is the correct race-safe
+    // predicate. The if-guard at line 63 already prevents the obvious
+    // re-fire; this query just makes it atomic against concurrent payments.
     const updated = await Sale.findOneAndUpdate(
-      { _id: sale._id, 'commissionInvoiceTriggered.at': { $exists: false } },
+      { _id: sale._id, 'commissionInvoiceTriggered.at': null },
       {
         $set: {
           commissionInvoiceTriggered: {
@@ -115,7 +123,7 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
       },
       { new: true }
     ).select('commissionInvoiceTriggered').lean();
-    if (!updated || !updated.commissionInvoiceTriggered) return; // lost race
+    if (!updated || !updated.commissionInvoiceTriggered?.at) return; // lost race
 
     const cpOrgId = cpShadow.channelPartnerOrg;
 

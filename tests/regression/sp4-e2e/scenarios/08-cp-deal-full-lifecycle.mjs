@@ -97,6 +97,13 @@ export default async function scenarioEight(ctx, log) {
     leadAfterAccept?.channelPartnerAttribution?.status === 'approved',
     { attributionStatus: leadAfterAccept?.channelPartnerAttribution?.status });
 
+  // decideLeadRegistration schedules a lead-scoring background job with a
+  // 1500ms delay that mutates the lead. We need to wait past that window so
+  // the dev's createSale transaction doesn't race with the scorer (write
+  // conflict). 2500ms gives a comfortable margin.
+  note(log, 'Waiting 2.5s for background lead-scoring job to settle…');
+  await new Promise((r) => setTimeout(r, 2500));
+
   // ─── B1 CANARY ────────────────────────────────────────────────────────
   step(log, '*** B1 CANARY *** Dev creates Sale WITHOUT channelPartnerAttribution in body');
   // Build a minimal cost-sheet snapshot. The unit's currentPrice or basePrice
