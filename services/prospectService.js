@@ -17,6 +17,7 @@ import ChannelPartner from '../models/channelPartnerModel.js';
 import { reconcileChannelPartnerRecord } from './partnershipService.js';
 import { createNotification, notifyUsersWithPermission } from './notificationService.js';
 import { addLeadScoreUpdateJob } from './backgroundJobService.js';
+import { updateProspectScore } from './prospectScoringService.js';
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
 
@@ -179,8 +180,13 @@ export async function createProspect(data, user) {
 
   try {
     const p = await Prospect.create(safe);
+    // SP4+ — compute initial score so the CP sees a meaningful number
+    // immediately. Inline (not queued) so the returned doc carries it.
+    await updateProspectScore(p._id);
     await p.populate(POPULATE_DETAIL);
-    return p.toObject();
+    // Re-read to pick up the score the update just wrote.
+    const fresh = await Prospect.findById(p._id).populate(POPULATE_DETAIL).lean();
+    return fresh || p.toObject();
   } catch (err) {
     if (err?.name === 'ValidationError') throw httpError(400, err.message);
     throw err;
@@ -232,8 +238,12 @@ export async function updateProspect(id, data, user) {
   Object.assign(p, safe);
   try {
     await p.save();
-    await p.populate(POPULATE_DETAIL);
-    return p.toObject();
+    // SP4+ — any field that scoring reads (budget, requirements.timeline,
+    // activities) might have changed; rescore. Inline so the returned doc
+    // reflects the new score.
+    await updateProspectScore(p._id);
+    const fresh = await Prospect.findById(p._id).populate(POPULATE_DETAIL).lean();
+    return fresh || p.toObject();
   } catch (err) {
     if (err?.name === 'ValidationError') throw httpError(400, err.message);
     throw err;
@@ -274,7 +284,10 @@ export async function addActivity(id, activityData, user) {
     };
   }
   await p.save();
-  return p.toObject();
+  // SP4+ — engagement signal just changed; rescore.
+  await updateProspectScore(p._id);
+  const fresh = await Prospect.findById(p._id).lean();
+  return fresh || p.toObject();
 }
 
 // ─── Commission tracking (SP4 Phase D) ─────────────────────────────────────
@@ -504,6 +517,17 @@ export async function pushProspectToDeveloper(id, user) {
     // SP4+ — requirements now share a shape; field-for-field copy.
     requirements: mappedRequirements,
     notes: composedNotes,
+    // SP4+ — research sources captured on the CP form (LinkedIn / company
+    // website) seed the dev-side enrichment pipeline. Lead.enrichment.sources
+    // is the same shape as Prospect.enrichment.sources; direct copy.
+    enrichment: p.enrichment?.sources
+      ? {
+          sources: {
+            linkedinUrl: p.enrichment.sources.linkedinUrl || '',
+            companyWebsite: p.enrichment.sources.companyWebsite || '',
+          },
+        }
+      : undefined,
     sourceProspect: p._id,
     channelPartnerAttribution: {
       viaChannelPartner: true,

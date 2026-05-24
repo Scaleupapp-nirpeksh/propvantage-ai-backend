@@ -171,6 +171,41 @@ const prospectSchema = new mongoose.Schema(
     },
     notes: { type: String, trim: true, default: '' },
 
+    // SP4+ — CP-visible prospect score (mirrors Lead.score on dev side).
+    // Computed by services/prospectScoringService using the inputs the CP
+    // has (budget, requirements.timeline, recency, activity count). Plus a
+    // mirror of the dev-side score once the prospect is pushed/accepted, so
+    // the CP can see how the developer is scoring the lead.
+    score: { type: Number, min: 0, max: 100, default: 0 },
+    scoreGrade: {
+      type: String,
+      enum: ['Hot', 'Warm', 'Cold', 'Very Cold'],
+      default: 'Cold',
+    },
+    scoreBreakdown: {
+      budgetAlignment: { rawScore: Number, weightedScore: Number, reasoning: String },
+      engagementLevel: { rawScore: Number, weightedScore: Number, reasoning: String },
+      timelineUrgency: { rawScore: Number, weightedScore: Number, reasoning: String },
+      recencyFactor: { rawScore: Number, weightedScore: Number, reasoning: String },
+    },
+    lastScoreUpdate: { type: Date, default: null },
+    // Mirrored from the on-platform Lead post-push so the CP can see the
+    // developer's view of the same person.
+    devScore: { type: Number, min: 0, max: 100, default: null },
+    devScoreGrade: { type: String, default: null },
+    devScoreUpdatedAt: { type: Date, default: null },
+
+    // SP4+ — research-source URLs the CP can supply at intake; on push
+    // these get copied into Lead.enrichment.sources.* so the dev-side AI
+    // enrichment pipeline has more to work with. Same shape as the Lead
+    // side so mapping is one-to-one.
+    enrichment: {
+      sources: {
+        linkedinUrl: { type: String, trim: true, default: '' },
+        companyWebsite: { type: String, trim: true, default: '' },
+      },
+    },
+
     activities: { type: [activitySchema], default: [] },
 
     followUp: {

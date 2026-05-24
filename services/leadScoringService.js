@@ -642,9 +642,21 @@ const updateLeadScore = async (leadId, config = null) => {
     if (lead.schema.paths.confidence) lead.confidence = scoreResult.confidence;
     
     await lead.save();
-    
+
     console.log(`✅ Score updated: ${previousScore} → ${scoreResult.totalScore} (${scoreResult.grade})`);
-    
+
+    // SP4+ — if this Lead came from a CP-side Prospect, mirror the dev score
+    // back onto that Prospect so the CP can see the developer's view.
+    // Best-effort; non-fatal.
+    if (lead.sourceProspect) {
+      try {
+        const { mirrorLeadScoreToProspect } = await import('./prospectScoringService.js');
+        await mirrorLeadScoreToProspect(lead.sourceProspect, scoreResult.totalScore, scoreResult.grade);
+      } catch (mirrorErr) {
+        console.warn('[leadScoring] mirror to prospect failed (non-fatal):', mirrorErr.message);
+      }
+    }
+
     return {
       leadId,
       previousScore,
