@@ -24,6 +24,7 @@ import ChannelPartner from '../models/channelPartnerModel.js';
 import Partnership from '../models/partnershipModel.js';
 import Prospect from '../models/prospectModel.js';
 import { createNotification, notifyUsersWithPermission } from './notificationService.js';
+import { autoCreateDraftForSale } from './commissionInvoiceService.js';
 
 const DEFAULT_TRIGGER_PCT = 0.20;
 
@@ -116,17 +117,51 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
     ).select('commissionInvoiceTriggered').lean();
     if (!updated || !updated.commissionInvoiceTriggered) return; // lost race
 
-    // Notify the CP side: agent (direct) + CP leadership (broadcast minus agent).
     const cpOrgId = cpShadow.channelPartnerOrg;
+
+    // 2026-05-24 lifecycle-repair (Phase 3.3): auto-create the draft
+    // CommissionInvoice for the CP. Previously the trigger only fired a
+    // notification asking the CP to manually create the draft — but the
+    // user's expectation (per the original product brief) is that the
+    // invoice is auto-generated at 20%. The CP can then edit + submit.
+    //
+    // Best-effort: a failure here doesn't block the notification.
+    let autoDraftInvoiceId = null;
+    try {
+      const result = await autoCreateDraftForSale({
+        saleId: sale._id,
+        cpOrgId,
+      });
+      autoDraftInvoiceId = result?.invoice?._id || null;
+      if (result?.created) {
+        console.log(
+          `[commissionInvoiceTrigger] auto-draft created invoice=${autoDraftInvoiceId} for sale=${sale._id} cpOrg=${cpOrgId}`
+        );
+      } else if (result?.invoice?._id) {
+        console.log(
+          `[commissionInvoiceTrigger] open invoice already exists ${autoDraftInvoiceId} for sale=${sale._id} cpOrg=${cpOrgId}`
+        );
+      }
+    } catch (draftErr) {
+      console.warn('[commissionInvoiceTrigger] auto-draft failed (non-fatal):', draftErr.message);
+    }
+
+    // Notify the CP side: agent (direct) + CP leadership (broadcast minus agent).
     const baseCpProps = {
       organization: cpOrgId,
       type: 'commission_invoice_ready',
-      title: 'You can now generate your commission invoice',
-      message:
-        `Your customer's payments on the booking with ${cpShadow.firmName || 'the developer'} ` +
-        `have crossed ${Math.round(triggerPct * 100)}%. You can now generate a commission invoice.`,
+      title: autoDraftInvoiceId
+        ? 'Your commission invoice draft is ready'
+        : 'You can now generate your commission invoice',
+      message: autoDraftInvoiceId
+        ? `Your customer's payments on the booking with ${cpShadow.firmName || 'the developer'} ` +
+          `have crossed ${Math.round(triggerPct * 100)}%. A draft invoice has been auto-created — review and submit when ready.`
+        : `Your customer's payments on the booking with ${cpShadow.firmName || 'the developer'} ` +
+          `have crossed ${Math.round(triggerPct * 100)}%. You can now generate a commission invoice.`,
       actionUrl: '/partner/prospects',
-      relatedEntity: { type: 'Sale', id: sale._id },
+      relatedEntity: autoDraftInvoiceId
+        ? { type: 'CommissionInvoice', id: autoDraftInvoiceId }
+        : { type: 'Sale', id: sale._id },
       priority: 'high',
       actor: actorUserId || undefined,
     };
@@ -141,6 +176,9 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
     });
 
     // Notify the developer side (heads-up, lower priority).
+    // `commission_invoice_due` was added to the notification enum on
+    // 2026-05-24 (Phase 1); the previous try/catch was a workaround for the
+    // missing enum value. Generic try/catch retained as a safety net only.
     try {
       await notifyUsersWithPermission({
         organizationId: sale.organization,
@@ -148,16 +186,18 @@ export async function checkAndFireTrigger(paymentPlanId, actorUserId = null) {
         type: 'commission_invoice_due',
         title: 'Commission invoice incoming',
         message: `Payments on a CP-attributed sale have crossed ${Math.round(triggerPct * 100)}%; ` +
-                 `expect a commission invoice from the channel partner shortly.`,
+                 (autoDraftInvoiceId
+                   ? `a draft invoice has been auto-created on the CP side.`
+                   : `expect a commission invoice from the channel partner shortly.`),
         actionUrl: `/leads/${lead._id}`,
-        relatedEntity: { type: 'Sale', id: sale._id },
+        relatedEntity: autoDraftInvoiceId
+          ? { type: 'CommissionInvoice', id: autoDraftInvoiceId }
+          : { type: 'Sale', id: sale._id },
         priority: 'low',
         actor: actorUserId || undefined,
       });
-    } catch {
-      // commission_invoice_due not in enum yet — non-fatal. We added the 5 main
-      // types in notificationModel; this 6th is optional and we'll skip it
-      // gracefully so the CP-side notification still lands.
+    } catch (notifyErr) {
+      console.warn('[commissionInvoiceTrigger] dev-side commission_invoice_due notify failed (non-fatal):', notifyErr.message);
     }
 
     console.log(

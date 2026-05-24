@@ -11,6 +11,7 @@ import CommissionRecord from '../models/commissionRecordModel.js';
 import Sale from '../models/salesModel.js';
 import Lead from '../models/leadModel.js';
 import { syncCommissionForSale } from '../services/commissionService.js';
+import { checkAndFireTrigger } from '../services/commissionInvoiceTriggerService.js';
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -400,6 +401,21 @@ const editSaleAttribution = asyncHandler(async (req, res) => {
   }
 
   const prev = sale.channelPartnerAttribution || {};
+  // 2026-05-24 lifecycle-repair (Phase 3.5): detect whether the CP set changed
+  // so we can reset commissionInvoiceTriggered and re-evaluate the 20% trigger.
+  // Edge case: a Sale that was direct-then-tagged should still trigger; a Sale
+  // that was tagged-then-retagged-to-a-different-CP should re-trigger for the
+  // new CP.
+  const prevCpIds = new Set(
+    (prev.partners || []).map((p) => String(p.channelPartner || ''))
+  );
+  const nextCpIds = new Set(
+    (Boolean(viaChannelPartner) ? list : []).map((p) => String(p.channelPartner || ''))
+  );
+  const cpSetChanged =
+    prevCpIds.size !== nextCpIds.size ||
+    [...nextCpIds].some((id) => !prevCpIds.has(id));
+
   sale.channelPartnerAttribution = {
     viaChannelPartner: Boolean(viaChannelPartner) && list.length > 0,
     partners: Boolean(viaChannelPartner) ? list : [],
@@ -411,9 +427,25 @@ const editSaleAttribution = asyncHandler(async (req, res) => {
       { by: req.user._id, action: 'attribution_edited', note: 'Booking CP attribution edited.' },
     ],
   };
+
+  // Phase 3.5: clear the trigger so it can re-fire for the new CP set.
+  if (cpSetChanged && sale.commissionInvoiceTriggered?.at) {
+    sale.commissionInvoiceTriggered = { at: null, paidPct: null, cpOrg: null };
+  }
+
   await sale.save();
 
   await syncCommissionForSale(sale._id, req.user._id);
+
+  // Phase 3.5: if the CP set changed and the sale has a payment plan, re-evaluate
+  // the trigger immediately — the customer may already be past 20%.
+  if (cpSetChanged && sale.paymentPlan) {
+    try {
+      await checkAndFireTrigger(sale.paymentPlan, req.user._id);
+    } catch (triggerErr) {
+      console.warn('[editSaleAttribution] re-trigger failed (non-fatal):', triggerErr.message);
+    }
+  }
 
   res.json({ success: true, data: sale.channelPartnerAttribution });
 });
