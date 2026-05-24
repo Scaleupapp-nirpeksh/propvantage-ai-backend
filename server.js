@@ -67,6 +67,9 @@ import devAnalyticsRoutes from './routes/devAnalyticsRoutes.js';
 import cpInsightRoutes from './routes/cpInsightRoutes.js';
 import cpAiUsageRoutes from './routes/cpAiUsageRoutes.js';
 import cpCopilotRoutes from './routes/cpCopilotRoutes.js';
+// SP5+ — commission invoices (CP→Dev billing)
+import cpCommissionInvoiceRoutes from './routes/cpCommissionInvoiceRoutes.js';
+import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 
@@ -200,6 +203,9 @@ app.use('/api/cp/insights', cpInsightRoutes);
 app.use('/api/cp/ai', cpAiUsageRoutes);
 // SP5 — CP-side Copilot chat (Phase 9). Also rate-limited.
 app.use('/api/cp/copilot', cpCopilotRoutes);
+// SP5+ — commission invoices: CP-side issues, dev-side approves/pays.
+app.use('/api/cp/commission-invoices', cpCommissionInvoiceRoutes);
+app.use('/api/commission-invoices',    devCommissionInvoiceRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
