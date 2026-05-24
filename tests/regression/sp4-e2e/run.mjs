@@ -22,6 +22,7 @@ import scenario04 from './scenarios/04-dev-creates-lead-assigned-to-cp.mjs';
 import scenario05 from './scenarios/05-dev-invites-offplatform-cp.mjs';
 import scenario06 from './scenarios/06-both-on-platform-not-connected.mjs';
 import scenario07 from './scenarios/07-foolproof-edge-cases.mjs';
+import scenario08 from './scenarios/08-cp-deal-full-lifecycle.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +34,7 @@ const SCENARIOS = [
   { id: 5, title: 'Dev invites off-platform CP → dev manages → CP claims → tagging',     fn: scenario05 },
   { id: 6, title: 'Both on platform, not connected (invite + request directions)',       fn: scenario06 },
   { id: 7, title: 'Foolproof: scope leaks, withdraw, re-push, duplicate match, gates',   fn: scenario07 },
+  { id: 8, title: 'Lifecycle-repair canary: prospect → Sale → 20% → invoice → paid → reconciled', fn: scenario08 },
 ];
 
 const cliIds = process.argv.slice(2).map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n));
