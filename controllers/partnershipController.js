@@ -354,6 +354,86 @@ export const listPartnerships = asyncHandler(async (req, res) => {
     .sort({ updatedAt: -1 })
     .lean();
 
+  // SP5+ — for active partnerships viewed by a developer, attach a small
+  // `recentActivity` block (leads6m / bookings6m) so the UI can flag
+  // non-performing CPs without a second round-trip. Cheap aggregation:
+  // one Lead.aggregate batched by ChannelPartner shadow id.
+  if (!isCp && partnerships.length > 0) {
+    try {
+      const ChannelPartner = (await import('../models/channelPartnerModel.js')).default;
+      const Lead = (await import('../models/leadModel.js')).default;
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      // Map active partnerships → their dev-side ChannelPartner shadow ids.
+      const activePartnerships = partnerships.filter((p) => p.status === 'active');
+      const cpOrgIds = activePartnerships
+        .map((p) => p.channelPartnerOrg?._id || p.channelPartnerOrg)
+        .filter(Boolean);
+
+      const shadows = cpOrgIds.length
+        ? await ChannelPartner.find({
+            organization: callerOrg._id,
+            channelPartnerOrg: { $in: cpOrgIds },
+          }).select('_id channelPartnerOrg').lean()
+        : [];
+
+      // ChannelPartner shadow → CP org id.
+      const shadowToCpOrg = new Map(shadows.map((s) => [String(s._id), String(s.channelPartnerOrg)]));
+      const shadowIds = shadows.map((s) => s._id);
+
+      const activityAgg = shadowIds.length
+        ? await Lead.aggregate([
+            {
+              $match: {
+                organization: callerOrg._id,
+                'channelPartnerAttribution.partners.channelPartner': { $in: shadowIds },
+                createdAt: { $gte: sixMonthsAgo },
+              },
+            },
+            { $unwind: '$channelPartnerAttribution.partners' },
+            {
+              $match: {
+                'channelPartnerAttribution.partners.channelPartner': { $in: shadowIds },
+              },
+            },
+            {
+              $group: {
+                _id: '$channelPartnerAttribution.partners.channelPartner',
+                leads6m: { $sum: 1 },
+                bookings6m: { $sum: { $cond: [{ $eq: ['$status', 'Booked'] }, 1, 0] } },
+              },
+            },
+          ])
+        : [];
+
+      // shadow id → { leads6m, bookings6m }
+      const activityByShadow = new Map(
+        activityAgg.map((a) => [String(a._id), { leads6m: a.leads6m, bookings6m: a.bookings6m }])
+      );
+      // cpOrg id → activity (joining shadow → cpOrg)
+      const activityByCpOrg = new Map();
+      for (const [shadowId, act] of activityByShadow.entries()) {
+        const cpOrgId = shadowToCpOrg.get(shadowId);
+        if (cpOrgId) activityByCpOrg.set(cpOrgId, act);
+      }
+
+      // Decorate each active partnership doc.
+      for (const p of partnerships) {
+        if (p.status !== 'active') continue;
+        const cpOrgId = String(p.channelPartnerOrg?._id || p.channelPartnerOrg);
+        const act = activityByCpOrg.get(cpOrgId) || { leads6m: 0, bookings6m: 0 };
+        const flags = [];
+        if (act.leads6m === 0) flags.push('no_leads_6m');
+        else if (act.bookings6m === 0) flags.push('no_bookings_6m');
+        p.recentActivity = { ...act, flags };
+      }
+    } catch (err) {
+      // Non-fatal — recentActivity is decorative; main list still ships.
+      console.warn('[listPartnerships] recentActivity decoration failed:', err.message);
+    }
+  }
+
   res.json({ success: true, data: partnerships });
 });
 
