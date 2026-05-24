@@ -431,7 +431,22 @@ export async function pushProspectToDeveloper(id, user) {
     );
   }
   if (p.pushedToLead) {
-    throw httpError(409, 'This prospect has already been pushed to the developer');
+    // 2026-05-24 lifecycle-repair (Phase 5.6): allow re-push when the previous
+    // push was rejected by the developer (Lead.status='Lost'). Without this,
+    // a CP whose lead was rejected has no recovery path — they'd have to
+    // create a brand-new prospect to retry, losing all activity history.
+    const previousLead = await Lead.findById(p.pushedToLead).select('status').lean();
+    if (!previousLead || previousLead.status !== 'Lost') {
+      throw httpError(409, 'This prospect has already been pushed to the developer');
+    }
+    // Previous push was rejected — proceed with re-push. Append a system
+    // activity so the audit trail captures the retry.
+    p.activities.push({
+      type: 'system',
+      note: 'Re-pushing to developer (previous push was rejected)',
+      at: new Date(),
+      by: user._id,
+    });
   }
   if (!p.developerContext?.partnership) {
     throw httpError(409, 'Prospect has no partnership reference');
@@ -502,12 +517,11 @@ export async function pushProspectToDeveloper(id, user) {
     lastName: p.lastName,
     email: p.email,
     phone: p.phone,
-    // SP4 — Lead.source enum doesn't include 'Channel Partner'; we use
-    // 'Referral' as the closest non-breaking value. The CP attribution is
-    // captured separately in channelPartnerAttribution.* below, which is
-    // the authoritative source-of-truth for "this lead came from a CP."
-    // (Surfaced by E2E QA run as Bug A.)
-    source: 'Referral',
+    // 2026-05-24 lifecycle-repair (B10): Lead.source enum now includes
+    // 'Channel Partner' (added in Phase 1). CP-pushed leads no longer
+    // pollute the 'Referral' source bucket, which the dev's analytics
+    // dashboards filter on.
+    source: 'Channel Partner',
     status: 'pending',
     // SP4 push-bug fix: priority defaults to 'Medium' on Prospect; both
     // enums share Low/Medium/High so this is safe.

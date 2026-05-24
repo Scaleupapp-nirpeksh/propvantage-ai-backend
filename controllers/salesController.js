@@ -808,6 +808,11 @@ const cancelSale = asyncHandler(async (req, res) => {
       });
     }
 
+    // Capture CP attribution before sale.status flips — needed for downstream
+    // commission cancellation + CP notification.
+    const wasCpAttributed = sale.channelPartnerAttribution?.viaChannelPartner === true;
+    const cpPartners = (sale.channelPartnerAttribution?.partners || []).slice();
+
     // Update sale status
     sale.status = 'cancelled';
     sale.cancellationReason = reason || 'No reason provided';
@@ -822,15 +827,110 @@ const cancelSale = asyncHandler(async (req, res) => {
       { session }
     );
 
-    // Update lead status back to active
-    await Lead.findByIdAndUpdate(
-      sale.lead,
-      { status: 'Active' },
-      { session }
-    );
+    // 2026-05-24 lifecycle-repair (B14): use .save() with a valid enum value
+    // instead of findByIdAndUpdate which bypasses Mongoose validators.
+    // 'Active' was never in the Lead status enum — using 'Negotiating' to put
+    // the lead back in active pipeline so the dev sales team can re-engage.
+    const lead = await Lead.findById(sale.lead).session(session);
+    if (lead) {
+      lead.status = 'Negotiating';
+      await lead.save({ session });
+    }
 
     await session.commitTransaction();
     session.endSession();
+
+    // 2026-05-24 lifecycle-repair (B9): cancel commission state for this sale.
+    // Best-effort post-transaction — we don't want to roll back the sale
+    // cancellation if commission cleanup fails. Each step in its own try/catch.
+
+    if (wasCpAttributed) {
+      // (a) Cancel any open CommissionInvoice for this sale. Drafts/submitted/
+      //     approved invoices should not survive a cancelled sale.
+      try {
+        const { default: CommissionInvoice } = await import('../models/commissionInvoiceModel.js');
+        const openInvoices = await CommissionInvoice.find({
+          sale: sale._id,
+          status: { $in: ['draft', 'submitted', 'approved'] },
+        });
+        for (const inv of openInvoices) {
+          inv.status = 'cancelled';
+          inv.history.push({
+            at: new Date(),
+            by: req.user._id,
+            byOrg: req.user.organization,
+            action: 'cancelled',
+            note: 'Cancelled because the underlying sale was cancelled.',
+          });
+          await inv.save();
+        }
+      } catch (err) {
+        console.warn('[cancelSale] CommissionInvoice cleanup failed (non-fatal):', err.message);
+      }
+
+      // (b) Cancel any CommissionRecord(s) for this sale with no paid payouts.
+      //     If any payout is paid, leave the record alone (manual reconciliation
+      //     needed) but append a history entry flagging it.
+      try {
+        const { default: CommissionRecord } = await import('../models/commissionRecordModel.js');
+        const records = await CommissionRecord.find({ sale: sale._id });
+        for (const rec of records) {
+          const hasPaid = (rec.payouts || []).some((p) => p.status === 'paid');
+          if (hasPaid) {
+            rec.history.push({
+              by: req.user._id,
+              action: 'sale_cancelled_paid_payout_warning',
+              note: 'Underlying sale was cancelled but a payout was already paid — needs manual reconciliation.',
+            });
+          } else if (rec.status !== 'cancelled') {
+            rec.status = 'cancelled';
+            rec.history.push({
+              by: req.user._id,
+              action: 'cancelled',
+              note: 'Underlying sale was cancelled.',
+            });
+          }
+          await rec.save();
+        }
+      } catch (err) {
+        console.warn('[cancelSale] CommissionRecord cleanup failed (non-fatal):', err.message);
+      }
+
+      // (c) Notify CP side that the deal was cancelled.
+      try {
+        const cpRecordId = cpPartners[0]?.channelPartner;
+        const cpShadow = cpRecordId
+          ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg firmName').lean()
+          : null;
+        const cpOrgId = cpShadow?.channelPartnerOrg;
+        const agentUserId = cpPartners[0]?.agentUser;
+        if (cpOrgId) {
+          const baseProps = {
+            organization: cpOrgId,
+            type: 'sale_cancelled',
+            title: 'Booking cancelled',
+            message: `A CP-attributed sale of ₹${Number(sale.salePrice).toLocaleString('en-IN')} ` +
+                     `was cancelled by the developer. ${reason ? `Reason: ${reason}.` : ''} ` +
+                     `Any open commission invoices have been cancelled.`,
+            actionUrl: '/partner/prospects',
+            relatedEntity: { type: 'Sale', id: sale._id },
+            priority: 'high',
+            actor: req.user._id,
+          };
+          if (agentUserId) {
+            await createNotification({ ...baseProps, recipient: agentUserId });
+          }
+          await notifyUsersWithPermission({
+            organizationId: cpOrgId,
+            permission: 'cp_commission_invoices:manage',
+            excludeUserIds: agentUserId ? [agentUserId] : [],
+            ...baseProps,
+          });
+        }
+      } catch (err) {
+        console.warn('[cancelSale] sale_cancelled notify failed (non-fatal):', err.message);
+      }
+    }
 
     res.json({
       success: true,

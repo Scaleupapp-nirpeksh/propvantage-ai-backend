@@ -33,9 +33,18 @@ const resolveRule = async (CommissionRule, organizationId, projectId) => {
 };
 
 // Compute gross/tds/net + payout breakdown for one CP's share.
-const computeAmounts = (rule, sale, sharePct) => {
+//
+// 2026-05-24 lifecycle-repair (B4): when no CommissionRule matches, fall back
+// to the Prospect.commissionAgreement on the upstream sourceProspect. This
+// lets a CP-side commission agreement (e.g., "3% of sale price") still drive
+// the dev-side CommissionRecord amount in the absence of a formal dev-side
+// rule. The fallback ledger is opinionated rather than silent-zero.
+const computeAmounts = (rule, sale, sharePct, fallbackAgreement = null) => {
   const share = (Number(sharePct) || 0) / 100;
   let ruleAmount = 0;
+  let tdsPercent = 0;
+  let amountSource = null;
+
   if (rule) {
     if (rule.rate?.method === 'flat') {
       ruleAmount = rule.rate.flatAmount || 0;
@@ -46,9 +55,20 @@ const computeAmounts = (rule, sale, sharePct) => {
           : sale.salePrice || 0;
       ruleAmount = (base * (rule.rate?.percentage || 0)) / 100;
     }
+    tdsPercent = rule?.tdsPercent || 0;
+    amountSource = 'rule';
+  } else if (fallbackAgreement && fallbackAgreement.type && fallbackAgreement.value != null) {
+    // Phase 5.7: derive from Prospect.commissionAgreement.
+    if (fallbackAgreement.type === 'flat') {
+      ruleAmount = Number(fallbackAgreement.value) || 0;
+    } else if (fallbackAgreement.type === 'percentage') {
+      const base = sale.salePrice || 0;
+      ruleAmount = (base * (Number(fallbackAgreement.value) || 0)) / 100;
+    }
+    amountSource = 'prospect_agreement';
   }
+
   const grossAmount = Math.round(ruleAmount * share);
-  const tdsPercent = rule?.tdsPercent || 0;
   const tdsAmount = Math.round((grossAmount * tdsPercent) / 100);
   const netAmount = grossAmount - tdsAmount;
 
@@ -69,7 +89,7 @@ const computeAmounts = (rule, sale, sharePct) => {
   } else {
     payouts = [{ label: 'Full commission', amount: netAmount, trigger: 'on_booking', status: 'pending' }];
   }
-  return { grossAmount, tdsAmount, netAmount, payouts };
+  return { grossAmount, tdsAmount, netAmount, payouts, amountSource };
 };
 
 /**
@@ -116,6 +136,33 @@ const syncCommissionForSale = async (saleId, userId = null) => {
 
     const rule = await resolveRule(CommissionRule, sale.organization, sale.project);
 
+    // 2026-05-24 lifecycle-repair (B4): when no rule matches, pull the
+    // Prospect.commissionAgreement (from the upstream sourceProspect) as a
+    // fallback so the CommissionRecord isn't silently created at ₹0. This
+    // bridges the CP-side intent (commission agreed at prospect creation)
+    // to the dev-side accrual ledger in the absence of a formal rule.
+    let fallbackAgreement = null;
+    if (!rule) {
+      try {
+        const { default: Lead } = await import('../models/leadModel.js');
+        const { default: Prospect } = await import('../models/prospectModel.js');
+        const lead = sale.lead
+          ? await Lead.findById(sale.lead).select('sourceProspect').lean()
+          : null;
+        if (lead?.sourceProspect) {
+          const prospect = await Prospect.findById(lead.sourceProspect)
+            .select('commissionAgreement')
+            .lean();
+          if (prospect?.commissionAgreement?.type && prospect.commissionAgreement.value != null) {
+            fallbackAgreement = prospect.commissionAgreement;
+          }
+        }
+      } catch (lookupErr) {
+        // Non-fatal — proceed with rule=null and no fallback (legacy behaviour).
+        console.warn(`[Commission] fallback agreement lookup failed:`, lookupErr.message);
+      }
+    }
+
     for (const partner of partners) {
       const rec = existing.find(
         (r) => String(r.channelPartner) === String(partner.channelPartner)
@@ -132,9 +179,15 @@ const syncCommissionForSale = async (saleId, userId = null) => {
         continue;
       }
 
-      const { grossAmount, tdsAmount, netAmount, payouts } = computeAmounts(
-        rule, sale, partner.sharePct
+      const { grossAmount, tdsAmount, netAmount, payouts, amountSource } = computeAmounts(
+        rule, sale, partner.sharePct, fallbackAgreement
       );
+
+      const historyNote = rule
+        ? `Recalculated from rule "${rule.name}".`
+        : amountSource === 'prospect_agreement'
+          ? `No CommissionRule matched — derived from prospect commission agreement (${fallbackAgreement.type} ${fallbackAgreement.value}).`
+          : 'No applicable commission rule and no fallback agreement.';
 
       if (rec) {
         rec.agent = partner.agent || null;
@@ -146,8 +199,7 @@ const syncCommissionForSale = async (saleId, userId = null) => {
         rec.payouts = payouts;
         rec.status = 'cancelled' === rec.status ? 'accrued' : rec.status;
         rec.recomputeStatus();
-        rec.history.push({ by: userId, action: 'recalculated',
-          note: rule ? `Recalculated from rule "${rule.name}".` : 'No applicable commission rule.' });
+        rec.history.push({ by: userId, action: 'recalculated', note: historyNote });
         await rec.save();
       } else {
         try {
@@ -163,11 +215,34 @@ const syncCommissionForSale = async (saleId, userId = null) => {
             netAmount,
             payouts,
             status: 'accrued',
-            history: [
-              { by: userId, action: 'created',
-                note: rule ? `Generated from rule "${rule.name}".` : 'No applicable commission rule — recorded at zero.' },
-            ],
+            history: [{ by: userId, action: 'created', note: historyNote }],
           });
+
+          // Phase 5.7: if we had to create the record without either a rule
+          // OR a fallback agreement (grossAmount=0), notify the dev so they
+          // can configure a CommissionRule. The CP will keep waiting for the
+          // 20% trigger that, when it fires, will draft an invoice with
+          // baseAmount=0 — useless. Better to flag now.
+          if (!rule && !fallbackAgreement) {
+            try {
+              const { notifyUsersWithPermission } = await import('./notificationService.js');
+              await notifyUsersWithPermission({
+                organizationId: sale.organization,
+                permission: 'channel_partners:manage_commission_rules',
+                type: 'commission_rule_missing',
+                title: 'Commission rule missing for CP-attributed sale',
+                message:
+                  `A CP-attributed sale was booked but no CommissionRule matches this project and the ` +
+                  `prospect has no commission agreement. Configure a rule to enable commission tracking.`,
+                actionUrl: `/sales/${sale._id}`,
+                relatedEntity: { type: 'Sale', id: sale._id },
+                priority: 'high',
+                actor: userId,
+              });
+            } catch (notifyErr) {
+              console.warn('[Commission] commission_rule_missing notify failed (non-fatal):', notifyErr.message);
+            }
+          }
         } catch (createErr) {
           // A concurrent sync inserted this (sale, channelPartner) first —
           // the unique index rejects the duplicate; update that record instead.
