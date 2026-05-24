@@ -43,6 +43,8 @@ export function nextMidnightIst(now = new Date()) {
 
 /**
  * Increment the meter after a successful LLM call (or to bump rateLimitHits).
+ * Also bumps the in-process hourly counter for non-rate-limit kinds — only
+ * actual LLM-spending requests count against the hourly burst cap.
  *
  * @param {string|ObjectId} cpOrgId
  * @param {'scheduled'|'on_demand'|'copilot'|'rate_limit_hit'} kind
@@ -52,7 +54,6 @@ export function nextMidnightIst(now = new Date()) {
 export async function incrementMeter(cpOrgId, kind, tokenUsage) {
   const periodKey = currentDailyPeriodKey();
   const monthKey = currentMonthKey();
-  const inc = { lastUpdatedAt: new Date() };
   const incOps = {};
   if (kind === 'scheduled')      incOps.scheduledGenerations = 1;
   else if (kind === 'on_demand') incOps.onDemandGenerations  = 1;
@@ -61,15 +62,50 @@ export async function incrementMeter(cpOrgId, kind, tokenUsage) {
   if (tokenUsage?.total)   incOps.totalTokensUsed = tokenUsage.total;
   if (tokenUsage?.costUsd) incOps.totalCostUsd    = tokenUsage.costUsd;
 
+  // Bump the hourly burst counter for actual LLM spends. rate_limit_hit is
+  // bookkeeping only — don't have it add to the very limit it represents.
+  if (kind === 'scheduled' || kind === 'on_demand' || kind === 'copilot') {
+    bumpHourly(cpOrgId);
+  }
+
   return AIUsageMeter.findOneAndUpdate(
     { cpOrgId, periodKey },
-    { $setOnInsert: { monthKey, cpOrgId, periodKey }, $inc: incOps, $set: { lastUpdatedAt: inc.lastUpdatedAt } },
+    { $setOnInsert: { monthKey, cpOrgId, periodKey }, $inc: incOps, $set: { lastUpdatedAt: new Date() } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 }
 
+// ─── Hourly burst counter ─────────────────────────────────────────────────
+//
+// In-process Map. Single PM2 worker on EC2 → process-local is sufficient.
+// If the deploy moves to cluster mode, swap to Redis or a Mongo sentinel.
+// The middleware READS via getHourlyCount; only incrementMeter (above) and
+// direct callers (cron, debug) write via bumpHourly.
+
+const _hourly = new Map(); // key: `${cpOrgId}|${hourKey}` → count
+
+setInterval(() => {
+  const cur = currentHourKey();
+  for (const k of _hourly.keys()) {
+    if (k.split('|')[1] < cur) _hourly.delete(k);
+  }
+}, 30 * 60 * 1000).unref?.();
+
+export function bumpHourly(cpOrgId, hourKey = currentHourKey()) {
+  const key = `${cpOrgId}|${hourKey}`;
+  const cur = _hourly.get(key) || 0;
+  _hourly.set(key, cur + 1);
+  return cur + 1;
+}
+
+export function getHourlyCount(cpOrgId, hourKey = currentHourKey()) {
+  return _hourly.get(`${cpOrgId}|${hourKey}`) || 0;
+}
+
 export default {
   incrementMeter,
+  bumpHourly,
+  getHourlyCount,
   currentDailyPeriodKey,
   currentMonthKey,
   currentHourKey,

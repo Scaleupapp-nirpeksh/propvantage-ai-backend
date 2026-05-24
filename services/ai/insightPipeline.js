@@ -113,17 +113,24 @@ export async function getOrGenerateInsight(surface, cpOrgId, user, opts = {}) {
     throw err;
   }
 
+  // Every returned insight is annotated with _wasFreshGeneration:
+  //   true  → the LLM was actually invoked on this request (caller should
+  //            increment the meter)
+  //   false → served from cache OR skipped LLM (insufficient_data)
+  // This replaces the previous "age < 5s" heuristic which was fragile under
+  // clock drift / slow LLM responses.
+
   // 1. Cache-first.
   if (!opts.forceRegenerate) {
     const cached = await findFreshCache(cpOrgId, surface);
-    if (cached) return cached;
+    if (cached) return { ...cached, _wasFreshGeneration: false };
   }
 
   // 2. Acquire lock; if held, await peer's result.
   const lock = await acquireLock(cpOrgId, surface);
   if (!lock) {
     const peerResult = await waitForConcurrentResult(cpOrgId, surface);
-    if (peerResult) return peerResult;
+    if (peerResult) return { ...peerResult, _wasFreshGeneration: false };
     const err = new Error('Insight generation timed out waiting for concurrent caller');
     err.statusCode = 503;
     throw err;
@@ -133,23 +140,25 @@ export async function getOrGenerateInsight(surface, cpOrgId, user, opts = {}) {
     // 3. Re-check cache (peer may have finished between our miss and lock).
     if (!opts.forceRegenerate) {
       const cached2 = await findFreshCache(cpOrgId, surface);
-      if (cached2) return cached2;
+      if (cached2) return { ...cached2, _wasFreshGeneration: false };
     }
 
     // 4. Build facts pack.
     const factsPack = await buildPack(surface, cpOrgId, user, opts.range);
 
-    // 5. Insufficient data → write a fallback-confidence record with no narrative.
+    // 5. Insufficient data → write a fallback-confidence record with no
+    //    narrative. NO LLM call was made → _wasFreshGeneration: false.
     const source = opts.forceRegenerate ? 'on_demand' : 'scheduled';
     if (factsPack.hasInsufficientData) {
-      return (await persistInsight({
+      const insufficient = await persistInsight({
         cpOrgId,
         surface,
         factsPack,
         narration: { narrative: null, headlinedCandidates: [], confidence: 'fallback', citations: [] },
         validationResult: { valid: true, retries: 0, fellBackToTemplate: false, failureReason: 'insufficient_data' },
         source,
-      })).toObject();
+      });
+      return { ...insufficient.toObject(), _wasFreshGeneration: false };
     }
 
     // 6. Populate candidates.
@@ -196,7 +205,7 @@ export async function getOrGenerateInsight(surface, cpOrgId, user, opts = {}) {
       tokenUsage,
       source,
     });
-    return insight.toObject();
+    return { ...insight.toObject(), _wasFreshGeneration: true };
   } finally {
     await releaseLock(lock);
   }

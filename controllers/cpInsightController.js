@@ -24,14 +24,14 @@ function validateSurface(req, res) {
 }
 
 /**
- * Increment the meter for a freshly-generated insight. Cached returns
- * (where the insight was generated more than 5 seconds ago) do not
- * increment — only the original generation event costs money.
+ * Increment the meter only when the pipeline actually invoked the LLM.
+ * The pipeline tags every returned insight with _wasFreshGeneration so the
+ * controller doesn't have to guess from timestamps (the previous "age < 5s"
+ * heuristic was fragile under clock drift / slow LLM responses and silently
+ * over- or under-counted).
  */
 async function maybeIncrement(cpOrgId, insight, forceRegenerate) {
-  if (!insight || !insight.generatedAt) return;
-  const ageMs = Date.now() - new Date(insight.generatedAt).getTime();
-  if (ageMs > 5_000) return; // older than 5s = served from cache
+  if (!insight?._wasFreshGeneration) return;
   const kind = forceRegenerate ? 'on_demand' : 'scheduled';
   await incrementMeter(cpOrgId, kind, insight.tokenUsage);
 }

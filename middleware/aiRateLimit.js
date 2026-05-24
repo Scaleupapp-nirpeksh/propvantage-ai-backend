@@ -1,14 +1,16 @@
 // File: middleware/aiRateLimit.js
 // Description: SP5 — gates every AI-spending route (insights, copilot)
-//   against per-org daily + hourly quotas. Daily counter is persisted in
-//   AIUsageMeter; hourly burst counter is in-process (single PM2 worker
-//   on the EC2 deploy — acceptable per the plan's explanation).
+//   against per-org daily + hourly quotas.
 //
-//   On 429, increments AIUsageMeter.rateLimitHits and returns:
-//     { error: 'ai_quota_exceeded',
-//       message: 'Daily AI quota reached (200). Resets at midnight IST.',
-//       resetsAt: '<ISO datetime>',
-//       meter: { dailyUsed, dailyQuota } }
+//   IMPORTANT: this middleware READS counters but does NOT increment. The
+//   only place that increments is the controller's maybeIncrement / explicit
+//   incrementMeter call, which fires AFTER we know whether the request
+//   actually spent LLM budget (a cache hit on /api/cp/insights/:surface
+//   spends zero tokens and must not count against rate limits).
+//
+//   Previous bug (hotfix 2026-05-24): middleware was optimistically bumping
+//   the hourly counter on every request. Loading the 5-card dashboard fired
+//   5 GETs (all cache hits) and burned 5/50 hourly. Ten page-loads → 429.
 
 import asyncHandler from 'express-async-handler';
 import Organization from '../models/organizationModel.js';
@@ -20,20 +22,8 @@ import {
   currentHourKey,
   nextMidnightIst,
   incrementMeter,
+  getHourlyCount,
 } from '../services/ai/aiUsageMeterService.js';
-
-// In-process hourly burst counter. Single PM2 worker on EC2 → process-local
-// is sufficient. If the deploy ever moves to cluster mode, swap to Redis or
-// a Mongo sentinel collection.
-const _hourly = new Map(); // key: `${cpOrgId}|${hourKey}` → count
-// Tiny GC so the Map doesn't grow forever — purge entries older than 2 hours.
-setInterval(() => {
-  const cur = currentHourKey();
-  for (const k of _hourly.keys()) {
-    const hk = k.split('|')[1];
-    if (hk < cur) _hourly.delete(k);
-  }
-}, 30 * 60 * 1000);
 
 export const aiRateLimit = asyncHandler(async (req, res, next) => {
   const userOrgId = req.user?.organization;
@@ -42,8 +32,6 @@ export const aiRateLimit = asyncHandler(async (req, res, next) => {
     throw new Error('Authentication required for AI endpoints');
   }
 
-  // Load org for quota lookup (req.organization may be pre-populated by
-  // requireOrgType middleware; reuse to avoid a redundant query).
   const org = req.organization && req.organization._id
     ? req.organization
     : await Organization.findById(userOrgId).select('aiQuota type');
@@ -57,7 +45,7 @@ export const aiRateLimit = asyncHandler(async (req, res, next) => {
   const monthKey = currentMonthKey();
   const hourKey = currentHourKey();
 
-  // Upsert today's meter and read the latest counters in one round-trip.
+  // Read today's meter (upsert if missing so subsequent inc operations work).
   const meter = await AIUsageMeter.findOneAndUpdate(
     { cpOrgId: userOrgId, periodKey },
     { $setOnInsert: { cpOrgId: userOrgId, periodKey, monthKey } },
@@ -79,9 +67,8 @@ export const aiRateLimit = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Hourly burst check.
-  const hourMapKey = `${userOrgId}|${hourKey}`;
-  const hourUsed = _hourly.get(hourMapKey) || 0;
+  // Hourly burst — read-only via the shared aiUsageMeterService Map.
+  const hourUsed = getHourlyCount(userOrgId, hourKey);
   if (hourUsed >= quota.hourlyQuota) {
     await incrementMeter(userOrgId, 'rate_limit_hit', null);
     res.status(429);
@@ -93,9 +80,8 @@ export const aiRateLimit = asyncHandler(async (req, res, next) => {
     });
   }
 
-  // Optimistically bump the hourly counter before the route runs. (Worst case:
-  // the route fails and we slightly over-count — preferable to under-counting.)
-  _hourly.set(hourMapKey, hourUsed + 1);
+  // Do NOT increment here. The controller bumps via incrementMeter()
+  // exactly when LLM tokens were actually spent (cache hits → no bump).
   next();
 });
 
