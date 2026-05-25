@@ -100,6 +100,17 @@ const leadSchema = new mongoose.Schema(
       ],
       default: 'New',
     },
+
+    // 2026-05-25 — timestamp of the last `status` change. Maintained by the
+    // pre-save hook below. Used by the dev-side Leads list to surface aging
+    // for stuck stages — especially "Site Visit Scheduled" leads where the
+    // visit hasn't been logged yet, and "Site Visit Completed" leads that
+    // haven't moved on to Negotiating/Booked. Defaults to createdAt so
+    // existing rows render a sensible number on first read.
+    statusChangedAt: {
+      type: Date,
+      default: Date.now,
+    },
     
     // ====================================================================
     // EXISTING SCORING FIELDS - MAINTAINING CURRENT STRUCTURE
@@ -573,12 +584,22 @@ leadSchema.statics.getOverdueFollowUps = function(organizationId) {
 
 // Pre-save middleware to update priority and follow-up status
 leadSchema.pre('save', function(next) {
+  // 2026-05-25 — keep statusChangedAt in sync with status mutations so the
+  // dev-side Leads list can show "stuck for N days" aging for Site Visit
+  // Scheduled / Site Visit Completed (and any other stage we want later).
+  // isNew handles initial creation; isModified('status') catches updates.
+  if (this.isNew && !this.statusChangedAt) {
+    this.statusChangedAt = new Date();
+  } else if (!this.isNew && this.isModified('status')) {
+    this.statusChangedAt = new Date();
+  }
+
   // Update priority based on score
   this.updatePriority();
-  
+
   // Update follow-up status if needed
   this.updateFollowUpStatus();
-  
+
   // Update qualification status based on score and other factors
   if (this.score >= 80 && this.budget?.min && this.requirements?.timeline) {
     this.qualificationStatus = 'Pre-Approved';
@@ -589,7 +610,7 @@ leadSchema.pre('save', function(next) {
   } else {
     this.qualificationStatus = 'Not Qualified';
   }
-  
+
   next();
 });
 
