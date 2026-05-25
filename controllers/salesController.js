@@ -466,9 +466,17 @@ const getSales = asyncHandler(async (req, res) => {
       ...projectAccessFilter(req),
     };
 
-    // Add status filter
+    // Add status filter (accepts a single value OR comma-separated list).
+    // 2026-05-25 fix: the RecordPaymentPage search sends
+    // `status=Booked,Agreement Signed,Registered` so the user can pick a
+    // sale from any "live" booking stage. Previously this string was
+    // matched literally → 0 sales returned → "No options" in the autocomplete.
     if (status && status !== 'all') {
-      baseFilters.status = status;
+      if (typeof status === 'string' && status.includes(',')) {
+        baseFilters.status = { $in: status.split(',').map((s) => s.trim()).filter(Boolean) };
+      } else {
+        baseFilters.status = status;
+      }
     }
 
     // Add payment status filter

@@ -568,14 +568,24 @@ const getOverduePayments = asyncHandler(async (req, res) => {
   try {
     const report = await getOverduePaymentsReport(req.user.organization);
 
-    // Filter report by accessible projects
+    // 2026-05-25 fix: the service returns `customerGroups`, not
+    // `overdueByCustomer`. The previous code crashed with
+    // "Cannot read properties of undefined (reading 'filter')" for any
+    // non-Org-Owner user (because they have req.accessibleProjectIds set,
+    // which entered this branch). Org Owners never hit the branch because
+    // they have no project-scope limit, which is why the bug went unnoticed
+    // until a Sales Head / Project Director tried the page.
     if (req.accessibleProjectIds && req.accessibleProjectIds.length > 0) {
       const accessibleSet = new Set(req.accessibleProjectIds.map(id => id.toString()));
-      report.overdueByCustomer = report.overdueByCustomer.filter(entry =>
+      report.customerGroups = (report.customerGroups || []).filter((entry) =>
         entry.project && accessibleSet.has(entry.project._id?.toString())
       );
-      report.totalOverdueAmount = report.overdueByCustomer.reduce(
-        (sum, entry) => sum + entry.totalOverdue, 0
+      report.totalOverdueAmount = report.customerGroups.reduce(
+        (sum, entry) => sum + (entry.totalOverdue || 0), 0
+      );
+      report.totalOverdueCustomers = report.customerGroups.length;
+      report.totalOverdueInstallments = report.customerGroups.reduce(
+        (sum, entry) => sum + ((entry.installments || []).length), 0
       );
     }
 
