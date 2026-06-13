@@ -5,6 +5,10 @@
 
 import mongoose from 'mongoose';
 
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
 export const PERIOD_PRESETS = [
   'last_30d', 'mtd', 'qtd', 'ytd', 'last_quarter', 'last_month', 'custom',
 ];
@@ -13,6 +17,10 @@ export const DELIVERY_MODES = ['review_then_send', 'auto_send'];
 export const SCHEDULE_FREQUENCIES = ['weekly', 'monthly', 'quarterly'];
 export const GATE_TYPES = ['email', 'public'];
 export const TEMPLATE_STATUSES = ['active', 'paused', 'archived'];
+
+// =============================================================================
+// SCHEMA
+// =============================================================================
 
 const blockSchema = new mongoose.Schema(
   {
@@ -32,6 +40,11 @@ const imageSlotSchema = new mongoose.Schema(
     s3Key: { type: String },
     url: { type: String },
   },
+  { _id: false }
+);
+
+const templateRecipientSchema = new mongoose.Schema(
+  { email: { type: String }, name: { type: String }, role: { type: String } },
   { _id: false }
 );
 
@@ -80,7 +93,7 @@ const reportTemplateSchema = new mongoose.Schema(
 
     delivery: {
       mode: { type: String, enum: DELIVERY_MODES, default: 'review_then_send' },
-      recipients: [{ email: { type: String }, name: { type: String }, role: { type: String } }],
+      recipients: [templateRecipientSchema],
       ccInternal: [{ type: String }],
       reviewers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     },
@@ -94,6 +107,10 @@ const reportTemplateSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// =============================================================================
+// INDEXES
+// =============================================================================
 
 reportTemplateSchema.index({ organization: 1, status: 1 });
 

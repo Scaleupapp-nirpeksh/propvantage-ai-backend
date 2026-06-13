@@ -4,6 +4,10 @@
 
 import mongoose from 'mongoose';
 
+// =============================================================================
+// SCHEMA
+// =============================================================================
+
 const reportViewSchema = new mongoose.Schema(
   {
     organization: {
@@ -31,6 +35,10 @@ const reportViewSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// =============================================================================
+// INDEXES
+// =============================================================================
 
 // One row per viewer per report; access events upsert + increment viewCount.
 reportViewSchema.index({ reportInstance: 1, email: 1 }, { unique: true });

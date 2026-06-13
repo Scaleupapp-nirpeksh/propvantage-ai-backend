@@ -32,4 +32,9 @@ describe('ReportInstance model', () => {
     expect(doc.validateSync()).toBeUndefined();
     expect(doc.blocks[0].data.value).toBe(1234);
   });
+
+  it('rejects an invalid review status', () => {
+    const doc = new ReportInstance({ ...validDoc(), review: { status: 'bogus' } });
+    expect(doc.validateSync().errors['review.status']).toBeDefined();
+  });
 });

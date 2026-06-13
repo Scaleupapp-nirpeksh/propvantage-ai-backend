@@ -3,12 +3,21 @@
 // The `blocks[].data` payloads are snapshotted at generation time.
 
 import mongoose from 'mongoose';
+import { GATE_TYPES } from './reportTemplateModel.js';
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
 
 export const REVIEW_STATUSES = ['draft', 'in_review', 'changes_requested', 'approved'];
 export const DISTRIBUTION_STATUSES = ['not_sent', 'queued', 'sending', 'sent', 'failed'];
 export const RECIPIENT_EMAIL_STATUSES = ['pending', 'sent', 'bounced', 'failed'];
 export const FLAG_SEVERITIES = ['info', 'warn', 'critical'];
 export const FLAG_STATUSES = ['open', 'resolved'];
+
+// =============================================================================
+// SCHEMA
+// =============================================================================
 
 const snapshotBlockSchema = new mongoose.Schema(
   {
@@ -61,6 +70,11 @@ const recipientSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const instanceImageSchema = new mongoose.Schema(
+  { id: { type: String }, label: { type: String }, url: { type: String } },
+  { _id: false }
+);
+
 const reportInstanceSchema = new mongoose.Schema(
   {
     organization: {
@@ -78,7 +92,7 @@ const reportInstanceSchema = new mongoose.Schema(
     periodEnd: { type: Date },
 
     blocks: [snapshotBlockSchema],
-    images: [{ id: { type: String }, label: { type: String }, url: { type: String } }],
+    images: [instanceImageSchema],
     theme: { type: mongoose.Schema.Types.Mixed },
 
     overrides: [overrideSchema],
@@ -99,9 +113,9 @@ const reportInstanceSchema = new mongoose.Schema(
       recipients: [recipientSchema],
     },
 
-    publicSlug: { type: String, unique: true, sparse: true, index: true },
+    publicSlug: { type: String, unique: true, sparse: true },
     accessToken: { type: String },
-    gate: { type: String, default: 'email' },
+    gate: { type: String, enum: GATE_TYPES, default: 'email' },
     expiresAt: { type: Date, index: true },
 
     stats: {
@@ -117,6 +131,10 @@ const reportInstanceSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// =============================================================================
+// INDEXES
+// =============================================================================
 
 reportInstanceSchema.index({ organization: 1, 'review.status': 1, createdAt: -1 });
 
