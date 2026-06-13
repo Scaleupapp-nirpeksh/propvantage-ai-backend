@@ -2,9 +2,11 @@
 // Description: CRUD + ad-hoc generation for report templates (Leadership Report Builder).
 
 import asyncHandler from 'express-async-handler';
-import ReportTemplate from '../models/reportTemplateModel.js';
+import ReportTemplate, { TEMPLATE_STATUSES } from '../models/reportTemplateModel.js';
 import { validateTemplatePayload } from '../services/reports/templateValidation.js';
 import { generateInstance } from '../services/reports/snapshotService.js';
+
+const ALLOWED_SORT_FIELDS = new Set(['updatedAt', 'createdAt', 'name', 'status']);
 
 /**
  * @desc    List report templates for the org (paginated)
@@ -14,15 +16,16 @@ import { generateInstance } from '../services/reports/snapshotService.js';
 export const getTemplates = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, sortBy = 'updatedAt', sortOrder = 'desc' } = req.query;
   const query = { organization: req.user.organization };
-  if (status) query.status = status;
+  if (status && TEMPLATE_STATUSES.includes(status)) query.status = status;
 
   const pageNum = Math.max(parseInt(page, 10) || 1, 1);
-  const limitNum = Math.max(parseInt(limit, 10) || 20, 1);
+  const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   const skip = (pageNum - 1) * limitNum;
+  const sortField = ALLOWED_SORT_FIELDS.has(sortBy) ? sortBy : 'updatedAt';
 
   const [templates, total] = await Promise.all([
     ReportTemplate.find(query)
-      .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+      .sort({ [sortField]: sortOrder === 'asc' ? 1 : -1 })
       .limit(limitNum)
       .skip(skip),
     ReportTemplate.countDocuments(query),
