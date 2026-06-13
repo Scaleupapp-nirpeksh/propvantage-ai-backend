@@ -76,6 +76,8 @@ const DEFAULT_ROLES = [
       // Analytics — full
       'analytics:basic', 'analytics:advanced', 'analytics:reports',
       'analytics:predictive', 'analytics:budget_vs_actual', 'analytics:marketing_roi',
+      // Reports (Leadership Report Builder)
+      'reports:view', 'reports:manage', 'reports:approve',
       // Users — full
       'users:view', 'users:update', 'users:delete', 'users:invite',
       // Roles — manage (no delete)
@@ -164,6 +166,8 @@ const DEFAULT_ROLES = [
       'channel_partners:view', 'channel_partners:create', 'channel_partners:update',
       'channel_partners:manage_commission_rules', 'channel_partners:attribute',
       'channel_partners:edit_booking_attribution', 'channel_partners:manage_commissions',
+      // Reports (Leadership Report Builder)
+      'reports:view', 'reports:manage', 'reports:approve',
     ],
   },
   {
@@ -203,6 +207,8 @@ const DEFAULT_ROLES = [
       // Competitive Analysis — view, manage data, research, recommendations
       'competitive_analysis:view', 'competitive_analysis:manage_data',
       'competitive_analysis:ai_research', 'competitive_analysis:ai_recommendations',
+      // Reports (Leadership Report Builder)
+      'reports:view', 'reports:manage', 'reports:approve',
       // Portfolio
       'portfolio:manage',
     ],
@@ -254,6 +260,8 @@ const DEFAULT_ROLES = [
       // Competitive Analysis — view, research, recommendations (no manage_data)
       'competitive_analysis:view', 'competitive_analysis:ai_research',
       'competitive_analysis:ai_recommendations',
+      // Reports (Leadership Report Builder)
+      'reports:view', 'reports:manage', 'reports:approve',
     ],
   },
   {
