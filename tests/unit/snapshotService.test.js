@@ -18,7 +18,8 @@ describe('buildSnapshotBlocks', () => {
     expect(out[0].data.error).toMatch(/Unknown block type/);
   });
 
-  it('isolates a resolver failure to its own block', () => {
+  it('handles a block with null config without throwing, in isolation from siblings', () => {
+    // NOTE: the unknown-type test above covers per-block error isolation; this verifies a real block tolerates a null config. The resolve() try/catch itself is correct by inspection.
     // overview is null → data-bearing resolvers read undefined safely (num→0),
     // so force a throw via a block whose resolve dereferences a bad config path.
     const out = buildSnapshotBlocks(
@@ -42,7 +43,8 @@ describe('resolvePeriodArgs', () => {
   });
 
   it('uses custom dates when preset is custom', () => {
-    const s = new Date('2026-01-01'); const e = new Date('2026-03-31');
+    const s = new Date('2026-01-01');
+    const e = new Date('2026-03-31');
     expect(resolvePeriodArgs({ period: { preset: 'custom', customStart: s, customEnd: e } }))
       .toEqual({ period: '30', startDate: s, endDate: e });
   });

@@ -37,7 +37,7 @@ const PRESET_TO_PERIOD = {
  * that getLeadershipOverview expects. Pure.
  */
 export const resolvePeriodArgs = (scope = {}) => {
-  const p = (scope && scope.period) || {};
+  const p = scope.period || {};
   if (p.preset === 'custom' && p.customStart && p.customEnd) {
     return { period: '30', startDate: p.customStart, endDate: p.customEnd };
   }
