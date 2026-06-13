@@ -171,6 +171,13 @@ export const PERMISSIONS = {
     LEADERSHIP: 'dashboard:leadership',
   },
 
+  // ─── REPORTS (Leadership Report Builder) ───────────────
+  REPORTS: {
+    VIEW: 'reports:view',       // view report templates, instances, open-rate analytics
+    MANAGE: 'reports:manage',   // create/edit templates, generate, edit overrides & flags
+    APPROVE: 'reports:approve', // approve a report and trigger send
+  },
+
   // ─── COMMISSION INVOICES (dev side, SP5+) ─────────────
   COMMISSION_INVOICES: {
     VIEW:    'commission_invoices:view',     // see invoices CPs have raised
