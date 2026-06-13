@@ -1,13 +1,46 @@
 // File: routes/reportRoutes.js
-// Description: Authenticated routes for the Report Builder (Phase 0: catalog only).
+// Description: Authenticated routes for the Leadership Report Builder.
 
 import express from 'express';
+import multer from 'multer';
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
 import { PERMISSIONS } from '../config/permissions.js';
-import { getCatalog } from '../controllers/reportController.js';
+import { getCatalog, uploadReportImage } from '../controllers/reportController.js';
+import {
+  getTemplates,
+  getTemplateById,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  generateTemplateInstance,
+} from '../controllers/reportTemplateController.js';
 
 const router = express.Router();
 
-router.get('/catalog', protect, hasPermission(PERMISSIONS.REPORTS.MANAGE), getCatalog);
+// Memory storage → req.file.buffer streamed to S3 (10MB cap), mirrors routes/fileRoutes.js
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+router.use(protect);
+
+// Block catalog for the builder palette
+router.get('/catalog', hasPermission(PERMISSIONS.REPORTS.MANAGE), getCatalog);
+
+// Image upload (hero/gallery/logo)
+router.post('/uploads', hasPermission(PERMISSIONS.REPORTS.MANAGE), upload.single('file'), uploadReportImage);
+
+// Template CRUD
+router
+  .route('/templates')
+  .get(hasPermission(PERMISSIONS.REPORTS.VIEW), getTemplates)
+  .post(hasPermission(PERMISSIONS.REPORTS.MANAGE), createTemplate);
+
+router
+  .route('/templates/:id')
+  .get(hasPermission(PERMISSIONS.REPORTS.VIEW), getTemplateById)
+  .put(hasPermission(PERMISSIONS.REPORTS.MANAGE), updateTemplate)
+  .delete(hasPermission(PERMISSIONS.REPORTS.MANAGE), deleteTemplate);
+
+// Ad-hoc generate (preview / on-demand)
+router.post('/templates/:id/generate', hasPermission(PERMISSIONS.REPORTS.MANAGE), generateTemplateInstance);
 
 export default router;
