@@ -11,7 +11,7 @@ describe('default role grants for reports', () => {
     );
   });
 
-  it('Business Head has reports:manage (via ALL minus roles:delete)', () => {
+  it('Business Head has reports:manage', () => {
     expect(byName('Business Head').permissions).toContain('reports:manage');
   });
 
@@ -25,7 +25,13 @@ describe('default role grants for reports', () => {
     }
   );
 
-  it('Sales Executive cannot manage reports', () => {
-    expect(byName('Sales Executive').permissions).not.toContain('reports:manage');
-  });
+  it.each(['Sales Manager', 'Finance Manager', 'Sales Executive'])(
+    '%s is not granted any reports permission',
+    (roleName) => {
+      const perms = byName(roleName).permissions;
+      expect(perms).not.toContain('reports:view');
+      expect(perms).not.toContain('reports:manage');
+      expect(perms).not.toContain('reports:approve');
+    }
+  );
 });
