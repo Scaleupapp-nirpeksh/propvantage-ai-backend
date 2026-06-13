@@ -13,6 +13,7 @@ describe('blockHelpers', () => {
       expect(objectMapToChartData(null)).toEqual([]);
       expect(objectMapToChartData(undefined)).toEqual([]);
       expect(objectMapToChartData(42)).toEqual([]);
+      expect(objectMapToChartData([1, 2, 3])).toEqual([]);
     });
   });
 

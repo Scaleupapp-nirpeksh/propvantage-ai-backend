@@ -9,6 +9,12 @@ const ADV = 'analytics:advanced'; // gate for data-bearing blocks
 
 // kind: 'kpi' | 'chart' | 'table' | 'layout'
 // requiredPermission: a permission string, or null for always-available layout blocks.
+// NOTE: `kind` is the RENDERING family used by the public page / builder:
+//   'kpi' | 'chart' | 'table' | 'layout'.
+// 'layout' is the presentational family and intentionally spans several
+// descriptive `type` namespaces — layout.* , media.* , text.* — all of which
+// render as non-data presentational blocks. So a block's `type` prefix does NOT
+// have to equal its `kind` (only kpi/chart/table happen to line up 1:1).
 const BLOCKS = [
   // ─── KPIs (Financial) ───────────────────────────────
   {
@@ -93,6 +99,7 @@ const BLOCKS = [
     resolve: () => ({}),
   },
 ];
+Object.freeze(BLOCKS);
 
 const BLOCK_MAP = new Map(BLOCKS.map((b) => [b.type, b]));
 
