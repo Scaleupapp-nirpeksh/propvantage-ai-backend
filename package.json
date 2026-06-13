@@ -8,6 +8,7 @@
         "start": "node server.js",
         "server": "nodemon server.js",
         "test": "jest",
+        "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.unit.config.mjs",
         "test:regression": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.regression.config.mjs",
         "test:regression:prod": "API_BASE_URL=https://api.prop-vantage.com npm run test:regression",
         "data:import": "node data/seeder.js",
