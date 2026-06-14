@@ -477,8 +477,12 @@ httpServer.listen(PORT, () => {
   // node-cron only fires at the cron-expression times, not immediately.
   try {
     registerScheduledInsightJobs();
-    registerScheduledReportJobs();
   } catch (err) {
     console.error('[SP5] Failed to register scheduled insight jobs:', err.message);
+  }
+  try {
+    registerScheduledReportJobs();
+  } catch (err) {
+    console.error('[reports] Failed to register scheduled report jobs:', err.message);
   }
 });
