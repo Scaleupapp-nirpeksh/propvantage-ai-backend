@@ -25,8 +25,9 @@ const relatedEntity = (instance) => ({
  */
 export const submitForReview = asyncHandler(async (req, res) => {
   const instance = await findOwned(req);
-  const next = nextReviewStatus(instance.review?.status || 'draft', 'submit');
-  if (!next) { res.status(409); throw new Error(`Cannot submit a report that is '${instance.review?.status}'`); }
+  const current = instance.review?.status || 'draft';
+  const next = nextReviewStatus(current, 'submit');
+  if (!next) { res.status(409); throw new Error(`Cannot submit a report that is '${current}'`); }
 
   instance.review.status = next;
   instance.review.submittedBy = req.user._id;

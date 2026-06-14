@@ -14,9 +14,6 @@ const hashIp = (ip) => crypto.createHash('sha256').update(String(ip || 'unknown'
 
 const isExpired = (instance) => instance.expiresAt && instance.expiresAt.getTime() < Date.now();
 
-const isPubliclyViewable = (instance) =>
-  instance.review?.status === 'approved' && !isExpired(instance);
-
 // Enrich each frozen block with its rendering `kind` from the registry (the public
 // page has no block catalog). Strips nothing; just adds `kind`.
 const withKind = (blocks = []) =>
