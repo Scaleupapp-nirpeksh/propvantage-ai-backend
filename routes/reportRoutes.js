@@ -14,6 +14,7 @@ import {
   deleteTemplate,
   generateTemplateInstance,
 } from '../controllers/reportTemplateController.js';
+import { getInstances, getInstanceById, getInstanceAnalytics } from '../controllers/reportInstanceController.js';
 
 const router = express.Router();
 
@@ -42,5 +43,10 @@ router
 
 // Ad-hoc generate (preview / on-demand)
 router.post('/templates/:id/generate', hasPermission(PERMISSIONS.REPORTS.MANAGE), generateTemplateInstance);
+
+// Generated instances + open-rate analytics
+router.get('/instances', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstances);
+router.get('/instances/:id', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstanceById);
+router.get('/instances/:id/analytics', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstanceAnalytics);
 
 export default router;
