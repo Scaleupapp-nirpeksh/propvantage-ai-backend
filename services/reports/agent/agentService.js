@@ -87,10 +87,12 @@ export const runAgentTurn = async ({ definition, transcript = [], userMessage },
 
   let resultDefinition = definition;
   let reply = '';
+  let hitMaxTokens = false;
 
   for (let i = 0; i < maxIterations; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    const resp = await client.messages.create({ model, max_tokens: 1500, system: SYSTEM_PROMPT, tools: AGENT_TOOLS, messages: [...messages] });
+    const resp = await client.messages.create({ model, max_tokens: 4000, system: SYSTEM_PROMPT, tools: AGENT_TOOLS, messages: [...messages] });
+    if (resp.stop_reason === 'max_tokens') hitMaxTokens = true;
     const blocks = Array.isArray(resp?.content) ? resp.content : [];
     const toolUses = blocks.filter((b) => b.type === 'tool_use');
     const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
@@ -116,11 +118,17 @@ export const runAgentTurn = async ({ definition, transcript = [], userMessage },
       } else {
         let out;
         try { out = await dispatchReadOnly(tu.name, tu.input, ctx, tools); } catch (err) { out = { error: err.message }; }
-        toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out).slice(0, 8000) });
+        toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: (() => { const s = JSON.stringify(out); return s.length > 8000 ? s.slice(0, 8000) + ' …(truncated)' : s; })() });
       }
     }
     messages.push({ role: 'user', content: toolResults });
     if (committed) break; // definition saved; done for this turn
+  }
+
+  if (!reply) {
+    reply = hitMaxTokens
+      ? "That got a bit long for me to finish — try narrowing the report (fewer blocks, or a single project)."
+      : "I wasn't able to complete that in one step — could you rephrase or add a bit more detail?";
   }
 
   const newTranscript = [...transcript, { role: 'user', content: userMessage }, { role: 'assistant', content: reply }];

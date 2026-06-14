@@ -71,6 +71,25 @@ describe('runAgentTurn', () => {
     expect(out.reply).toBe('Which project?');
     expect(out.definition).toEqual(def);
   });
+
+  it('Exhaustion fallback: loop runs to cap when model always calls read-only tool', async () => {
+    const MAX_ITERATIONS = 6; // matches the value in agentService.js
+    // Build a client whose create always returns a read-only tool_use (never commits).
+    const infiniteResponse = { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'x', name: 'get_metric_catalog', input: {} }] };
+    const create = jest.fn(async () => ({ ...infiniteResponse, content: [...infiniteResponse.content] }));
+    const infiniteClient = { messages: { create }, create };
+
+    const initialDef = { name: 'R', scope: { mode: 'portfolio' }, blocks: [] };
+    const out = await runAgentTurn(
+      { definition: initialDef, transcript: [], userMessage: 'show everything' },
+      ctx,
+      { client: infiniteClient, tools, model: 'm', maxIterations: MAX_ITERATIONS },
+    );
+
+    expect(out.reply).toBe("I wasn't able to complete that in one step — could you rephrase or add a bit more detail?");
+    expect(out.definition).toEqual(initialDef);
+    expect(create).toHaveBeenCalledTimes(MAX_ITERATIONS);
+  });
 });
 
 describe('normalizeDefinition', () => {
