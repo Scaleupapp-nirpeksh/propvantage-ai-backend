@@ -138,6 +138,7 @@ export const generateTemplateInstance = asyncHandler(async (req, res) => {
   const instance = await generateInstance(template, {
     createdBy: req.user._id,
     accessibleProjectIds: req.accessibleProjectIds,
+    autoApprove: true, // creator-generated reports are immediately viewable via their public link
   });
   res.status(201).json({ success: true, data: instance, message: 'Report generated' });
 });

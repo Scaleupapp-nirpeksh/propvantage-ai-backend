@@ -50,13 +50,23 @@ export const resolvePeriodArgs = (scope = {}) => {
  * @param {Object} ctx - { createdBy, accessibleProjectIds }
  * @returns {Promise<ReportInstance>}
  */
-export const generateInstance = async (template, { createdBy = null, accessibleProjectIds = null } = {}) => {
+export const generateInstance = async (
+  template,
+  { createdBy = null, accessibleProjectIds = null, autoApprove = false } = {}
+) => {
   const { period, startDate, endDate } = resolvePeriodArgs(template.scope);
   const overview = await getLeadershipOverview(
     template.organization, period, startDate, endDate, accessibleProjectIds
   );
   const blocks = await buildSnapshotBlocks(template.blocks, overview);
   const expiresAfterDays = template.access?.expiresAfterDays || 90;
+
+  // Ad-hoc generations (a user previewing/sharing their own report) are approved on
+  // creation so the public link works immediately. Scheduled generations are left in
+  // their default 'draft' state and the cron job drives them through review/auto_send.
+  const review = autoApprove
+    ? { status: 'approved', reviewedBy: createdBy, approvedBy: createdBy, approvedAt: new Date() }
+    : undefined;
 
   return ReportInstance.create({
     organization: template.organization,
@@ -72,5 +82,6 @@ export const generateInstance = async (template, { createdBy = null, accessibleP
     accessToken: crypto.randomBytes(24).toString('base64url'),
     gate: template.access?.gate || 'email',
     expiresAt: new Date(Date.now() + expiresAfterDays * 24 * 60 * 60 * 1000),
+    ...(review ? { review } : {}),
   });
 };
