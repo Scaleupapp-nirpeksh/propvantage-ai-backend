@@ -5,9 +5,14 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import 'dotenv/config';
 
-// Initialize the S3 client with credentials and region from environment variables
+// The S3 bucket (`propvantage`) lives in us-east-1, while the global AWS_REGION may be
+// set to a different region for other services (e.g. ap-southeast-2). Use a dedicated
+// S3 region (default us-east-1) AND follow region redirects, so a region mismatch can
+// never break uploads with a PermanentRedirect (301).
+const S3_REGION = process.env.S3_REGION || 'us-east-1';
 const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
+  region: S3_REGION,
+  followRegionRedirects: true,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -38,7 +43,7 @@ const uploadFileToS3 = async (file, folder) => {
     await s3Client.send(command);
 
     // Construct the public URL (kept for backward compatibility with existing records)
-    const url = `https://${process.env.S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    const url = `https://${process.env.S3_BUCKET_NAME}.s3.${S3_REGION}.amazonaws.com/${key}`;
 
     return {
       url,
