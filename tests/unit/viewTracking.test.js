@@ -1,4 +1,16 @@
-import { classifyViewer, computeInstanceStats } from '../../services/reports/viewTracking.js';
+import { classifyViewer, computeInstanceStats, pickRecipientByToken } from '../../services/reports/viewTracking.js';
+
+describe('pickRecipientByToken', () => {
+  const recipients = [{ email: 'a@x.com', token: 't1' }, { email: 'b@x.com', token: 't2' }];
+  it('finds a recipient by exact token', () => {
+    expect(pickRecipientByToken(recipients, 't2')).toEqual({ email: 'b@x.com', token: 't2' });
+  });
+  it('returns null for a missing/empty token', () => {
+    expect(pickRecipientByToken(recipients, 'nope')).toBeNull();
+    expect(pickRecipientByToken(recipients, '')).toBeNull();
+    expect(pickRecipientByToken(undefined, 't1')).toBeNull();
+  });
+});
 
 describe('classifyViewer', () => {
   it('flags a known recipient as matched (case-insensitive)', () => {

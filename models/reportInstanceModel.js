@@ -66,6 +66,7 @@ const recipientSchema = new mongoose.Schema(
     name: { type: String },
     emailStatus: { type: String, enum: RECIPIENT_EMAIL_STATUSES, default: 'pending' },
     emailedAt: { type: Date },
+    token: { type: String },
   },
   { _id: false }
 );

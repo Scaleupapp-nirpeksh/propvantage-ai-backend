@@ -13,6 +13,12 @@ export const classifyViewer = (email, recipientEmails) => {
   return { matchedRecipient: matched, isForwarded: !matched };
 };
 
+/** Find a recipient by their unique token, or null. Pure. */
+export const pickRecipientByToken = (recipients, token) => {
+  if (!token) return null;
+  return (recipients || []).find((r) => r && r.token && r.token === token) || null;
+};
+
 /**
  * Roll up ReportView documents into the instance's denormalized stats block.
  * @param {Array} views - ReportView-like objects
