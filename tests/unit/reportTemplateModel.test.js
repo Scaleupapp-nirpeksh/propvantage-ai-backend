@@ -33,4 +33,9 @@ describe('ReportTemplate model', () => {
     const doc = new ReportTemplate({ ...validDoc(), delivery: { mode: 'nope' } });
     expect(doc.validateSync().errors['delivery.mode']).toBeDefined();
   });
+
+  it('accepts the email_otp gate', () => {
+    const doc = new ReportTemplate({ ...validDoc(), access: { gate: 'email_otp' } });
+    expect(doc.validateSync()).toBeUndefined();
+  });
 });

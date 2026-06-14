@@ -15,7 +15,7 @@ export const PERIOD_PRESETS = [
 export const THEME_PRESETS = ['clean', 'midnight', 'warm'];
 export const DELIVERY_MODES = ['review_then_send', 'auto_send'];
 export const SCHEDULE_FREQUENCIES = ['weekly', 'monthly', 'quarterly'];
-export const GATE_TYPES = ['email', 'public'];
+export const GATE_TYPES = ['email', 'email_otp', 'public'];
 export const TEMPLATE_STATUSES = ['active', 'paused', 'archived'];
 
 // =============================================================================
