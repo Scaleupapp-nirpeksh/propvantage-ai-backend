@@ -12,8 +12,10 @@ import { resolveReportData } from '../snapshotService.js';
 // owner (null) → all; [] → none; else the explicit set. Mirrors utils/projectAccessHelper.
 const projectAccessFilter = (accessibleProjectIds) => {
   if (accessibleProjectIds === null || accessibleProjectIds === undefined) return {};
-  if (!accessibleProjectIds.length) return { _id: { $in: [] } };
-  return { _id: { $in: accessibleProjectIds.map((id) => new mongoose.Types.ObjectId(id)) } };
+  const ids = accessibleProjectIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  return { _id: { $in: ids } };
 };
 
 /** Projects the caller may scope a report to. */

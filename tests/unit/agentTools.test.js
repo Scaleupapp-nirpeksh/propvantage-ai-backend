@@ -57,4 +57,15 @@ describe('agent tools', () => {
     expect(passedDef.blocks).toEqual([{ id: 'kpi.revenue', type: 'kpi.revenue', config: {} }]);
     expect(out).toEqual([{ type: 'kpi.revenue', data: { value: 100, unit: 'currency' } }]);
   });
+
+  it('listProjects with empty access returns no projects (never "all")', async () => {
+    find.mockClear();
+    await listProjects({ organization: 'org1', accessibleProjectIds: [] });
+    expect(find.mock.calls[0][0]._id).toEqual({ $in: [] });
+  });
+  it('listProjects ignores malformed ids without throwing', async () => {
+    find.mockClear();
+    await listProjects({ organization: 'org1', accessibleProjectIds: ['not-an-id', 'aaaaaaaaaaaaaaaaaaaaaaaa'] });
+    expect(find.mock.calls[0][0]._id.$in).toHaveLength(1); // only the valid id survives
+  });
 });
