@@ -44,7 +44,8 @@ export const getInstances = asyncHandler(async (req, res) => {
  * @access  Private (reports:view)
  */
 export const getInstanceById = asyncHandler(async (req, res) => {
-  const instance = await ReportInstance.findOne({ _id: req.params.id, organization: req.user.organization });
+  const instance = await ReportInstance.findOne({ _id: req.params.id, organization: req.user.organization })
+    .select('-accessToken');
   if (!instance) { res.status(404); throw new Error('Report not found'); }
   res.json({ success: true, data: instance });
 });
