@@ -3,7 +3,7 @@
 
 import { getBlock } from './blockRegistry.js';
 import {
-  THEME_PRESETS, GATE_TYPES, DELIVERY_MODES, SCHEDULE_FREQUENCIES, PERIOD_PRESETS,
+  THEME_PRESETS, GATE_TYPES, DELIVERY_MODES, SCHEDULE_FREQUENCIES, PERIOD_PRESETS, SCOPE_MODES,
 } from '../../models/reportTemplateModel.js';
 
 /**
@@ -49,6 +49,16 @@ export const validateTemplatePayload = (body = {}, { partial = false } = {}) => 
   enumCheck(body.delivery?.mode, DELIVERY_MODES, 'delivery.mode');
   enumCheck(body.schedule?.frequency, SCHEDULE_FREQUENCIES, 'schedule.frequency');
   enumCheck(body.scope?.period?.preset, PERIOD_PRESETS, 'scope.period.preset');
+  enumCheck(body.scope?.mode, SCOPE_MODES, 'scope.mode');
+  if (body.scope?.projects !== undefined) {
+    if (!Array.isArray(body.scope.projects)) {
+      errors.push('scope.projects must be an array');
+    } else {
+      body.scope.projects.forEach((p, i) => {
+        if (!/^[a-f0-9]{24}$/i.test(String(p))) errors.push(`scope.projects[${i}] must be a valid project id`);
+      });
+    }
+  }
 
   return { valid: errors.length === 0, errors };
 };
