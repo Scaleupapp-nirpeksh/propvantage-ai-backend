@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import ReportInstance from '../../models/reportInstanceModel.js';
 import { getBlock } from './blockRegistry.js';
 import { getLeadershipOverview } from '../leadershipDashboardService.js';
+import { resolveReportScope } from './scopeResolver.js';
 
 /**
  * Resolve every template block against a fetched overview, freezing the result.
@@ -54,9 +55,10 @@ export const generateInstance = async (
   template,
   { createdBy = null, accessibleProjectIds = null, autoApprove = false } = {}
 ) => {
+  const { mode, projectIds } = resolveReportScope(template.scope, accessibleProjectIds);
   const { period, startDate, endDate } = resolvePeriodArgs(template.scope);
   const overview = await getLeadershipOverview(
-    template.organization, period, startDate, endDate, accessibleProjectIds
+    template.organization, period, startDate, endDate, projectIds
   );
   const blocks = await buildSnapshotBlocks(template.blocks, overview);
   const expiresAfterDays = template.access?.expiresAfterDays || 90;
@@ -77,6 +79,7 @@ export const generateInstance = async (
     periodEnd: overview?._dateRange?.end,
     blocks,
     theme: template.theme,
+    scope: { mode, projectIds: projectIds || [] },
     images: (template.imageSlots || []).map((s) => ({ id: s.id, label: s.label, url: s.url })),
     publicSlug: crypto.randomBytes(9).toString('base64url'),
     accessToken: crypto.randomBytes(24).toString('base64url'),
