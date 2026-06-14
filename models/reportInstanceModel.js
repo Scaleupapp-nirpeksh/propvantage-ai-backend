@@ -95,6 +95,10 @@ const reportInstanceSchema = new mongoose.Schema(
     blocks: [snapshotBlockSchema],
     images: [instanceImageSchema],
     theme: { type: mongoose.Schema.Types.Mixed },
+    scope: {
+      mode: { type: String },
+      projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
+    },
 
     overrides: [overrideSchema],
     flags: [flagSchema],
