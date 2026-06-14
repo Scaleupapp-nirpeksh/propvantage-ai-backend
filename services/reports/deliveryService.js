@@ -1,6 +1,7 @@
 // File: services/reports/deliveryService.js
 // Description: Emails an approved report's public link to its stakeholders.
 
+import crypto from 'crypto';
 import ReportTemplate from '../../models/reportTemplateModel.js';
 import { sendEmail } from '../../utils/emailService.js';
 
@@ -42,13 +43,15 @@ export const sendReportToRecipients = async (instance) => {
     return { sent: 0, failed: 0, total: 0 };
   }
 
-  const link = publicUrl(instance.publicSlug);
+  const baseLink = publicUrl(instance.publicSlug);
   instance.distribution.status = 'sending';
   await instance.save();
 
   const results = [];
   for (const r of recipients) {
-    const rec = { email: r.email, name: r.name, emailStatus: 'pending', emailedAt: null };
+    const token = crypto.randomBytes(12).toString('base64url');
+    const link = `${baseLink}?t=${token}`;
+    const rec = { email: r.email, name: r.name, emailStatus: 'pending', emailedAt: null, token };
     try {
       await sendEmail({
         to: r.email,
