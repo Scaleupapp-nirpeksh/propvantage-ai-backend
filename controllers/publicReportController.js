@@ -7,7 +7,7 @@ import asyncHandler from 'express-async-handler';
 import ReportInstance from '../models/reportInstanceModel.js';
 import ReportView from '../models/reportViewModel.js';
 import { getBlock } from '../services/reports/blockRegistry.js';
-import { classifyViewer, computeInstanceStats } from '../services/reports/viewTracking.js';
+import { classifyViewer, computeInstanceStats, pickRecipientByToken } from '../services/reports/viewTracking.js';
 import { applyOverrides } from '../services/reports/reviewState.js';
 
 const hashIp = (ip) => crypto.createHash('sha256').update(String(ip || 'unknown')).digest('hex');
@@ -50,19 +50,29 @@ export const getPublicReportMeta = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const accessPublicReport = asyncHandler(async (req, res) => {
-  const { email } = req.body || {};
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
-    res.status(400); throw new Error('A valid email is required to view this report');
-  }
-
   const instance = await ReportInstance.findOne({ publicSlug: req.params.slug });
   if (!instance) { res.status(404); throw new Error('Report not found'); }
   if (isExpired(instance)) { res.status(410); throw new Error('This report link has expired'); }
   if (instance.review?.status !== 'approved') { res.status(404); throw new Error('Report not found'); }
 
-  const normEmail = String(email).toLowerCase().trim();
-  const recipientEmails = (instance.distribution?.recipients || []).map((r) => r.email);
-  const { matchedRecipient, isForwarded } = classifyViewer(normEmail, recipientEmails);
+  const { email, token } = req.body || {};
+  const recipients = (instance.distribution?.recipients || []);
+
+  let normEmail, matchedRecipient, isForwarded;
+  if (token) {
+    const recipient = pickRecipientByToken(recipients, token);
+    if (!recipient) { res.status(401); throw new Error('This report link is invalid'); }
+    normEmail = String(recipient.email || '').toLowerCase().trim();
+    matchedRecipient = true;
+    isForwarded = false;
+  } else {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+      res.status(400); throw new Error('A valid email is required to view this report');
+    }
+    normEmail = String(email).toLowerCase().trim();
+    const recipientEmails = recipients.map((r) => r.email);
+    ({ matchedRecipient, isForwarded } = classifyViewer(normEmail, recipientEmails));
+  }
   const now = new Date();
 
   // Upsert one ReportView per (instance, email); increment viewCount on repeats.
