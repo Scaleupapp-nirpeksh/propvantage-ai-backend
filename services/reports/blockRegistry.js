@@ -4,6 +4,7 @@
 // never re-implements analytics — it only selects/transforms.
 
 import { objectMapToChartData, num } from './blockHelpers.js';
+import { buildFacts, generateNarrative } from './narrativeService.js';
 
 const ADV = 'analytics:advanced'; // gate for data-bearing blocks
 
@@ -74,6 +75,13 @@ const BLOCKS = [
     type: 'table.topWorkload', category: 'Team', label: 'Team Workload', kind: 'table',
     description: 'Users with the most open tasks.', requiredPermission: ADV, defaultConfig: {},
     resolve: ({ overview }) => ({ rows: Array.isArray(overview?.team?.topWorkload) ? overview.team.topWorkload : [] }),
+  },
+  // ─── AI ─────────────────────────────────────────────
+  {
+    type: 'ai.narrative', category: 'AI', label: 'AI Narrative', kind: 'narrative',
+    description: 'An AI-written executive summary of this report’s figures.',
+    requiredPermission: 'ai:insights', defaultConfig: { focus: '' },
+    resolve: async ({ overview, config }) => generateNarrative(buildFacts(overview), config?.focus),
   },
   // ─── Layout / Media (always available) ──────────────
   {

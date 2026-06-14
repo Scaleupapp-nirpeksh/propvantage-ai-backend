@@ -15,7 +15,7 @@ describe('blockRegistry', () => {
       expect(typeof b.type).toBe('string');
       expect(typeof b.category).toBe('string');
       expect(typeof b.label).toBe('string');
-      expect(['kpi', 'chart', 'table', 'layout']).toContain(b.kind);
+      expect(['kpi', 'chart', 'table', 'layout', 'narrative']).toContain(b.kind);
       expect(typeof b.resolve).toBe('function');
     }
   });
@@ -55,5 +55,18 @@ describe('blockRegistry', () => {
   it('getCatalog includes gated blocks for owners and permitted users', () => {
     expect(getCatalog([], true).find((b) => b.type === 'kpi.revenue')).toBeDefined();
     expect(getCatalog(['analytics:advanced'], false).find((b) => b.type === 'kpi.revenue')).toBeDefined();
+  });
+
+  it('exposes an ai.narrative block gated on ai:insights, returning text', async () => {
+    const def = getBlock('ai.narrative');
+    expect(def).toBeDefined();
+    expect(def.requiredPermission).toBe('ai:insights');
+    expect(def.kind).toBe('narrative');
+    // With no OPENAI_API_KEY in the test env, resolve returns a best-effort empty text.
+    const out = await def.resolve({ overview: fakeOverview, config: {} });
+    expect(out).toHaveProperty('text');
+    // catalog hides it without the permission, shows it with it
+    expect(getCatalog([], false).find((b) => b.type === 'ai.narrative')).toBeUndefined();
+    expect(getCatalog(['ai:insights'], false).find((b) => b.type === 'ai.narrative')).toBeDefined();
   });
 });
