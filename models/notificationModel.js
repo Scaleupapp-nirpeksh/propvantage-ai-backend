@@ -58,6 +58,11 @@ export const NOTIFICATION_TYPES = [
   'commission_record_created',        // → CP: dev booked a sale; commission accruing
   'commission_rule_missing',          // → dev: a CP-attributed sale has no applicable CommissionRule → record at ₹0
   'cp_sale_booked',                   // → CP: pushed prospect converted to a Sale (the deal-of-the-year notification)
+  // Leadership Report Builder (Phase 3) — review workflow
+  'report_ready_for_review',   // → approvers: a report was submitted for review
+  'report_approved',           // → author: their report was approved
+  'report_changes_requested',  // → author: a reviewer requested changes
+  'report_flag_raised',        // → data owner: a value was flagged for correction
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -69,6 +74,8 @@ export const RELATED_ENTITY_TYPES = [
   'Prospect', 'ExternalDeveloper',
   // SP5+ — commission invoice
   'CommissionInvoice',
+  // Leadership Report Builder
+  'ReportInstance',
 ];
 
 // =============================================================================
