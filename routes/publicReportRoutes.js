@@ -4,7 +4,7 @@
 
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { getPublicReportMeta, accessPublicReport } from '../controllers/publicReportController.js';
+import { getPublicReportMeta, accessPublicReport, requestOtp } from '../controllers/publicReportController.js';
 
 const router = express.Router();
 
@@ -24,5 +24,6 @@ const reportViewLimiter = rateLimit({
 
 router.get('/:slug', reportViewLimiter, getPublicReportMeta);
 router.post('/:slug/access', reportViewLimiter, accessPublicReport);
+router.post('/:slug/request-otp', reportViewLimiter, requestOtp);
 
 export default router;
