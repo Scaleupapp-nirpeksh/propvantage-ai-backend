@@ -8,10 +8,14 @@ import ReportInstance from '../models/reportInstanceModel.js';
 import ReportView from '../models/reportViewModel.js';
 import { getBlock } from '../services/reports/blockRegistry.js';
 import { classifyViewer, computeInstanceStats } from '../services/reports/viewTracking.js';
+import { applyOverrides } from '../services/reports/reviewState.js';
 
 const hashIp = (ip) => crypto.createHash('sha256').update(String(ip || 'unknown')).digest('hex');
 
 const isExpired = (instance) => instance.expiresAt && instance.expiresAt.getTime() < Date.now();
+
+const isPubliclyViewable = (instance) =>
+  instance.review?.status === 'approved' && !isExpired(instance);
 
 // Enrich each frozen block with its rendering `kind` from the registry (the public
 // page has no block catalog). Strips nothing; just adds `kind`.
@@ -30,6 +34,7 @@ export const getPublicReportMeta = asyncHandler(async (req, res) => {
   const instance = await ReportInstance.findOne({ publicSlug: req.params.slug });
   if (!instance) { res.status(404); throw new Error('Report not found'); }
   if (isExpired(instance)) { res.status(410); throw new Error('This report link has expired'); }
+  if (instance.review?.status !== 'approved') { res.status(404); throw new Error('Report not found'); }
 
   res.json({
     success: true,
@@ -56,6 +61,7 @@ export const accessPublicReport = asyncHandler(async (req, res) => {
   const instance = await ReportInstance.findOne({ publicSlug: req.params.slug });
   if (!instance) { res.status(404); throw new Error('Report not found'); }
   if (isExpired(instance)) { res.status(410); throw new Error('This report link has expired'); }
+  if (instance.review?.status !== 'approved') { res.status(404); throw new Error('Report not found'); }
 
   const normEmail = String(email).toLowerCase().trim();
   const recipientEmails = (instance.distribution?.recipients || []).map((r) => r.email);
@@ -93,7 +99,7 @@ export const accessPublicReport = asyncHandler(async (req, res) => {
       periodLabel: instance.periodLabel,
       theme: instance.theme || {},
       images: instance.images || [],
-      blocks: withKind(instance.blocks),
+      blocks: applyOverrides(withKind(instance.blocks), instance.overrides || []),
     },
   });
 });
