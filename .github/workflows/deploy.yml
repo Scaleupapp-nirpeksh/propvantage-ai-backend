@@ -64,6 +64,10 @@ jobs:
           else
             echo "No dependency changes; skipping npm install."
           fi
+          # Sync managed secrets into .env (idempotent upsert), then reload env on restart.
+          # GitHub substitutes the ${{ secrets.* }} value into this script before it is sent.
+          if [ -f .env ]; then grep -v '^ANTHROPIC_API_KEY=' .env > .env.tmp && mv .env.tmp .env; fi
+          echo "ANTHROPIC_API_KEY='${{ secrets.ANTHROPIC_API_KEY }}'" >> .env
           pm2 restart "$PM2_APP" --update-env
           pm2 save
           echo "Deployed $AFTER"
