@@ -7,6 +7,13 @@ const fakeOverview = {
     leadsByStatus: { New: 100, Booked: 20 }, leadsBySource: { Web: 50, Referral: 30 } },
   portfolio: { totalUnits: 200, totalProjects: 4, unitsByStatus: { available: 152, sold: 48 } },
   team: { topWorkload: [{ user: 'A', openTasks: 9 }] },
+  invoicing: { totalInvoiced: 50000000, totalPaid: 30000000, totalOverdue: 5000000,
+    invoicesByStatus: { paid: 12, pending: 5, overdue: 2 } },
+  channelPartner: { totalGrossCommissions: 4000000, totalNetCommissions: 3600000, totalPending: 800000,
+    commissionsByStatus: { paid: { count: 8, amount: 2800000 }, pending: { count: 3, amount: 800000 } } },
+  construction: { overallProgress: 62.5, delayedCount: 2,
+    milestonesByStatus: { completed: 10, in_progress: 4, delayed: 2 } },
+  operations: { overdueCount: 7, tasksByStatus: { open: 20, done: 35 }, tasksByPriority: { high: 8, low: 12 } },
 };
 
 describe('blockRegistry', () => {
@@ -68,5 +75,66 @@ describe('blockRegistry', () => {
     // catalog hides it without the permission, shows it with it
     expect(getCatalog([], false).find((b) => b.type === 'ai.narrative')).toBeUndefined();
     expect(getCatalog(['ai:insights'], false).find((b) => b.type === 'ai.narrative')).toBeDefined();
+  });
+});
+
+describe('blockRegistry — Phase 2 blocks', () => {
+  const r = (type) => getBlock(type).resolve({ overview: fakeOverview, config: {} });
+
+  it('financial extras', () => {
+    expect(r('kpi.totalSalesCount')).toBeDefined();
+    expect(getBlock('kpi.totalSalesCount').resolve({ overview: { revenue: { totalSalesCount: 248 } } }))
+      .toEqual({ value: 248, unit: 'count' });
+    expect(getBlock('kpi.overdueAmount').resolve({ overview: { revenue: { totalOverdue: 4400000 } } }))
+      .toEqual({ value: 4400000, unit: 'currency' });
+  });
+
+  it('invoicing blocks', () => {
+    expect(r('kpi.invoiced')).toEqual({ value: 50000000, unit: 'currency' });
+    expect(r('kpi.invoicePaid')).toEqual({ value: 30000000, unit: 'currency' });
+    expect(r('kpi.invoiceOverdue')).toEqual({ value: 5000000, unit: 'currency' });
+    expect(r('chart.invoicesByStatus')).toEqual({
+      chartKind: 'bar',
+      data: [{ name: 'paid', value: 12 }, { name: 'pending', value: 5 }, { name: 'overdue', value: 2 }],
+    });
+  });
+
+  it('channel-partner blocks', () => {
+    expect(r('kpi.cpGrossCommissions')).toEqual({ value: 4000000, unit: 'currency' });
+    expect(r('kpi.cpNetCommissions')).toEqual({ value: 3600000, unit: 'currency' });
+    expect(r('kpi.cpPendingCommissions')).toEqual({ value: 800000, unit: 'currency' });
+    expect(r('table.cpCommissionsByStatus')).toEqual({
+      rows: [
+        { status: 'paid', count: 8, amount: 2800000 },
+        { status: 'pending', count: 3, amount: 800000 },
+      ],
+    });
+  });
+
+  it('construction blocks (progress is 0-100 → /100 for percent unit)', () => {
+    expect(r('kpi.constructionProgress')).toEqual({ value: 0.625, unit: 'percent' });
+    expect(r('kpi.delayedMilestones')).toEqual({ value: 2, unit: 'count' });
+    expect(r('chart.milestonesByStatus')).toEqual({
+      chartKind: 'pie',
+      data: [{ name: 'completed', value: 10 }, { name: 'in_progress', value: 4 }, { name: 'delayed', value: 2 }],
+    });
+  });
+
+  it('operations blocks', () => {
+    expect(r('kpi.overdueTasks')).toEqual({ value: 7, unit: 'count' });
+    expect(r('chart.tasksByStatus')).toEqual({
+      chartKind: 'pie', data: [{ name: 'open', value: 20 }, { name: 'done', value: 35 }],
+    });
+    expect(r('chart.tasksByPriority')).toEqual({
+      chartKind: 'bar', data: [{ name: 'high', value: 8 }, { name: 'low', value: 12 }],
+    });
+  });
+
+  it('new blocks gate on analytics:advanced and are hidden without it', () => {
+    const open = getCatalog([], false).map((b) => b.type);
+    expect(open).not.toContain('kpi.cpGrossCommissions');
+    const adv = getCatalog(['analytics:advanced'], false).map((b) => b.type);
+    expect(adv).toContain('kpi.cpGrossCommissions');
+    expect(adv).toContain('chart.tasksByStatus');
   });
 });

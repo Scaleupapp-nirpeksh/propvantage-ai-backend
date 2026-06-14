@@ -83,6 +83,94 @@ const BLOCKS = [
     requiredPermission: 'ai:insights', defaultConfig: { focus: '' },
     resolve: async ({ overview, config }) => generateNarrative(buildFacts(overview), config?.focus),
   },
+  // ─── Financial (extra) ──────────────────────────────
+  {
+    type: 'kpi.totalSalesCount', category: 'Financial', label: 'Bookings', kind: 'kpi',
+    description: 'Number of bookings (all-time).', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.revenue?.totalSalesCount), unit: 'count' }),
+  },
+  {
+    type: 'kpi.overdueAmount', category: 'Financial', label: 'Overdue', kind: 'kpi',
+    description: 'Total overdue receivables.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.revenue?.totalOverdue), unit: 'currency' }),
+  },
+  // ─── Invoicing ──────────────────────────────────────
+  {
+    type: 'kpi.invoiced', category: 'Invoicing', label: 'Total Invoiced', kind: 'kpi',
+    description: 'Total invoiced amount.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.invoicing?.totalInvoiced), unit: 'currency' }),
+  },
+  {
+    type: 'kpi.invoicePaid', category: 'Invoicing', label: 'Invoices Paid', kind: 'kpi',
+    description: 'Total paid against invoices.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.invoicing?.totalPaid), unit: 'currency' }),
+  },
+  {
+    type: 'kpi.invoiceOverdue', category: 'Invoicing', label: 'Invoices Overdue', kind: 'kpi',
+    description: 'Overdue invoice amount.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.invoicing?.totalOverdue), unit: 'currency' }),
+  },
+  {
+    type: 'chart.invoicesByStatus', category: 'Invoicing', label: 'Invoices by Status', kind: 'chart',
+    description: 'Invoice count by status.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ chartKind: 'bar', data: objectMapToChartData(overview?.invoicing?.invoicesByStatus) }),
+  },
+  // ─── Channel Partners ───────────────────────────────
+  {
+    type: 'kpi.cpGrossCommissions', category: 'Channel Partners', label: 'Gross Commissions', kind: 'kpi',
+    description: 'Total gross channel-partner commissions.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.channelPartner?.totalGrossCommissions), unit: 'currency' }),
+  },
+  {
+    type: 'kpi.cpNetCommissions', category: 'Channel Partners', label: 'Net Commissions', kind: 'kpi',
+    description: 'Total net channel-partner commissions.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.channelPartner?.totalNetCommissions), unit: 'currency' }),
+  },
+  {
+    type: 'kpi.cpPendingCommissions', category: 'Channel Partners', label: 'Pending Commissions', kind: 'kpi',
+    description: 'Commissions pending payout.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.channelPartner?.totalPending), unit: 'currency' }),
+  },
+  {
+    type: 'table.cpCommissionsByStatus', category: 'Channel Partners', label: 'Commissions by Status', kind: 'table',
+    description: 'Commission count and amount by status.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({
+      rows: Object.entries(overview?.channelPartner?.commissionsByStatus || {})
+        .map(([status, v]) => ({ status, count: num(v?.count), amount: num(v?.amount) })),
+    }),
+  },
+  // ─── Construction ───────────────────────────────────
+  {
+    type: 'kpi.constructionProgress', category: 'Construction', label: 'Construction Progress', kind: 'kpi',
+    description: 'Average construction progress across milestones.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.construction?.overallProgress) / 100, unit: 'percent' }),
+  },
+  {
+    type: 'kpi.delayedMilestones', category: 'Construction', label: 'Delayed Milestones', kind: 'kpi',
+    description: 'Count of delayed construction milestones.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.construction?.delayedCount), unit: 'count' }),
+  },
+  {
+    type: 'chart.milestonesByStatus', category: 'Construction', label: 'Milestones by Status', kind: 'chart',
+    description: 'Milestone count by status.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ chartKind: 'pie', data: objectMapToChartData(overview?.construction?.milestonesByStatus) }),
+  },
+  // ─── Operations ─────────────────────────────────────
+  {
+    type: 'kpi.overdueTasks', category: 'Operations', label: 'Overdue Tasks', kind: 'kpi',
+    description: 'Tasks past their due date.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ value: num(overview?.operations?.overdueCount), unit: 'count' }),
+  },
+  {
+    type: 'chart.tasksByStatus', category: 'Operations', label: 'Tasks by Status', kind: 'chart',
+    description: 'Task count by status.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ chartKind: 'pie', data: objectMapToChartData(overview?.operations?.tasksByStatus) }),
+  },
+  {
+    type: 'chart.tasksByPriority', category: 'Operations', label: 'Tasks by Priority', kind: 'chart',
+    description: 'Task count by priority.', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({ chartKind: 'bar', data: objectMapToChartData(overview?.operations?.tasksByPriority) }),
+  },
   // ─── Layout / Media (always available) ──────────────
   {
     type: 'layout.hero', category: 'Layout', label: 'Cover / Hero', kind: 'layout',
