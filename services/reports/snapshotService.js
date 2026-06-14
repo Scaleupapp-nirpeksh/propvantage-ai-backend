@@ -46,6 +46,31 @@ export const resolvePeriodArgs = (scope = {}) => {
 };
 
 /**
+ * Resolve a report definition into scoped, real-data blocks WITHOUT persisting.
+ * Shared by generateInstance (which then freezes it) and the preview endpoint /
+ * the agent's data tools. `definition` has { organization, scope, blocks }.
+ * @returns {{ mode, projectIds, overview, blocks }}
+ */
+export const resolveReportData = async (definition, { accessibleProjectIds = null } = {}) => {
+  const { mode, projectIds } = resolveReportScope(definition.scope, accessibleProjectIds);
+  const { period, startDate, endDate } = resolvePeriodArgs(definition.scope);
+  const overview = await getLeadershipOverview(
+    definition.organization, period, startDate, endDate, projectIds
+  );
+  if (mode === 'compare' && Array.isArray(projectIds) && projectIds.length) {
+    try {
+      overview._comparison = await getLeadershipProjectComparison(
+        definition.organization, period, startDate, endDate, projectIds
+      );
+    } catch (err) {
+      overview._comparison = { error: err.message };
+    }
+  }
+  const blocks = await buildSnapshotBlocks(definition.blocks, overview);
+  return { mode, projectIds, overview, blocks };
+};
+
+/**
  * Generate and persist a frozen ReportInstance from a template.
  * @param {Object} template - a ReportTemplate document (or plain object with the same shape)
  * @param {Object} ctx - { createdBy, accessibleProjectIds }
@@ -55,21 +80,7 @@ export const generateInstance = async (
   template,
   { createdBy = null, accessibleProjectIds = null, autoApprove = false } = {}
 ) => {
-  const { mode, projectIds } = resolveReportScope(template.scope, accessibleProjectIds);
-  const { period, startDate, endDate } = resolvePeriodArgs(template.scope);
-  const overview = await getLeadershipOverview(
-    template.organization, period, startDate, endDate, projectIds
-  );
-  if (mode === 'compare' && Array.isArray(projectIds) && projectIds.length) {
-    try {
-      overview._comparison = await getLeadershipProjectComparison(
-        template.organization, period, startDate, endDate, projectIds
-      );
-    } catch (err) {
-      overview._comparison = { error: err.message };
-    }
-  }
-  const blocks = await buildSnapshotBlocks(template.blocks, overview);
+  const { mode, projectIds, overview, blocks } = await resolveReportData(template, { accessibleProjectIds });
   const expiresAfterDays = template.access?.expiresAfterDays || 90;
 
   // Ad-hoc generations (a user previewing/sharing their own report) are approved on
