@@ -15,6 +15,9 @@ import {
   generateTemplateInstance,
 } from '../controllers/reportTemplateController.js';
 import { getInstances, getInstanceById, getInstanceAnalytics } from '../controllers/reportInstanceController.js';
+import {
+  submitForReview, approveReport, requestChanges, addOverride, addFlag, resolveFlag,
+} from '../controllers/reportReviewController.js';
 
 const router = express.Router();
 
@@ -48,5 +51,13 @@ router.post('/templates/:id/generate', hasPermission(PERMISSIONS.REPORTS.MANAGE)
 router.get('/instances', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstances);
 router.get('/instances/:id', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstanceById);
 router.get('/instances/:id/analytics', hasPermission(PERMISSIONS.REPORTS.VIEW), getInstanceAnalytics);
+
+// Review & approval workflow
+router.post('/instances/:id/submit-review', hasPermission(PERMISSIONS.REPORTS.MANAGE), submitForReview);
+router.post('/instances/:id/approve', hasPermission(PERMISSIONS.REPORTS.APPROVE), approveReport);
+router.post('/instances/:id/request-changes', hasPermission(PERMISSIONS.REPORTS.APPROVE), requestChanges);
+router.post('/instances/:id/overrides', hasPermission(PERMISSIONS.REPORTS.MANAGE), addOverride);
+router.post('/instances/:id/flags', hasPermission(PERMISSIONS.REPORTS.MANAGE), addFlag);
+router.patch('/instances/:id/flags/:flagId', hasPermission(PERMISSIONS.REPORTS.MANAGE), resolveFlag);
 
 export default router;
