@@ -65,7 +65,7 @@ const createTransporter = () => {
       config.secure = EMAIL_CONFIG.smtp.secure;
     }
     
-    transporter = nodemailer.createTransporter(config);
+    transporter = nodemailer.createTransport(config);
     
     console.log(`📧 Email transporter created using ${EMAIL_CONFIG.service || 'custom SMTP'}`);
     
@@ -700,6 +700,40 @@ export const sendTestEmail = async (toEmail) => {
 };
 
 // =============================================================================
+// GENERIC SEND (used by report delivery service)
+// =============================================================================
+
+/**
+ * Generic email send with retry. Used by the report delivery service.
+ * @param {{ to: string, subject: string, html: string, text?: string }} opts
+ * @returns {Promise<{ success: boolean, messageId?: string }>}
+ */
+export const sendEmail = async ({ to, subject, html, text }) => {
+  if (!to || !subject || !html) throw new Error('sendEmail requires to, subject, and html');
+  if (!transporter) transporter = createTransporter();
+  if (!transporter) throw new Error('Email service not available');
+
+  const emailOptions = {
+    from: { name: EMAIL_CONFIG.from.name, address: EMAIL_CONFIG.from.email },
+    to, subject, html, text: text || '',
+  };
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= EMAIL_CONFIG.maxRetries; attempt++) {
+    try {
+      const result = await transporter.sendMail(emailOptions);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      lastError = error;
+      if (attempt < EMAIL_CONFIG.maxRetries) {
+        await new Promise((r) => setTimeout(r, EMAIL_CONFIG.retryDelay));
+      }
+    }
+  }
+  throw new Error(`Failed to send email after ${EMAIL_CONFIG.maxRetries} attempts: ${lastError?.message}`);
+};
+
+// =============================================================================
 // INITIALIZATION AND VERIFICATION
 // =============================================================================
 
@@ -720,4 +754,5 @@ export default {
   getEmailServiceStatus,
   sendTestEmail,
   verifyEmailConfig,
+  sendEmail,
 };
