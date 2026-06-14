@@ -5,7 +5,7 @@ import express from 'express';
 import multer from 'multer';
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
 import { PERMISSIONS } from '../config/permissions.js';
-import { getCatalog, uploadReportImage } from '../controllers/reportController.js';
+import { getCatalog, uploadReportImage, previewReport } from '../controllers/reportController.js';
 import {
   getTemplates,
   getTemplateById,
@@ -28,6 +28,9 @@ router.use(protect);
 
 // Block catalog for the builder palette
 router.get('/catalog', hasPermission(PERMISSIONS.REPORTS.MANAGE), getCatalog);
+
+// Live preview of an unsaved report definition (no persistence)
+router.post('/preview', hasPermission(PERMISSIONS.REPORTS.MANAGE), previewReport);
 
 // Image upload (hero/gallery/logo)
 router.post('/uploads', hasPermission(PERMISSIONS.REPORTS.MANAGE), upload.single('file'), uploadReportImage);
