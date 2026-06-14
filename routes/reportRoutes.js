@@ -6,6 +6,7 @@ import multer from 'multer';
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
 import { PERMISSIONS } from '../config/permissions.js';
 import { getCatalog, uploadReportImage, previewReport } from '../controllers/reportController.js';
+import { postAgentMessage, getAgentSession } from '../controllers/reportAgentController.js';
 import {
   getTemplates,
   getTemplateById,
@@ -31,6 +32,10 @@ router.get('/catalog', hasPermission(PERMISSIONS.REPORTS.MANAGE), getCatalog);
 
 // Live preview of an unsaved report definition (no persistence)
 router.post('/preview', hasPermission(PERMISSIONS.REPORTS.MANAGE), previewReport);
+
+// Agent conversation endpoints
+router.post('/agent/message', hasPermission(PERMISSIONS.REPORTS.MANAGE), postAgentMessage);
+router.get('/agent/sessions/:id', hasPermission(PERMISSIONS.REPORTS.MANAGE), getAgentSession);
 
 // Image upload (hero/gallery/logo)
 router.post('/uploads', hasPermission(PERMISSIONS.REPORTS.MANAGE), upload.single('file'), uploadReportImage);
