@@ -17,6 +17,7 @@ export const DELIVERY_MODES = ['review_then_send', 'auto_send'];
 export const SCHEDULE_FREQUENCIES = ['weekly', 'monthly', 'quarterly'];
 export const GATE_TYPES = ['email', 'email_otp', 'public'];
 export const TEMPLATE_STATUSES = ['active', 'paused', 'archived'];
+export const SCOPE_MODES = ['portfolio', 'project', 'compare'];
 
 // =============================================================================
 // SCHEMA
@@ -62,6 +63,7 @@ const reportTemplateSchema = new mongoose.Schema(
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
     scope: {
+      mode: { type: String, enum: SCOPE_MODES, default: 'portfolio' },
       projects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Project' }],
       period: {
         preset: { type: String, enum: PERIOD_PRESETS, default: 'last_30d' },
