@@ -74,6 +74,7 @@ import cpCommissionInvoiceRoutes from './routes/cpCommissionInvoiceRoutes.js';
 import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
+import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
 
 // Load environment variables
 dotenv.config();
@@ -476,6 +477,7 @@ httpServer.listen(PORT, () => {
   // node-cron only fires at the cron-expression times, not immediately.
   try {
     registerScheduledInsightJobs();
+    registerScheduledReportJobs();
   } catch (err) {
     console.error('[SP5] Failed to register scheduled insight jobs:', err.message);
   }
