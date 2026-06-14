@@ -4,11 +4,12 @@
 import { jest } from '@jest/globals';
 
 const getLeadershipOverview = jest.fn(async () => ({ _dateRange: { start: null, end: null } }));
+const getLeadershipProjectComparison = jest.fn(async () => ({ projects: [{ name: 'P', revenue: {}, salesPipeline: {}, construction: {} }] }));
 const create = jest.fn(async (doc) => doc);
 
 jest.unstable_mockModule('../../services/leadershipDashboardService.js', () => ({
   getLeadershipOverview,
-  getLeadershipProjectComparison: jest.fn(),
+  getLeadershipProjectComparison,
 }));
 jest.unstable_mockModule('../../models/reportInstanceModel.js', () => ({
   default: { create },
@@ -53,5 +54,23 @@ describe('generateInstance — scope', () => {
       generateInstance(template({ mode: 'project', projects: ['cccccccccccccccccccccccc'] }), { accessibleProjectIds: [A] }),
     ).rejects.toThrow(/none of the selected projects/i);
     expect(getLeadershipOverview).not.toHaveBeenCalled();
+  });
+
+  it('compare mode fetches project comparison and attaches it to the overview', async () => {
+    getLeadershipProjectComparison.mockClear();
+    const inst = await generateInstance(
+      template({ mode: 'compare', projects: [A, B] }),
+      { accessibleProjectIds: [A, B] },
+    );
+    expect(getLeadershipProjectComparison).toHaveBeenCalled();
+    // the resolved project ids are passed (arg index 4)
+    expect(getLeadershipProjectComparison.mock.calls[0][4]).toEqual([A, B]);
+    expect(inst.scope.mode).toBe('compare');
+  });
+
+  it('non-compare modes do not call project comparison', async () => {
+    getLeadershipProjectComparison.mockClear();
+    await generateInstance(template({ mode: 'portfolio' }), { accessibleProjectIds: null });
+    expect(getLeadershipProjectComparison).not.toHaveBeenCalled();
   });
 });

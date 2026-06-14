@@ -137,4 +137,16 @@ describe('blockRegistry — Phase 2 blocks', () => {
     expect(adv).toContain('kpi.cpGrossCommissions');
     expect(adv).toContain('chart.tasksByStatus');
   });
+
+  it('table.projectComparison reads overview._comparison.projects', () => {
+    const ov = { _comparison: { projects: [
+      { name: 'Skyline', revenue: { actualRevenue: 100, totalCollected: 60 }, salesPipeline: { conversionRate: 0.06 }, construction: { overallProgress: 50 } },
+    ] } };
+    expect(getBlock('table.projectComparison').resolve({ overview: ov, config: {} })).toEqual({
+      rows: [{ project: 'Skyline', sales: 100, collected: 60, conversion: 0.06, progress: 50 }],
+    });
+  });
+  it('table.projectComparison is empty when no comparison data', () => {
+    expect(getBlock('table.projectComparison').resolve({ overview: {}, config: {} })).toEqual({ rows: [] });
+  });
 });

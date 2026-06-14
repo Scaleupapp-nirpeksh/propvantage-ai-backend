@@ -5,7 +5,7 @@
 import crypto from 'crypto';
 import ReportInstance from '../../models/reportInstanceModel.js';
 import { getBlock } from './blockRegistry.js';
-import { getLeadershipOverview } from '../leadershipDashboardService.js';
+import { getLeadershipOverview, getLeadershipProjectComparison } from '../leadershipDashboardService.js';
 import { resolveReportScope } from './scopeResolver.js';
 
 /**
@@ -60,6 +60,15 @@ export const generateInstance = async (
   const overview = await getLeadershipOverview(
     template.organization, period, startDate, endDate, projectIds
   );
+  if (mode === 'compare' && Array.isArray(projectIds) && projectIds.length) {
+    try {
+      overview._comparison = await getLeadershipProjectComparison(
+        template.organization, period, startDate, endDate, projectIds
+      );
+    } catch (err) {
+      overview._comparison = { error: err.message };
+    }
+  }
   const blocks = await buildSnapshotBlocks(template.blocks, overview);
   const expiresAfterDays = template.access?.expiresAfterDays || 90;
 

@@ -171,6 +171,20 @@ const BLOCKS = [
     description: 'Task count by priority.', requiredPermission: ADV, defaultConfig: {},
     resolve: ({ overview }) => ({ chartKind: 'bar', data: objectMapToChartData(overview?.operations?.tasksByPriority) }),
   },
+  // ─── Comparison (compare scope) ─────────────────────
+  {
+    type: 'table.projectComparison', category: 'Comparison', label: 'Project Comparison', kind: 'table',
+    description: 'Side-by-side key metrics per project (used with a "compare" scope).', requiredPermission: ADV, defaultConfig: {},
+    resolve: ({ overview }) => ({
+      rows: (overview?._comparison?.projects || []).map((p) => ({
+        project: p?.name,
+        sales: num(p?.revenue?.actualRevenue),
+        collected: num(p?.revenue?.totalCollected),
+        conversion: num(p?.salesPipeline?.conversionRate),
+        progress: num(p?.construction?.overallProgress),
+      })),
+    }),
+  },
   // ─── Layout / Media (always available) ──────────────
   {
     type: 'layout.hero', category: 'Layout', label: 'Cover / Hero', kind: 'layout',
