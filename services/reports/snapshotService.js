@@ -12,18 +12,18 @@ import { getLeadershipOverview } from '../leadershipDashboardService.js';
  * Pure: no I/O. Unknown types and resolver errors are isolated per block so one
  * bad block never fails the whole report.
  */
-export const buildSnapshotBlocks = (templateBlocks, overview = {}) => {
+export const buildSnapshotBlocks = async (templateBlocks, overview = {}) => {
   if (!Array.isArray(templateBlocks)) return [];
-  return templateBlocks.map((block) => {
+  return Promise.all(templateBlocks.map(async (block) => {
     const def = getBlock(block.type);
     if (!def) return { ...block, data: { error: `Unknown block type: ${block.type}` } };
     try {
-      const data = def.resolve({ overview, config: block.config || {} });
+      const data = await def.resolve({ overview, config: block.config || {} });
       return { ...block, data };
     } catch (err) {
       return { ...block, data: { error: err.message } };
     }
-  });
+  }));
 };
 
 const PRESET_TO_PERIOD = {
@@ -55,7 +55,7 @@ export const generateInstance = async (template, { createdBy = null, accessibleP
   const overview = await getLeadershipOverview(
     template.organization, period, startDate, endDate, accessibleProjectIds
   );
-  const blocks = buildSnapshotBlocks(template.blocks, overview);
+  const blocks = await buildSnapshotBlocks(template.blocks, overview);
   const expiresAfterDays = template.access?.expiresAfterDays || 90;
 
   return ReportInstance.create({

@@ -7,32 +7,26 @@ const overview = {
 };
 
 describe('buildSnapshotBlocks', () => {
-  it('attaches resolved data to each known block', () => {
-    const out = buildSnapshotBlocks([{ id: 'b1', type: 'kpi.revenue', config: {} }], overview);
+  it('attaches resolved data to each known block', async () => {
+    const out = await buildSnapshotBlocks([{ id: 'b1', type: 'kpi.revenue', config: {} }], overview);
     expect(out[0].id).toBe('b1');
     expect(out[0].data).toEqual({ value: 100, unit: 'currency' });
   });
-
-  it('marks unknown block types with an error instead of throwing', () => {
-    const out = buildSnapshotBlocks([{ id: 'x', type: 'nope.block' }], overview);
+  it('marks unknown block types with an error instead of throwing', async () => {
+    const out = await buildSnapshotBlocks([{ id: 'x', type: 'nope.block' }], overview);
     expect(out[0].data.error).toMatch(/Unknown block type/);
   });
-
-  it('handles a block with null config without throwing, in isolation from siblings', () => {
-    // NOTE: the unknown-type test above covers per-block error isolation; this verifies a real block tolerates a null config. The resolve() try/catch itself is correct by inspection.
-    // overview is null → data-bearing resolvers read undefined safely (num→0),
-    // so force a throw via a block whose resolve dereferences a bad config path.
-    const out = buildSnapshotBlocks(
+  it('handles a block with null config without throwing, in isolation from siblings', async () => {
+    const out = await buildSnapshotBlocks(
       [{ id: 'ok', type: 'kpi.revenue', config: {} }, { id: 'bad', type: 'text.note', config: null }],
       overview
     );
     expect(out[0].data).toEqual({ value: 100, unit: 'currency' });
-    expect(out[1].data).toEqual({ text: '' }); // null config handled by default param
+    expect(out[1].data).toEqual({ text: '' });
   });
-
-  it('returns [] for empty input', () => {
-    expect(buildSnapshotBlocks([], overview)).toEqual([]);
-    expect(buildSnapshotBlocks(undefined, overview)).toEqual([]);
+  it('returns [] for empty input', async () => {
+    expect(await buildSnapshotBlocks([], overview)).toEqual([]);
+    expect(await buildSnapshotBlocks(undefined, overview)).toEqual([]);
   });
 });
 
