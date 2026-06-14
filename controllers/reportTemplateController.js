@@ -5,6 +5,7 @@ import asyncHandler from 'express-async-handler';
 import ReportTemplate, { TEMPLATE_STATUSES } from '../models/reportTemplateModel.js';
 import { validateTemplatePayload } from '../services/reports/templateValidation.js';
 import { generateInstance } from '../services/reports/snapshotService.js';
+import { computeNextRunAt } from '../services/reports/scheduleHelper.js';
 
 const ALLOWED_SORT_FIELDS = new Set(['updatedAt', 'createdAt', 'name', 'status']);
 
@@ -67,12 +68,11 @@ export const createTemplate = asyncHandler(async (req, res) => {
   const { valid, errors } = validateTemplatePayload(req.body, { partial: false });
   if (!valid) { res.status(400); throw new Error(`Validation error: ${errors.join('; ')}`); }
 
-  const template = await ReportTemplate.create({
-    ...req.body,
-    organization: req.user.organization,
-    createdBy: req.user._id,
-    updatedBy: req.user._id,
-  });
+  const data = { ...req.body, organization: req.user.organization, createdBy: req.user._id, updatedBy: req.user._id };
+  if (data.schedule?.enabled) {
+    data.schedule.nextRunAt = computeNextRunAt(data.schedule, new Date());
+  }
+  const template = await ReportTemplate.create(data);
   res.status(201).json({ success: true, data: template, message: 'Report template created' });
 });
 
@@ -97,6 +97,12 @@ export const updateTemplate = asyncHandler(async (req, res) => {
     if (!immutable.has(key) && req.body[key] !== undefined) template[key] = req.body[key];
   });
   template.updatedBy = req.user._id;
+
+  if (template.schedule?.enabled) {
+    template.schedule.nextRunAt = computeNextRunAt(template.schedule, new Date());
+  } else if (template.schedule) {
+    template.schedule.nextRunAt = undefined;
+  }
 
   const updated = await template.save();
   res.json({ success: true, data: updated, message: 'Report template updated' });
