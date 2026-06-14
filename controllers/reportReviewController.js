@@ -7,6 +7,7 @@ import asyncHandler from 'express-async-handler';
 import ReportInstance from '../models/reportInstanceModel.js';
 import { nextReviewStatus } from '../services/reports/reviewState.js';
 import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
+import { sendReportToRecipients } from '../services/reports/deliveryService.js';
 
 const findOwned = async (req) => {
   const instance = await ReportInstance.findOne({ _id: req.params.id, organization: req.user.organization });
@@ -174,4 +175,18 @@ export const resolveFlag = asyncHandler(async (req, res) => {
   flag.resolvedAt = new Date();
   await instance.save();
   res.json({ success: true, data: instance, message: 'Flag resolved' });
+});
+
+/**
+ * @desc    Send an approved report's public link to its stakeholders
+ * @route   POST /api/reports/instances/:id/send
+ * @access  Private (reports:approve)
+ */
+export const sendReport = asyncHandler(async (req, res) => {
+  const instance = await findOwned(req);
+  if (instance.review?.status !== 'approved') {
+    res.status(409); throw new Error('Only approved reports can be sent');
+  }
+  const summary = await sendReportToRecipients(instance);
+  res.json({ success: true, data: { distribution: instance.distribution }, message: `Sent to ${summary.sent}/${summary.total} recipients`, summary });
 });

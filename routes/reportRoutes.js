@@ -16,7 +16,7 @@ import {
 } from '../controllers/reportTemplateController.js';
 import { getInstances, getInstanceById, getInstanceAnalytics } from '../controllers/reportInstanceController.js';
 import {
-  submitForReview, approveReport, requestChanges, addOverride, addFlag, resolveFlag,
+  submitForReview, approveReport, requestChanges, addOverride, addFlag, resolveFlag, sendReport,
 } from '../controllers/reportReviewController.js';
 
 const router = express.Router();
@@ -59,5 +59,6 @@ router.post('/instances/:id/request-changes', hasPermission(PERMISSIONS.REPORTS.
 router.post('/instances/:id/overrides', hasPermission(PERMISSIONS.REPORTS.MANAGE), addOverride);
 router.post('/instances/:id/flags', hasPermission(PERMISSIONS.REPORTS.MANAGE), addFlag);
 router.patch('/instances/:id/flags/:flagId', hasPermission(PERMISSIONS.REPORTS.MANAGE), resolveFlag);
+router.post('/instances/:id/send', hasPermission(PERMISSIONS.REPORTS.APPROVE), sendReport);
 
 export default router;
