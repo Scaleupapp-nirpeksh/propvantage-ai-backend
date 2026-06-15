@@ -74,7 +74,13 @@ const BLOCKS = [
   {
     type: 'table.topWorkload', category: 'Team', label: 'Team Workload', kind: 'table',
     description: 'Users with the most open tasks.', requiredPermission: ADV, defaultConfig: {},
-    resolve: ({ overview }) => ({ rows: Array.isArray(overview?.team?.topWorkload) ? overview.team.topWorkload : [] }),
+    resolve: ({ overview }) => ({
+      columns: [
+        { key: 'name', label: 'Team member', unit: 'text' },
+        { key: 'openTasks', label: 'Open tasks', unit: 'count' },
+      ],
+      rows: Array.isArray(overview?.team?.topWorkload) ? overview.team.topWorkload : [],
+    }),
   },
   // ─── AI ─────────────────────────────────────────────
   {
@@ -135,6 +141,11 @@ const BLOCKS = [
     type: 'table.cpCommissionsByStatus', category: 'Channel Partners', label: 'Commissions by Status', kind: 'table',
     description: 'Commission count and amount by status.', requiredPermission: ADV, defaultConfig: {},
     resolve: ({ overview }) => ({
+      columns: [
+        { key: 'status', label: 'Status', unit: 'text' },
+        { key: 'count', label: 'Count', unit: 'count' },
+        { key: 'amount', label: 'Amount', unit: 'currency' },
+      ],
       rows: Object.entries(overview?.channelPartner?.commissionsByStatus || {})
         .map(([status, v]) => ({ status, count: num(v?.count), amount: num(v?.amount) })),
     }),
@@ -176,12 +187,20 @@ const BLOCKS = [
     type: 'table.projectComparison', category: 'Comparison', label: 'Project Comparison', kind: 'table',
     description: 'Side-by-side key metrics per project (used with a "compare" scope).', requiredPermission: ADV, defaultConfig: {},
     resolve: ({ overview }) => ({
+      columns: [
+        { key: 'project', label: 'Project', unit: 'text' },
+        { key: 'sales', label: 'Sales', unit: 'currency' },
+        { key: 'collected', label: 'Collected', unit: 'currency' },
+        { key: 'conversion', label: 'Conversion', unit: 'percent' },
+        { key: 'progress', label: 'Progress', unit: 'percent' },
+      ],
       rows: (overview?._comparison?.projects || []).map((p) => ({
         project: p?.name,
         sales: num(p?.revenue?.actualRevenue),
         collected: num(p?.revenue?.totalCollected),
         conversion: num(p?.salesPipeline?.conversionRate),
-        progress: num(p?.construction?.overallProgress),
+        // overallProgress is 0–100; normalize to a fraction so 'percent' formatting matches the KPIs.
+        progress: num(p?.construction?.overallProgress) / 100,
       })),
     }),
   },

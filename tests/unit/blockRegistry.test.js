@@ -6,7 +6,7 @@ const fakeOverview = {
   salesPipeline: { totalLeads: 320, conversionRate: 0.062, avgBookingValue: 8500000,
     leadsByStatus: { New: 100, Booked: 20 }, leadsBySource: { Web: 50, Referral: 30 } },
   portfolio: { totalUnits: 200, totalProjects: 4, unitsByStatus: { available: 152, sold: 48 } },
-  team: { topWorkload: [{ user: 'A', openTasks: 9 }] },
+  team: { topWorkload: [{ userId: 'u1', name: 'A', openTasks: 9 }] },
   invoicing: { totalInvoiced: 50000000, totalPaid: 30000000, totalOverdue: 5000000,
     invoicesByStatus: { paid: 12, pending: 5, overdue: 2 } },
   channelPartner: { totalGrossCommissions: 4000000, totalNetCommissions: 3600000, totalPending: 800000,
@@ -104,10 +104,25 @@ describe('blockRegistry — Phase 2 blocks', () => {
     expect(r('kpi.cpNetCommissions')).toEqual({ value: 3600000, unit: 'currency' });
     expect(r('kpi.cpPendingCommissions')).toEqual({ value: 800000, unit: 'currency' });
     expect(r('table.cpCommissionsByStatus')).toEqual({
+      columns: [
+        { key: 'status', label: 'Status', unit: 'text' },
+        { key: 'count', label: 'Count', unit: 'count' },
+        { key: 'amount', label: 'Amount', unit: 'currency' },
+      ],
       rows: [
         { status: 'paid', count: 8, amount: 2800000 },
         { status: 'pending', count: 3, amount: 800000 },
       ],
+    });
+  });
+
+  it('table.topWorkload emits name/openTasks columns and passes rows through', () => {
+    expect(r('table.topWorkload')).toEqual({
+      columns: [
+        { key: 'name', label: 'Team member', unit: 'text' },
+        { key: 'openTasks', label: 'Open tasks', unit: 'count' },
+      ],
+      rows: [{ userId: 'u1', name: 'A', openTasks: 9 }],
     });
   });
 
@@ -138,15 +153,26 @@ describe('blockRegistry — Phase 2 blocks', () => {
     expect(adv).toContain('chart.tasksByStatus');
   });
 
-  it('table.projectComparison reads overview._comparison.projects', () => {
+  const PROJECT_COMPARISON_COLUMNS = [
+    { key: 'project', label: 'Project', unit: 'text' },
+    { key: 'sales', label: 'Sales', unit: 'currency' },
+    { key: 'collected', label: 'Collected', unit: 'currency' },
+    { key: 'conversion', label: 'Conversion', unit: 'percent' },
+    { key: 'progress', label: 'Progress', unit: 'percent' },
+  ];
+  it('table.projectComparison reads overview._comparison.projects (progress 0-100 → fraction)', () => {
     const ov = { _comparison: { projects: [
       { name: 'Skyline', revenue: { actualRevenue: 100, totalCollected: 60 }, salesPipeline: { conversionRate: 0.06 }, construction: { overallProgress: 50 } },
     ] } };
     expect(getBlock('table.projectComparison').resolve({ overview: ov, config: {} })).toEqual({
-      rows: [{ project: 'Skyline', sales: 100, collected: 60, conversion: 0.06, progress: 50 }],
+      columns: PROJECT_COMPARISON_COLUMNS,
+      rows: [{ project: 'Skyline', sales: 100, collected: 60, conversion: 0.06, progress: 0.5 }],
     });
   });
   it('table.projectComparison is empty when no comparison data', () => {
-    expect(getBlock('table.projectComparison').resolve({ overview: {}, config: {} })).toEqual({ rows: [] });
+    expect(getBlock('table.projectComparison').resolve({ overview: {}, config: {} })).toEqual({
+      columns: PROJECT_COMPARISON_COLUMNS,
+      rows: [],
+    });
   });
 });
