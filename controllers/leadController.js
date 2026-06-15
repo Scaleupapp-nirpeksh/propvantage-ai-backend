@@ -925,7 +925,7 @@ const getLeadStats = asyncHandler(async (req, res) => {
           $sum: { $cond: [{ $eq: ['$priority', 'High'] }, 1, 0] }
         },
         criticalPriorityLeads: {
-          $sum: { $cond: [{ $eq: ['$priority', 'Critical'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ['$priority', 'High'] }, 1, 0] }
         },
         qualifiedLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'Qualified'] }, 1, 0] }

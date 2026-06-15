@@ -54,6 +54,13 @@ const run = async () => {
       const newStatus = mapStatus(lead.status);
       if (newStatus !== lead.status) set.status = newStatus;
 
+      // Also remap an in-flight CP proposed status (rare; transient field).
+      const oldProposed = lead.proposedStatusChange?.status;
+      if (oldProposed) {
+        const newProposed = mapStatus(oldProposed);
+        if (newProposed !== oldProposed) set['proposedStatusChange.status'] = newProposed;
+      }
+
       const oldFt = lead.followUpSchedule?.followUpType;
       if (oldFt) {
         const nf = mapFollowUpType(oldFt);

@@ -55,6 +55,10 @@ describe('Lead model — developer-ready refactor', () => {
     expect(['High', 'Medium', 'Low', 'Very Low']).toContain(doc.scoreStatus);
     expect(doc.scoreStatus).not.toMatch(/Lead/);
   });
+  it('accepts the new + legacy follow-up types (superset incl. text)', () => {
+    ['call', 'email', 'meeting', 'text', 'whatsapp', 'site_visit'].forEach((t) =>
+      expect(new Lead(validLead({ followUpSchedule: { followUpType: t } })).validateSync()).toBeUndefined());
+  });
   it('supports statusHistory and sourceDetail', () => {
     const doc = new Lead(validLead({
       statusHistory: [{ status: 'New' }],

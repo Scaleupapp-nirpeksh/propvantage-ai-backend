@@ -308,7 +308,9 @@ const leadSchema = new mongoose.Schema(
       nextFollowUpDate: { type: Date },
       followUpType: {
         type: String,
-        enum: ['call', 'email', 'site_visit', 'meeting', 'whatsapp'],
+        // 2026-06 refactor: UI uses call/email/meeting/text; legacy site_visit/
+        // whatsapp kept valid so un-migrated embedded docs still save.
+        enum: ['call', 'email', 'meeting', 'text', 'whatsapp', 'site_visit'],
         default: 'call',
         // Normalise common UI casing/spacing variants — "Call" → "call",
         // "Site Visit" → "site_visit", "WhatsApp" → "whatsapp" — so the
