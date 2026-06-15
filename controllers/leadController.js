@@ -782,6 +782,54 @@ const assignLead = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Quick status change (detail-page three-dots) — enforces the state machine
+ * @route   PATCH /api/leads/:id/status
+ * @access  Private (LEADS.UPDATE)
+ */
+const changeLeadStatus = asyncHandler(async (req, res) => {
+  const { status, note } = req.body;
+  if (!status) {
+    res.status(400);
+    throw new Error('A target status is required.');
+  }
+
+  const lead = await Lead.findOne({ _id: req.params.id, organization: req.user.organization });
+  if (!lead) {
+    res.status(404);
+    throw new Error('Lead not found');
+  }
+
+  verifyProjectAccess(req, res, lead.project);
+
+  if (
+    req.user.role === 'Sales Executive' &&
+    lead.assignedTo &&
+    lead.assignedTo.toString() !== req.user._id.toString()
+  ) {
+    res.status(403);
+    throw new Error('You are not authorized to update this lead.');
+  }
+
+  const previousStatus = lead.status;
+  try {
+    assertTransition(previousStatus, status);
+  } catch (e) {
+    res.status(400);
+    throw new Error(e.message);
+  }
+
+  lead.status = status;
+  lead.statusHistory.push({ status, changedAt: new Date(), changedBy: req.user._id, note: note || '' });
+  if (status === 'Revived') lead.revivedCount = (lead.revivedCount || 0) + 1;
+  await lead.save(); // pre-save stamps statusChangedAt and keeps priority in sync
+
+  // Keep the CP-side source Prospect in lockstep (best-effort, non-fatal).
+  await syncProspectStatusFromLead(lead, status, req.user);
+
+  res.json({ success: true, data: lead, message: `Status updated to ${status}.` });
+});
+
+/**
  * @desc    Bulk update leads
  * @route   PUT /api/leads/bulk-update
  * @access  Private (Management roles)
@@ -1241,6 +1289,7 @@ export {
   addInteractionToLead,      // FIXED: Now properly exported
   getLeadInteractions,       // FIXED: Now properly exported
   assignLead,
+  changeLeadStatus,
   bulkUpdateLeads,
   getLeadStats,
   // SP4 — cross-org lead registrations queue
