@@ -9,8 +9,7 @@ const overview = {
 describe('buildSnapshotBlocks', () => {
   it('attaches resolved data to each known block', async () => {
     const out = await buildSnapshotBlocks([{ id: 'b1', type: 'kpi.revenue', config: {} }], overview);
-    expect(out[0].id).toBe('b1');
-    expect(out[0].data).toEqual({ value: 100, unit: 'currency' });
+    expect(out[0]).toMatchObject({ id: 'b1', type: 'kpi.revenue', kind: 'kpi', data: { value: 100, unit: 'currency' } });
   });
   it('marks unknown block types with an error instead of throwing', async () => {
     const out = await buildSnapshotBlocks([{ id: 'x', type: 'nope.block' }], overview);

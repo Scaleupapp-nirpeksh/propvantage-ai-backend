@@ -26,7 +26,7 @@ describe('resolveReportData', () => {
     expect(getLeadershipOverview.mock.calls[0][0]).toBe('org1');
     expect(getLeadershipOverview.mock.calls[0][4]).toBeNull(); // portfolio + owner → all
     expect(out.mode).toBe('portfolio');
-    expect(out.blocks[0]).toEqual({ id: 'r', type: 'kpi.revenue', config: {}, data: { value: 100, unit: 'currency' } });
+    expect(out.blocks[0]).toMatchObject({ id: 'r', type: 'kpi.revenue', config: {}, kind: 'kpi', data: { value: 100, unit: 'currency' } });
     expect(out.overview.revenue.totalSalesValue).toBe(100);
   });
 

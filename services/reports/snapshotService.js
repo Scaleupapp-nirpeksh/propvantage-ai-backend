@@ -20,7 +20,7 @@ export const buildSnapshotBlocks = async (templateBlocks, overview = {}) => {
     if (!def) return { ...block, data: { error: `Unknown block type: ${block.type}` } };
     try {
       const data = await def.resolve({ overview, config: block.config || {} });
-      return { ...block, data };
+      return { ...block, kind: def.kind, data };
     } catch (err) {
       return { ...block, data: { error: err.message } };
     }
