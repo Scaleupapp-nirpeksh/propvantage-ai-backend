@@ -6,8 +6,6 @@
 export const NEW_SOURCES = ['Channel Partner', 'Management', 'Direct', 'Referral', 'Marketing', 'Cold Calling'];
 
 const SOURCE_MAP = {
-  Referral: 'Referral',
-  'Channel Partner': 'Channel Partner',
   'Walk-in': 'Direct',
   'Cold Call': 'Cold Calling',
   Website: 'Marketing',
@@ -31,6 +29,7 @@ const STATUS_MAP = {
   Unqualified: 'Lost',
 };
 
+// NOTE: 'text' is a valid followUpType only after the model enum is updated (Task 4).
 const FOLLOWUP_TYPE_MAP = {
   whatsapp: 'text',
   site_visit: 'meeting',

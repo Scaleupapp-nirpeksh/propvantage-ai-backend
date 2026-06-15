@@ -26,6 +26,11 @@ describe('lead status machine', () => {
   it('treats a no-op (same status) as allowed', () => {
     expect(canTransition('Negotiating', 'Negotiating')).toBe(true);
   });
+  it('handles the CP intake queue: pending → New (accept) / Lost (reject), but not skipping intake', () => {
+    expect(canTransition('pending', 'New')).toBe(true);
+    expect(canTransition('pending', 'Lost')).toBe(true);
+    expect(canTransition('pending', 'Qualified')).toBe(false);
+  });
   it('rejects unknown target statuses', () => {
     expect(canTransition('New', 'Contacted')).toBe(false);
   });

@@ -25,6 +25,7 @@ describe('lead enum migration maps', () => {
     expect(mapBudgetSource('loan_approved')).toBe('bank_loan');
     expect(mapBudgetSource('verified')).toBe('bank_loan');
     expect(mapBudgetSource('bank_loan')).toBe('bank_loan');
+    expect(mapBudgetSource('self_funded')).toBe('self_funded');
   });
   it('remaps removed statuses (conservative) and passes valid ones through', () => {
     expect(mapStatus('Contacted')).toBe('New');

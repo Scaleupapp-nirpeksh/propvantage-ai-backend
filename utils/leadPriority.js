@@ -18,7 +18,7 @@ const TIMELINE_TO_PRIORITY = {
 /**
  * Derive a lead's priority from its occupancy timeline.
  * Unknown/missing timeline → 'Very Low'.
- * @param {string} timeline one of the requirements.timeline enum values
+ * @param {string|undefined} timeline one of the requirements.timeline enum values
  * @returns {'High'|'Medium'|'Low'|'Very Low'}
  */
 export function derivePriorityFromTimeline(timeline) {
