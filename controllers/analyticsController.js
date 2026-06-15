@@ -142,7 +142,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
           qualifiedLeads: {
             $sum: {
               $cond: [
-                { $in: ['$status', ['Qualified', 'Site Visit Scheduled', 'Site Visit Completed', 'Negotiating', 'Booked']] },
+                { $in: ['$status', ['Qualified', 'Site Visit Completed', 'Negotiating', 'Booked']] },
                 1, 0
               ]
             }
@@ -217,7 +217,7 @@ const getDashboardAnalytics = asyncHandler(async (req, res) => {
           qualifiedLeads: {
             $sum: {
               $cond: [
-                { $in: ['$status', ['Qualified', 'Site Visit Scheduled', 'Site Visit Completed', 'Negotiating', 'Booked']] },
+                { $in: ['$status', ['Qualified', 'Site Visit Completed', 'Negotiating', 'Booked']] },
                 1, 0
               ]
             }

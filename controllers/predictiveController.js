@@ -496,14 +496,12 @@ const calculateIndividualConversionProbability = (lead, timeframe) => {
   // Adjust based on status
   const statusMultipliers = {
     'New': 0.8,
-    'Contacted': 0.9,
     'Qualified': 1.1,
-    'Site Visit Scheduled': 1.2,
     'Site Visit Completed': 1.4,
     'Negotiating': 1.6,
     'Booked': 2.0,
     'Lost': 0.1,
-    'Unqualified': 0.2
+    'Revived': 1.1
   };
   
   probability *= (statusMultipliers[lead.status] || 1);

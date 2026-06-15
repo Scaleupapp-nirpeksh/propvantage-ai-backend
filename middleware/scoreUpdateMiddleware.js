@@ -105,7 +105,7 @@ const scheduledScoreUpdate = asyncHandler(async (req, res, next) => {
       // Find leads that haven't been scored in the last 7 days
       const staleLeads = await Lead.find({
         lastScoreUpdate: { $lt: sevenDaysAgo },
-        status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+        status: { $nin: ['Booked', 'Lost'] }
       }).select('_id').limit(100); // Limit to avoid overwhelming the system
       
       if (staleLeads.length > 0) {

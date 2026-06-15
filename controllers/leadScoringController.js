@@ -97,7 +97,7 @@ const getHighPriorityLeads = asyncHandler(async (req, res) => {
   const query = {
     organization: req.user.organization,
     score: { $gte: parseInt(minScore) },
-    status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+    status: { $nin: ['Booked', 'Lost'] }
   };
   
   // Filter by project if specified
@@ -136,7 +136,7 @@ const getLeadsNeedingAttention = asyncHandler(async (req, res) => {
   
   const query = {
     organization: req.user.organization,
-    status: { $nin: ['Booked', 'Lost', 'Unqualified'] },
+    status: { $nin: ['Booked', 'Lost'] },
     $or: [
       { 'engagementMetrics.lastInteractionDate': { $lt: threeDaysAgo } },
       { 'followUpSchedule.nextFollowUpDate': { $lt: new Date() } },
@@ -307,7 +307,7 @@ const bulkRecalculateScores = asyncHandler(async (req, res) => {
     // Find leads that need score recalculation
     const query = {
       organization: req.user.organization,
-      status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+      status: { $nin: ['Booked', 'Lost'] }
     };
     
     if (projectId) {
