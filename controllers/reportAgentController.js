@@ -35,9 +35,13 @@ export const postAgentMessage = asyncHandler(async (req, res) => {
     session = await ReportAgentSession.create({ organization: req.user.organization, createdBy: req.user._id });
   }
 
+  const workingDefinition = (req.body?.definition && typeof req.body.definition === 'object')
+    ? req.body.definition
+    : session.definition;
+
   const ctx = ctxFromReq(req);
   const { definition, reply, transcript } = await runAgentTurn(
-    { definition: session.definition, transcript: session.transcript, userMessage: String(message) },
+    { definition: workingDefinition, transcript: session.transcript, userMessage: String(message) },
     ctx,
     { client, tools, model: MODEL },
   );
