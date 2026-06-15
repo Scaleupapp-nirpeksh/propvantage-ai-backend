@@ -7,7 +7,17 @@ import * as tools from '../services/reports/agent/tools.js';
 import { resolveReportData } from '../services/reports/snapshotService.js';
 
 const MODEL = process.env.REPORT_AGENT_MODEL || 'claude-sonnet-4-6';
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+
+// Build the Anthropic client lazily so it picks up env loaded after this module is imported,
+// and tolerate a key that arrives wrapped in quotes/whitespace from the deploy's .env write
+// (e.g. ANTHROPIC_API_KEY='"sk-ant-…"' → the literal quotes would otherwise 401 every call).
+let _client = null;
+const getClient = () => {
+  if (_client) return _client;
+  const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim().replace(/^['"]+|['"]+$/g, '');
+  if (apiKey) _client = new Anthropic({ apiKey });
+  return _client;
+};
 
 // ctx is built ONLY from the authenticated request — never from model-emitted tool args.
 const ctxFromReq = (req) => ({
@@ -23,6 +33,7 @@ const ctxFromReq = (req) => ({
  * @access Private (reports:manage)
  */
 export const postAgentMessage = asyncHandler(async (req, res) => {
+  const client = getClient();
   if (!client) { res.status(503); throw new Error('AI is not configured.'); }
   const { sessionId, message } = req.body || {};
   if (!message || !String(message).trim()) { res.status(400); throw new Error('A message is required.'); }

@@ -6,7 +6,15 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const MODEL = process.env.REPORT_NARRATIVE_MODEL || 'claude-sonnet-4-6';
 const MAX_TOKENS = Number(process.env.REPORT_NARRATIVE_MAX_TOKENS) || 400;
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+// Lazy + quote/whitespace-tolerant client (the deploy may write the key wrapped in quotes;
+// build at call time so env loaded after import is seen, and strip stray quotes/whitespace).
+let _anthropic = null;
+const getClient = () => {
+  if (_anthropic) return _anthropic;
+  const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim().replace(/^['"]+|['"]+$/g, '');
+  if (apiKey) _anthropic = new Anthropic({ apiKey });
+  return _anthropic;
+};
 
 const SYSTEM_PROMPT =
   'You are a real-estate analytics assistant. Write a concise 3–5 sentence executive '
@@ -37,6 +45,7 @@ export const buildFacts = (overview = {}) => {
  * @param {string} [focus] - optional creator hint
  */
 export const generateNarrative = async (facts, focus) => {
+  const anthropic = getClient();
   if (!anthropic) return { text: '', error: 'AI not configured (ANTHROPIC_API_KEY missing)' };
   try {
     const response = await anthropic.messages.create({

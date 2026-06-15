@@ -68,6 +68,9 @@ jobs:
           # GitHub substitutes the ${{ secrets.* }} value into this script before it is sent.
           if [ -f .env ]; then grep -v '^ANTHROPIC_API_KEY=' .env > .env.tmp && mv .env.tmp .env; fi
           echo "ANTHROPIC_API_KEY='${{ secrets.ANTHROPIC_API_KEY }}'" >> .env
+          # Diagnostic (key redacted): reveals the written line's quote structure so a malformed
+          # secret is visible in the Actions log. Expect: ANTHROPIC_API_KEY='sk-ant-REDACTED'
+          echo "ENV_CHECK: $(grep '^ANTHROPIC_API_KEY=' .env | sed -E 's/sk-ant-[A-Za-z0-9_-]+/sk-ant-REDACTED/')"
           pm2 restart "$PM2_APP" --update-env
           pm2 save
           echo "Deployed $AFTER"
