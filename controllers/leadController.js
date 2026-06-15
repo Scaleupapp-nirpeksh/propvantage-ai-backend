@@ -434,20 +434,52 @@ const updateLead = asyncHandler(async (req, res) => {
   // status/summary/signals cannot be forged through a plain lead update.
   delete req.body.enrichment;
 
+  // SP4 — remember the prior status so we can detect a developer-driven
+  // status change on a CP-attributed lead (fires cp_lead_status_changed).
+  const previousStatus = lead.status;
+
+  // 2026-06 refactor: validate any status change against the state machine
+  // BEFORE persisting, so an illegal move (e.g. New → Booked) is rejected whole.
+  const statusChanging = req.body.status && req.body.status !== previousStatus;
+  if (statusChanging) {
+    try {
+      assertTransition(previousStatus, req.body.status);
+    } catch (e) {
+      res.status(400);
+      throw new Error(e.message);
+    }
+    req.body.statusChangedAt = new Date();
+  }
+
+  // 2026-06 refactor: priority is timeline-derived. Never trust a client-sent
+  // priority; recompute it whenever the timeline is part of the update.
+  delete req.body.priority;
+  if (req.body.requirements && Object.prototype.hasOwnProperty.call(req.body.requirements, 'timeline')) {
+    req.body.priority = derivePriorityFromTimeline(req.body.requirements.timeline);
+  }
+
   // Track what fields are being updated
   const updatedFields = Object.keys(req.body);
   const scoreAffectingFields = ['budget', 'requirements', 'status', 'qualificationStatus'];
   const shouldRecalculateScore = updatedFields.some(field => scoreAffectingFields.includes(field));
-
-  // SP4 — remember the prior status so we can detect a developer-driven
-  // status change on a CP-attributed lead (fires cp_lead_status_changed).
-  const previousStatus = lead.status;
 
   // Update the lead
   const updatedLead = await Lead.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   }).populate('project', 'name location').populate('assignedTo', 'firstName lastName');
+
+  // 2026-06 refactor: record the status change in history (findByIdAndUpdate
+  // bypasses the pre-save hook, so we append explicitly). Increment revivedCount
+  // when entering 'Revived'.
+  if (statusChanging) {
+    const histEntry = { status: updatedLead.status, changedAt: req.body.statusChangedAt, changedBy: req.user._id };
+    const update = { $push: { statusHistory: histEntry } };
+    if (updatedLead.status === 'Revived') update.$inc = { revivedCount: 1 };
+    await Lead.updateOne({ _id: updatedLead._id }, update);
+    updatedLead.statusHistory.push(histEntry);
+    if (updatedLead.status === 'Revived') updatedLead.revivedCount = (updatedLead.revivedCount || 0) + 1;
+  }
 
   // If score-affecting fields were updated, trigger recalculation
   if (shouldRecalculateScore) {
