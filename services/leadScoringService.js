@@ -32,7 +32,7 @@ const initializeModels = async () => {
  */
 const DEFAULT_SCORING_CONFIG = {
   budgetAlignment: {
-    weight: 0.30,
+    weight: 0.25,
     rules: {
       exactMatch: 100,
       within10Percent: 85,
@@ -44,7 +44,7 @@ const DEFAULT_SCORING_CONFIG = {
   },
   
   engagementLevel: {
-    weight: 0.25,
+    weight: 0.20,
     rules: {
       highEngagement: 100,
       mediumEngagement: 75,
@@ -54,7 +54,7 @@ const DEFAULT_SCORING_CONFIG = {
   },
   
   timelineUrgency: {
-    weight: 0.20,
+    weight: 0.40,
     rules: {
       immediate: 100,
       within3Months: 85,
@@ -66,21 +66,21 @@ const DEFAULT_SCORING_CONFIG = {
   },
   
   sourceQuality: {
-    weight: 0.15,
+    weight: 0.10,
+    // 2026-06 refactor: keyed to the 6 new lead sources.
     rules: {
       referral: 100,
-      walkIn: 90,
-      website: 75,
-      propertyPortal: 70,
-      socialMedia: 60,
-      advertisement: 50,
-      coldCall: 30,
+      channelPartner: 85,
+      management: 80,
+      direct: 70,
+      marketing: 55,
+      coldCalling: 30,
       other: 40
     }
   },
   
   recencyFactor: {
-    weight: 0.10,
+    weight: 0.05,
     rules: {
       within24Hours: 100,
       within7Days: 85,
@@ -466,23 +466,22 @@ const calculateSourceScore = (lead, config) => {
     const source = lead.source || 'Other';
     console.log('📍 Source data:', source);
     
-    const sourceLower = source.toLowerCase().replace(/[-\s]/g, '');
-    
+    const sourceLower = source.toLowerCase();
+
+    // 2026-06 refactor: map the 6 new lead sources to their quality tier.
     let sourceScore;
     if (sourceLower.includes('referral')) {
       sourceScore = config.rules.referral;
-    } else if (sourceLower.includes('walkin')) {
-      sourceScore = config.rules.walkIn;
-    } else if (sourceLower.includes('website')) {
-      sourceScore = config.rules.website;
-    } else if (sourceLower.includes('portal') || sourceLower.includes('property')) {
-      sourceScore = config.rules.propertyPortal;
-    } else if (sourceLower.includes('social')) {
-      sourceScore = config.rules.socialMedia;
-    } else if (sourceLower.includes('advertisement') || sourceLower.includes('ad')) {
-      sourceScore = config.rules.advertisement;
-    } else if (sourceLower.includes('cold') || sourceLower.includes('call')) {
-      sourceScore = config.rules.coldCall;
+    } else if (sourceLower.includes('channel')) {
+      sourceScore = config.rules.channelPartner;
+    } else if (sourceLower.includes('management')) {
+      sourceScore = config.rules.management;
+    } else if (sourceLower.includes('marketing')) {
+      sourceScore = config.rules.marketing;
+    } else if (sourceLower.includes('cold')) {
+      sourceScore = config.rules.coldCalling;
+    } else if (sourceLower.includes('direct')) {
+      sourceScore = config.rules.direct;
     } else {
       sourceScore = config.rules.other;
     }
@@ -707,5 +706,7 @@ export {
   bulkUpdateLeadScores,
   DEFAULT_SCORING_CONFIG,
   getScoreGrade,
-  getLeadPriority
+  getLeadPriority,
+  calculateSourceScore,
+  calculateTimelineScore
 };
