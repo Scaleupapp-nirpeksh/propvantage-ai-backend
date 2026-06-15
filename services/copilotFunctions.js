@@ -267,7 +267,7 @@ export const copilotTools = [
         properties: {
           project_id: { type: 'string' },
           status: { type: 'string' },
-          priority: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low', 'Very Low'] },
+          priority: { type: 'string', enum: ['High', 'Medium', 'Low', 'Very Low'] },
           assigned_to: { type: 'string', description: 'Filter by assigned user ID' },
           source: { type: 'string' },
         },
@@ -292,7 +292,7 @@ export const copilotTools = [
     type: 'function',
     function: {
       name: 'get_high_priority_leads',
-      description: 'Get leads needing immediate attention — high/critical priority leads and overdue follow-ups.',
+      description: 'Get leads needing immediate attention — high priority leads and overdue follow-ups.',
       parameters: {
         type: 'object',
         properties: {
@@ -1078,11 +1078,11 @@ const functionImplementations = {
   get_high_priority_leads: async (params, user, accessibleProjectIds) => {
     const limit = params.limit || 10;
     const filter = applyRoleScope({}, user, 'lead');
-    filter.status = { $nin: ['Booked', 'Lost', 'Unqualified'] };
+    filter.status = { $nin: ['Booked', 'Lost'] };
     filter.project = getProjectScopeFilter(accessibleProjectIds);
 
     // High/Critical priority leads
-    const highPriorityLeads = await Lead.find({ ...filter, priority: { $in: ['Critical', 'High'] } })
+    const highPriorityLeads = await Lead.find({ ...filter, priority: { $in: ['High'] } })
       .sort({ score: -1 })
       .limit(limit)
       .select('firstName lastName status priority score phone email followUpSchedule project')
@@ -1654,7 +1654,7 @@ const functionImplementations = {
       inventory.forEach(i => { inventoryMap[i._id] = i.count; });
 
       // Leads
-      const leadCount = await Lead.countDocuments({ project: pid, organization: user.organization, status: { $nin: ['Lost', 'Unqualified'] } });
+      const leadCount = await Lead.countDocuments({ project: pid, organization: user.organization, status: { $nin: ['Lost'] } });
 
       // Revenue collected
       const collected = await PaymentTransaction.aggregate([
@@ -1694,8 +1694,8 @@ const functionImplementations = {
     const leadBaseFilter = applyRoleScope({}, user, 'lead');
     leadBaseFilter.project = projectScopeFilter;
     const totalLeads = await Lead.countDocuments(leadBaseFilter);
-    const activeLeads = await Lead.countDocuments({ ...leadBaseFilter, status: { $nin: ['Booked', 'Lost', 'Unqualified'] } });
-    const hotLeads = await Lead.countDocuments({ ...leadBaseFilter, priority: { $in: ['Critical', 'High'] }, status: { $nin: ['Booked', 'Lost', 'Unqualified'] } });
+    const activeLeads = await Lead.countDocuments({ ...leadBaseFilter, status: { $nin: ['Booked', 'Lost'] } });
+    const hotLeads = await Lead.countDocuments({ ...leadBaseFilter, priority: { $in: ['High'] }, status: { $nin: ['Booked', 'Lost'] } });
 
     // Sales this month
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
