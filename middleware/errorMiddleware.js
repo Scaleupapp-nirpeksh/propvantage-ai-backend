@@ -40,6 +40,11 @@ const notFound = (req, res, next) => {
       message = Object.values(err.errors).map(e => e.message).join('; ');
     }
 
+    // Log server errors so they are visible in pm2 logs (the response stays generic in prod).
+    if (statusCode >= 500) {
+      console.error(`[errorHandler] ${statusCode} ${req.method} ${req.originalUrl} ::`, err.stack || err.message);
+    }
+
     // Never expose internal error details in production
     if (process.env.NODE_ENV === 'production' && statusCode === 500) {
       message = 'Internal server error';

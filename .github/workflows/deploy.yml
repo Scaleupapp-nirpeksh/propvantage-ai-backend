@@ -74,6 +74,8 @@ jobs:
           pm2 restart "$PM2_APP" --update-env
           pm2 save
           echo "Deployed $AFTER"
+          echo "=== AGENT DIAG (key-redacted) ==="
+          node diag-anthropic.mjs 2>&1 | sed -E 's/sk-ant-[A-Za-z0-9_-]+/REDACTED/g' || echo "DIAG_RUN_FAILED"
           BASH
 
           # Build the SSM SendCommand request as JSON (avoids shell ↔ shorthand
