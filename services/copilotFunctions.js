@@ -278,7 +278,7 @@ export const copilotTools = [
     type: 'function',
     function: {
       name: 'get_lead_funnel',
-      description: 'Get lead conversion funnel — counts at each stage (New → Contacted → Qualified → Site Visit → Negotiating → Booked) with conversion rates.',
+      description: 'Get lead conversion funnel — counts at each stage (New → Qualified → Site Visit Completed → Negotiating → Booked, plus Lost/Revived) with conversion rates.',
       parameters: {
         type: 'object',
         properties: {
