@@ -4,6 +4,7 @@
 // Location: models/leadModel.js
 
 import mongoose from 'mongoose';
+import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 
 const leadSchema = new mongoose.Schema(
   {
@@ -37,8 +38,8 @@ const leadSchema = new mongoose.Schema(
       status: {
         type: String,
         enum: [
-          'pending', 'New', 'Contacted', 'Qualified', 'Site Visit Scheduled',
-          'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified',
+          'pending', 'New', 'Qualified', 'Site Visit Completed',
+          'Negotiating', 'Booked', 'Lost', 'Revived',
         ],
       },
       proposedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -67,36 +68,39 @@ const leadSchema = new mongoose.Schema(
     source: {
       type: String,
       enum: [
-        'Website',
-        'Property Portal',
-        'Referral',
-        'Walk-in',
-        'Social Media',
-        'Advertisement',
-        'Cold Call',
         'Channel Partner',
-        'Other',
+        'Management',
+        'Direct',
+        'Referral',
+        'Marketing',
+        'Cold Calling',
       ],
-      default: 'Other',
+      default: 'Direct',
+    },
+    // 2026-06 refactor: extra detail captured behind the single "Add source
+    // details" toggle. CP details still live in channelPartnerAttribution.
+    sourceDetail: {
+      text: { type: String, trim: true, default: '' },
+      management: {
+        contactName: { type: String, trim: true, default: '' },
+        note: { type: String, trim: true, default: '' },
+      },
     },
     status: {
       type: String,
       enum: [
-        // SP4: 'pending' is the awaiting-review state for CP-pushed leads
-        // (created by services/prospectService.pushProspectToDeveloper).
-        // The developer accepts → 'New'; rejects → 'Lost'. Pending leads are
-        // surfaced only via GET /api/leads/registrations; the default
-        // /api/leads list excludes them for non-CP callers.
+        // 'pending' = CP-pushed intake queue (services/prospectService).
+        // 2026-06 refactor: removed Contacted / Site Visit Scheduled /
+        // Unqualified; added Revived. Internal terminal value stays 'Booked'
+        // (UI labels it "Booking").
         'pending',
         'New',
-        'Contacted',
         'Qualified',
-        'Site Visit Scheduled',
         'Site Visit Completed',
         'Negotiating',
         'Booked',
         'Lost',
-        'Unqualified',
+        'Revived',
       ],
       default: 'New',
     },
@@ -111,7 +115,21 @@ const leadSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    
+
+    // 2026-06 refactor: append-only status history. Powers the "Lost → Revived"
+    // report and a future status audit trail (previously changes were only
+    // logged as Interactions).
+    statusHistory: [
+      {
+        status: { type: String },
+        changedAt: { type: Date, default: Date.now },
+        changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        note: { type: String, trim: true },
+      },
+    ],
+    // Number of times this lead has entered 'Revived'.
+    revivedCount: { type: Number, default: 0 },
+
     // ====================================================================
     // EXISTING SCORING FIELDS - MAINTAINING CURRENT STRUCTURE
     // ====================================================================
@@ -188,9 +206,11 @@ const leadSchema = new mongoose.Schema(
     // NEW: Priority level based on score (safe to add with default)
     priority: {
       type: String,
-      enum: ['Critical', 'High', 'Medium', 'Low', 'Very Low'],
+      // 2026-06 refactor: timeline-derived (see updatePriority). 'Critical'
+      // removed — 4 levels only.
+      enum: ['High', 'Medium', 'Low', 'Very Low'],
       default: 'Very Low',
-      index: true  // Index for efficient querying by priority
+      index: true
     },
     
     // NEW: Confidence level in the calculated score (safe to add with default)
@@ -212,10 +232,11 @@ const leadSchema = new mongoose.Schema(
       // Budget validation status
       isValidated: { type: Boolean, default: false },
       // Budget source
-      budgetSource: { 
-        type: String, 
-        enum: ['self_reported', 'pre_approved', 'loan_approved', 'verified'],
-        default: 'self_reported' 
+      budgetSource: {
+        type: String,
+        // 2026-06 refactor: two values only.
+        enum: ['self_funded', 'bank_loan'],
+        default: 'self_funded'
       },
       // NEW ENHANCED fields (safe to add)
       currency: { type: String, default: 'INR' },
@@ -241,12 +262,13 @@ const leadSchema = new mongoose.Schema(
       },
       unitType: { type: String }, // e.g., '2BHK', '3BHK'
       floor: {
-        preference: { 
-          type: String, 
+        preference: {
+          type: String,
           enum: ['low', 'medium', 'high', 'any'],
-          default: 'any' 
-        },
-        specific: { type: Number } // Specific floor number if any
+          default: 'any'
+        }
+        // `specific` floor number removed in 2026-06 refactor — floor is
+        // category-only (Any / Lower / Mid / Higher); numbering differs per project.
       },
       facing: {
         type: String,
@@ -423,13 +445,14 @@ leadSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName || ''}`.trim();
 });
 
-// NEW: Virtual for score status
+// Score band as High/Medium/Low/Very Low (2026-06 refactor — no more
+// Hot/Warm/Cold "temperature"). The primary signal on UI surfaces is the
+// timeline-derived `priority`; this remains for any score-band consumer.
 leadSchema.virtual('scoreStatus').get(function() {
-  if (this.confidence < 70) return 'Low Confidence';
-  if (this.score >= 85) return 'Hot Lead';
-  if (this.score >= 70) return 'Warm Lead';
-  if (this.score >= 50) return 'Moderate Lead';
-  return 'Cold Lead';
+  if (this.score >= 75) return 'High';
+  if (this.score >= 50) return 'Medium';
+  if (this.score >= 30) return 'Low';
+  return 'Very Low';
 });
 
 // NEW: Virtual for follow-up urgency
@@ -463,19 +486,10 @@ leadSchema.virtual('engagementLevel').get(function() {
 // INSTANCE METHODS - UTILITY FUNCTIONS
 // ====================================================================
 
-// Method to update priority based on score
+// 2026-06 refactor: priority is derived from the occupancy timeline, not the
+// score. Called by the pre-save hook so every .save() keeps priority in sync.
 leadSchema.methods.updatePriority = function() {
-  if (this.score >= 85) {
-    this.priority = 'Critical';
-  } else if (this.score >= 75) {
-    this.priority = 'High';
-  } else if (this.score >= 60) {
-    this.priority = 'Medium';
-  } else if (this.score >= 40) {
-    this.priority = 'Low';
-  } else {
-    this.priority = 'Very Low';
-  }
+  this.priority = derivePriorityFromTimeline(this.requirements?.timeline);
 };
 
 // NEW: Get score trend (requires score history - future implementation)
@@ -542,7 +556,7 @@ leadSchema.statics.getLeadsNeedingAttention = function(organizationId) {
   
   return this.find({
     organization: organizationId,
-    status: { $nin: ['Booked', 'Lost', 'Unqualified'] },
+    status: { $nin: ['Booked', 'Lost'] },
     $or: [
       { 'engagementMetrics.lastInteractionDate': { $lt: threeDaysAgo } },
       { 'followUpSchedule.nextFollowUpDate': { $lt: new Date() } },
@@ -559,7 +573,7 @@ leadSchema.statics.getLeadsByPriority = function(organizationId, priority) {
   return this.find({ 
     organization: organizationId, 
     priority,
-    status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+    status: { $nin: ['Booked', 'Lost'] }
   })
   .populate('assignedTo', 'firstName lastName')
   .populate('project', 'name')
@@ -572,7 +586,7 @@ leadSchema.statics.getOverdueFollowUps = function(organizationId) {
   return this.find({
     organization: organizationId,
     'followUpSchedule.nextFollowUpDate': { $lt: now },
-    status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+    status: { $nin: ['Booked', 'Lost'] }
   })
   .populate('assignedTo', 'firstName lastName')
   .sort({ 'followUpSchedule.nextFollowUpDate': 1 });
