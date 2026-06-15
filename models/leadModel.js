@@ -107,8 +107,8 @@ const leadSchema = new mongoose.Schema(
 
     // 2026-05-25 — timestamp of the last `status` change. Maintained by the
     // pre-save hook below. Used by the dev-side Leads list to surface aging
-    // for stuck stages — especially "Site Visit Scheduled" leads where the
-    // visit hasn't been logged yet, and "Site Visit Completed" leads that
+    // for stuck stages — especially "Site Visit Completed" leads that have
+    // not yet moved on to Negotiating, and "Negotiating" leads that have
     // haven't moved on to Negotiating/Booked. Defaults to createdAt so
     // existing rows render a sensible number on first read.
     statusChangedAt: {
@@ -600,7 +600,7 @@ leadSchema.statics.getOverdueFollowUps = function(organizationId) {
 leadSchema.pre('save', function(next) {
   // 2026-05-25 — keep statusChangedAt in sync with status mutations so the
   // dev-side Leads list can show "stuck for N days" aging for Site Visit
-  // Scheduled / Site Visit Completed (and any other stage we want later).
+  // Completed / Negotiating (and any other stage we want later).
   // isNew handles initial creation; isModified('status') catches updates.
   if (this.isNew && !this.statusChangedAt) {
     this.statusChangedAt = new Date();
@@ -608,7 +608,7 @@ leadSchema.pre('save', function(next) {
     this.statusChangedAt = new Date();
   }
 
-  // Update priority based on score
+  // Update priority from requirements.timeline (see updatePriority / leadPriority.js)
   this.updatePriority();
 
   // Update follow-up status if needed

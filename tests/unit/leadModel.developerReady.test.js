@@ -63,5 +63,7 @@ describe('Lead model — developer-ready refactor', () => {
     expect(doc.validateSync()).toBeUndefined();
     expect(doc.statusHistory[0].status).toBe('New');
     expect(doc.sourceDetail.management.contactName).toBe('Promoter A');
+    expect(doc.statusHistory[0].changedBy).toBeNull();
+    expect(new Lead(validLead()).revivedCount).toBe(0);
   });
 });
