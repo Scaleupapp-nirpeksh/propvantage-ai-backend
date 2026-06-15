@@ -74,8 +74,13 @@ jobs:
           pm2 restart "$PM2_APP" --update-env
           pm2 save
           echo "Deployed $AFTER"
-          echo "=== AGENT DIAG (key-redacted) ==="
-          node diag-anthropic.mjs 2>&1 | sed -E 's/sk-ant-[A-Za-z0-9_-]+/REDACTED/g' || echo "DIAG_RUN_FAILED"
+          # Long agent turns (~40-90s) exceed nginx's default 60s proxy timeout. Apply a
+          # validated http-level drop-in (180s). nginx -t gates the reload; on any failure the
+          # drop-in is removed and the proxy is left untouched — this can never break nginx.
+          echo "=== NGINX: before ==="; nginx -T 2>/dev/null | grep -iE "proxy_read_timeout" | head -3 || true
+          printf 'proxy_read_timeout 180s;\nproxy_send_timeout 180s;\n' > /etc/nginx/conf.d/zz-agent-timeouts.conf
+          if nginx -t 2>/dev/null; then nginx -s reload && echo "NGINX_TIMEOUTS_APPLIED"; else rm -f /etc/nginx/conf.d/zz-agent-timeouts.conf; echo "NGINX_PATCH_REVERTED_INVALID"; fi
+          echo "=== NGINX: after ==="; nginx -T 2>/dev/null | grep -iE "proxy_read_timeout" | head -3 || true
           BASH
 
           # Build the SSM SendCommand request as JSON (avoids shell ↔ shorthand
