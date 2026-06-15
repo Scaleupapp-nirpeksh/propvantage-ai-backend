@@ -4,6 +4,7 @@
 // Location: services/leadScoringService.js
 
 import mongoose from 'mongoose';
+import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 
 // FIXED: Use dynamic imports to avoid circular dependency issues
 let Lead, Interaction, Sale, Unit, Project;
@@ -638,8 +639,10 @@ const updateLeadScore = async (leadId, config = null) => {
     lead.scoreGrade = scoreResult.grade;
     lead.lastScoreUpdate = new Date();
     
-    // Add new fields if they exist in the model
-    if (lead.schema.paths.priority) lead.priority = scoreResult.priority;
+    // 2026-06 refactor: priority is timeline-derived, not score-derived. (The
+    // model pre-save hook also enforces this; we set it here so the in-memory
+    // doc + the returned payload are consistent without a re-fetch.)
+    if (lead.schema.paths.priority) lead.priority = derivePriorityFromTimeline(lead.requirements?.timeline);
     if (lead.schema.paths.confidence) lead.confidence = scoreResult.confidence;
     
     await lead.save();
@@ -663,7 +666,7 @@ const updateLeadScore = async (leadId, config = null) => {
       previousScore,
       newScore: scoreResult.totalScore,
       grade: scoreResult.grade,
-      priority: scoreResult.priority,
+      priority: derivePriorityFromTimeline(lead.requirements?.timeline),
       confidence: scoreResult.confidence,
       breakdown: scoreResult.breakdown,
       updatedAt: new Date()
