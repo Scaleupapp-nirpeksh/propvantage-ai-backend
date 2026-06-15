@@ -1048,7 +1048,7 @@ const functionImplementations = {
       filter.createdAt = { $gte: start, $lte: end };
     }
 
-    const stages = ['New', 'Contacted', 'Qualified', 'Site Visit Scheduled', 'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified'];
+    const stages = ['New', 'Qualified', 'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Revived'];
 
     const funnelData = await Lead.aggregate([
       { $match: filter },
