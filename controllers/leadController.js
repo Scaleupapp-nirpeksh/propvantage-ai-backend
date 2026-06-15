@@ -29,9 +29,10 @@ import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 // Lead.status enum is a strict superset of Prospect.status — we only sync
 // when the new value is in Prospect's enum. 'pending' is dev-only and
 // never propagates back.
+// Lead.status values that also exist on the CP-side Prospect enum and are safe
+// to mirror. 'Revived' is intentionally excluded (no Prospect equivalent).
 const PROSPECT_STATUS_VALUES = new Set([
-  'New', 'Contacted', 'Qualified', 'Site Visit Scheduled',
-  'Site Visit Completed', 'Negotiating', 'Booked', 'Lost', 'Unqualified',
+  'New', 'Qualified', 'Site Visit Completed', 'Negotiating', 'Booked', 'Lost',
 ]);
 
 async function syncProspectStatusFromLead(lead, newStatus, devUser) {
@@ -54,6 +55,58 @@ async function syncProspectStatusFromLead(lead, newStatus, devUser) {
   } catch (err) {
     // Non-fatal — never block the dev's action because the CP-side sync hit a snag.
     console.warn('[syncProspectStatusFromLead] failed (non-fatal):', err.message);
+  }
+}
+
+// Side-effects when a developer changes a CP-attributed lead's status: keep the
+// source Prospect in lockstep AND notify the CP agent + CP managers. Best-effort
+// and never throws — shared by updateLead and changeLeadStatus so the quick
+// status-change path stays consistent with the full update path.
+async function handleLeadStatusChangeSideEffects(lead, previousStatus, newStatus, devUser) {
+  if (!lead || !newStatus || !previousStatus || newStatus === previousStatus) return;
+
+  // Sync prospect even when not viaCp — covers the edge case where attribution
+  // is set differently but sourceProspect still points back to a CP prospect.
+  await syncProspectStatusFromLead(lead, newStatus, devUser);
+
+  try {
+    const viaCp = lead.channelPartnerAttribution?.viaChannelPartner;
+    if (!viaCp) return;
+    const agentUserId = lead.channelPartnerAttribution?.partners?.[0]?.agentUser;
+    const cpRecordId = lead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
+    const cpRecord = cpRecordId
+      ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg').lean()
+      : null;
+    const cpOrgId = cpRecord?.channelPartnerOrg;
+    if (!cpOrgId) return;
+
+    const title = `Lead status updated: ${previousStatus} → ${newStatus}`;
+    const message = `${lead.firstName} ${lead.lastName || ''}`.trim();
+    if (agentUserId) {
+      await createNotification({
+        organization: cpOrgId,
+        recipient: agentUserId,
+        type: 'cp_lead_status_changed',
+        title,
+        message,
+        actionUrl: '/partner/prospects',
+        relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+        actor: devUser._id,
+      });
+    }
+    await notifyUsersWithPermission({
+      organizationId: cpOrgId,
+      permission: 'cp_org:manage',
+      excludeUserIds: agentUserId ? [agentUserId] : [],
+      type: 'cp_lead_status_changed',
+      title,
+      message,
+      actionUrl: '/partner/prospects',
+      relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: lead.firstName },
+      actor: devUser._id,
+    });
+  } catch (notifyErr) {
+    console.error('[handleLeadStatusChangeSideEffects] cp_lead_status_changed notification failed:', notifyErr?.message);
   }
 }
 
@@ -476,9 +529,14 @@ const updateLead = asyncHandler(async (req, res) => {
     const histEntry = { status: updatedLead.status, changedAt: req.body.statusChangedAt, changedBy: req.user._id };
     const update = { $push: { statusHistory: histEntry } };
     if (updatedLead.status === 'Revived') update.$inc = { revivedCount: 1 };
-    await Lead.updateOne({ _id: updatedLead._id }, update);
-    updatedLead.statusHistory.push(histEntry);
-    if (updatedLead.status === 'Revived') updatedLead.revivedCount = (updatedLead.revivedCount || 0) + 1;
+    try {
+      await Lead.updateOne({ _id: updatedLead._id }, update);
+      updatedLead.statusHistory.push(histEntry);
+      if (updatedLead.status === 'Revived') updatedLead.revivedCount = (updatedLead.revivedCount || 0) + 1;
+    } catch (histErr) {
+      // The status change itself already succeeded; do not fail the request.
+      console.error('[updateLead] statusHistory write failed (transition committed):', histErr?.message);
+    }
   }
 
   // If score-affecting fields were updated, trigger recalculation
@@ -486,69 +544,8 @@ const updateLead = asyncHandler(async (req, res) => {
     addLeadScoreUpdateJob(updatedLead._id, { delay: 1000 });
   }
 
-  // SP4 — when a developer changes the status of a CP-attributed lead,
-  // notify the CP agent + CP Manager/Owner. Best-effort (non-fatal).
-  // Also sync the source Prospect.status so the CP doesn't see a stale value.
-  try {
-    const statusChanged =
-      updatedLead.status &&
-      previousStatus &&
-      updatedLead.status !== previousStatus;
-    const viaCp = updatedLead.channelPartnerAttribution?.viaChannelPartner;
-    if (statusChanged) {
-      // Sync prospect even when not viaCp — covers edge case where attribution
-      // is set differently but sourceProspect still points back to a CP prospect.
-      await syncProspectStatusFromLead(updatedLead, updatedLead.status, req.user);
-    }
-    if (statusChanged && viaCp) {
-      const agentUserId =
-        updatedLead.channelPartnerAttribution?.partners?.[0]?.agentUser;
-      const cpRecordId =
-        updatedLead.channelPartnerAttribution?.partners?.[0]?.channelPartner;
-      const cpRecord = cpRecordId
-        ? await ChannelPartner.findById(cpRecordId).select('channelPartnerOrg').lean()
-        : null;
-      const cpOrgId = cpRecord?.channelPartnerOrg;
-      if (cpOrgId) {
-        const title = `Lead status updated: ${previousStatus} → ${updatedLead.status}`;
-        const message =
-          `${updatedLead.firstName} ${updatedLead.lastName || ''}`.trim();
-        if (agentUserId) {
-          await createNotification({
-            organization: cpOrgId,
-            recipient: agentUserId,
-            type: 'cp_lead_status_changed',
-            title,
-            message,
-            actionUrl: '/partner/prospects',
-            relatedEntity: {
-              entityType: 'Lead',
-              entityId: updatedLead._id,
-              displayLabel: updatedLead.firstName,
-            },
-            actor: req.user._id,
-          });
-        }
-        await notifyUsersWithPermission({
-          organizationId: cpOrgId,
-          permission: 'cp_org:manage',
-          excludeUserIds: agentUserId ? [agentUserId] : [],
-          type: 'cp_lead_status_changed',
-          title,
-          message,
-          actionUrl: '/partner/prospects',
-          relatedEntity: {
-            entityType: 'Lead',
-            entityId: updatedLead._id,
-            displayLabel: updatedLead.firstName,
-          },
-          actor: req.user._id,
-        });
-      }
-    }
-  } catch (notifyErr) {
-    console.error('[updateLead] cp_lead_status_changed notification failed:', notifyErr?.message);
-  }
+  // Keep the CP side (prospect + notifications) in lockstep on a status change.
+  await handleLeadStatusChangeSideEffects(updatedLead, previousStatus, updatedLead.status, req.user);
 
   res.json({
     success: true,
@@ -823,8 +820,8 @@ const changeLeadStatus = asyncHandler(async (req, res) => {
   if (status === 'Revived') lead.revivedCount = (lead.revivedCount || 0) + 1;
   await lead.save(); // pre-save stamps statusChangedAt and keeps priority in sync
 
-  // Keep the CP-side source Prospect in lockstep (best-effort, non-fatal).
-  await syncProspectStatusFromLead(lead, status, req.user);
+  // Keep the CP side (prospect + notifications) in lockstep on a status change.
+  await handleLeadStatusChangeSideEffects(lead, previousStatus, status, req.user);
 
   res.json({ success: true, data: lead, message: `Status updated to ${status}.` });
 });
