@@ -5,6 +5,7 @@
 import cron from 'node-cron';
 import ReportTemplate from '../models/reportTemplateModel.js';
 import { generateInstance } from '../services/reports/snapshotService.js';
+import { getAccessibleProjectIdsForUser } from '../services/reports/accessScope.js';
 import { computeNextRunAt } from '../services/reports/scheduleHelper.js';
 import { sendReportToRecipients } from '../services/reports/deliveryService.js';
 import { notifyUsersWithPermission } from '../services/notificationService.js';
@@ -23,7 +24,11 @@ export async function runDueReports(now = new Date()) {
 
   for (const template of due) {
     try {
-      const instance = await generateInstance(template, { createdBy: template.createdBy, accessibleProjectIds: null });
+      // Bound the scheduled run to the template owner's project access — exactly as the
+      // interactive path does via authMiddleware. Without this, a restricted owner's
+      // scheduled template would resolve data across ALL org projects (spec §7).
+      const accessibleProjectIds = await getAccessibleProjectIdsForUser(template.createdBy);
+      const instance = await generateInstance(template, { createdBy: template.createdBy, accessibleProjectIds });
       summary.generated++;
 
       template.schedule.nextRunAt = computeNextRunAt(template.schedule, now);
