@@ -596,8 +596,10 @@ const getScoreGrade = (score) => {
 /**
  * HELPER: Get lead priority
  */
+// 2026-06 refactor: 4 levels only (no Critical). NOTE: the authoritative
+// priority is timeline-derived in the model pre-save hook; this score-based
+// band is a fallback kept in-enum so we never assign an invalid value.
 const getLeadPriority = (score) => {
-  if (score >= 85) return 'Critical';
   if (score >= 75) return 'High';
   if (score >= 60) return 'Medium';
   if (score >= 40) return 'Low';
