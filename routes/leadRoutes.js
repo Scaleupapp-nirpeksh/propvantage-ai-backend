@@ -66,17 +66,6 @@ router.patch(
 router.put('/:id/assign', hasPermission(PERMISSIONS.LEADS.UPDATE), assignLead);
 router.patch('/:id/status', hasPermission(PERMISSIONS.LEADS.UPDATE), changeLeadStatus);
 
-router.route('/:id')
-  .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadById)
-  .put(hasPermission(PERMISSIONS.LEADS.UPDATE), updateLead)
-  .delete(hasPermission(PERMISSIONS.LEADS.DELETE), deleteLead);
-
-router.route('/:id/interactions')
-  .post(hasPermission(PERMISSIONS.LEADS.UPDATE), addInteractionToLead)
-  .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadInteractions);
-
-router.post('/:id/enrich', hasPermission(PERMISSIONS.LEADS.UPDATE), enrichLead);
-
 // =============================================================================
 // LEAD SCORING
 // =============================================================================
@@ -211,5 +200,20 @@ router.get('/scoring-health', (req, res) => {
     message: 'Lead scoring system available.'
   });
 });
+
+// 2026-06 refactor: the catch-all `/:id` routes are registered LAST so the
+// literal paths above (high-priority, needs-attention, score-analytics,
+// scoring-config, simple-stats, simple-overdue-followups, scoring-health) are
+// not shadowed by `/:id`. (Pre-existing bug fixed in Phase 2.)
+router.route('/:id')
+  .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadById)
+  .put(hasPermission(PERMISSIONS.LEADS.UPDATE), updateLead)
+  .delete(hasPermission(PERMISSIONS.LEADS.DELETE), deleteLead);
+
+router.route('/:id/interactions')
+  .post(hasPermission(PERMISSIONS.LEADS.UPDATE), addInteractionToLead)
+  .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadInteractions);
+
+router.post('/:id/enrich', hasPermission(PERMISSIONS.LEADS.UPDATE), enrichLead);
 
 export default router;
