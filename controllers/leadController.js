@@ -17,6 +17,8 @@ import {
 import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichmentService.js';
 import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
 import { partnerAccessScope } from '../utils/partnerAccessHelper.js';
+import { assertTransition } from '../utils/leadStatusMachine.js';
+import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 
 // ─── Cross-org status sync helper ─────────────────────────────────────────
 // When a developer updates a CP-attributed Lead.status (via proposal accept,
@@ -91,6 +93,12 @@ const createLead = asyncHandler(async (req, res) => {
     throw new Error('Project, first name, and phone are required fields.');
   }
 
+  // 2026-06 refactor (#20): every lead must be assigned to a sales agent/manager.
+  if (!assignedTo) {
+    res.status(400);
+    throw new Error('A sales manager/agent must be assigned to every lead.');
+  }
+
   // Verify the project exists and belongs to the user's organization
   const projectExists = await Project.findOne({
     _id: project,
@@ -108,21 +116,27 @@ const createLead = asyncHandler(async (req, res) => {
   const lead = new Lead({
     ...req.body,
     organization: req.user.organization, // Set organization from logged-in user
-    // Initialize scoring fields
+    // 2026-06 refactor (#12): direct creation is always status 'New' — there is
+    // no client-chosen "initial status". (CP-pushed 'pending' leads are created
+    // by prospectService, not this endpoint.)
+    status: 'New',
+    statusHistory: [{ status: 'New', changedAt: new Date(), changedBy: req.user._id }],
+    // Initialize scoring fields. Priority is derived from the occupancy timeline.
     score: 0,
     scoreGrade: 'D',
-    priority: 'Very Low',
+    priority: derivePriorityFromTimeline(requirements?.timeline),
     lastScoreUpdate: new Date(),
     engagementMetrics: {
       totalInteractions: 0,
       responseRate: 0
     },
-    // Initialize budget validation if budget provided
+    // Initialize budget validation if budget provided. Respect a client-supplied
+    // budgetSource (self_funded | bank_loan); default to self_funded.
     ...(budget && {
       budget: {
         ...budget,
-        isValidated: false,
-        budgetSource: 'self_reported'
+        isValidated: budget.isValidated ?? false,
+        budgetSource: budget.budgetSource || 'self_funded'
       }
     })
   });
