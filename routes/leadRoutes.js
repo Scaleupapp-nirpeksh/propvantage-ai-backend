@@ -14,6 +14,8 @@ import {
   getLeadRegistrations,
   decideLeadRegistration,
   decideLeadProposal,
+  assignLead,
+  changeLeadStatus,
 } from '../controllers/leadController.js';
 import {
   getLeadScore,
@@ -59,6 +61,11 @@ router.patch(
   decideLeadProposal
 );
 
+// 2026-06 refactor: assign/reassign (the controller existed but was never
+// wired) + quick status change from the detail-page three-dots.
+router.put('/:id/assign', hasPermission(PERMISSIONS.LEADS.UPDATE), assignLead);
+router.patch('/:id/status', hasPermission(PERMISSIONS.LEADS.UPDATE), changeLeadStatus);
+
 router.route('/:id')
   .get(hasPermission(PERMISSIONS.LEADS.VIEW), getLeadById)
   .put(hasPermission(PERMISSIONS.LEADS.UPDATE), updateLead)
@@ -99,7 +106,7 @@ router.get('/simple-stats', hasPermission(PERMISSIONS.LEADS.VIEW), async (req, r
     const totalLeads = await Lead.countDocuments(query);
     const highPriorityLeads = await Lead.countDocuments({
       ...query,
-      priority: { $in: ['High', 'Critical'] }
+      priority: { $in: ['High'] }
     });
     const qualifiedLeads = await Lead.countDocuments({
       ...query,
@@ -132,7 +139,7 @@ router.get('/by-priority/:priority', hasPermission(PERMISSIONS.LEADS.VIEW), asyn
     const { limit = 20 } = req.query;
     const { default: Lead } = await import('../models/leadModel.js');
 
-    const validPriorities = ['Critical', 'High', 'Medium', 'Low', 'Very Low'];
+    const validPriorities = ['High', 'Medium', 'Low', 'Very Low'];
     if (!validPriorities.includes(priority)) {
       return res.status(400).json({ success: false, message: 'Invalid priority level' });
     }
@@ -140,7 +147,7 @@ router.get('/by-priority/:priority', hasPermission(PERMISSIONS.LEADS.VIEW), asyn
     const query = {
       organization: req.user.organization,
       priority,
-      status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+      status: { $nin: ['Booked', 'Lost'] }
     };
 
     const leads = await Lead.find(query)
@@ -163,7 +170,7 @@ router.get('/simple-overdue-followups', hasPermission(PERMISSIONS.LEADS.VIEW), a
     const query = {
       organization: req.user.organization,
       'followUpSchedule.nextFollowUpDate': { $lt: now },
-      status: { $nin: ['Booked', 'Lost', 'Unqualified'] }
+      status: { $nin: ['Booked', 'Lost'] }
     };
 
     const overdueLeads = await Lead.find(query)
