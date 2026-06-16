@@ -5,6 +5,7 @@
 
 import asyncHandler from 'express-async-handler';
 import WorkspaceCard, { WORKSPACE_MODULES, RENDER_MODES } from '../models/workspaceCardModel.js';
+import WorkspaceLayout, { CARD_SIZES } from '../models/workspaceLayoutModel.js';
 import { getCatalog as getModuleCatalog } from '../services/workspace/catalogs/index.js';
 import { validateQueryPlan } from '../services/workspace/queryPlanSchema.js';
 import { runQueryPlan } from '../services/workspace/queryEngine.js';
@@ -223,5 +224,44 @@ export const getCardData = asyncHandler(async (req, res) => {
   const result = await runQueryPlan(card.queryPlan, viewerFromReq(req));
   res.json({ success: true, data: result });
 });
-export const getLayout = asyncHandler(async (req, res) => { res.json({ success: true, data: { items: [] } }); });
-export const saveLayout = asyncHandler(async (req, res) => { res.status(501); throw new Error('Not implemented'); });
+/**
+ * @desc    Get the requesting user's personal board layout
+ * @route   GET /api/workspace/layout
+ * @access  Private (protect)
+ */
+export const getLayout = asyncHandler(async (req, res) => {
+  const layout = await WorkspaceLayout.findOne({
+    organization: req.user.organization,
+    userId: req.user._id,
+  });
+  res.json({ success: true, data: layout || { items: [] } });
+});
+
+/**
+ * @desc    Save card order/sizes for the requesting user (upsert; own layout only)
+ * @route   PUT /api/workspace/layout
+ * @access  Private (protect)
+ */
+export const saveLayout = asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    res.status(400);
+    throw new Error('items must be an array');
+  }
+  for (const item of items) {
+    if (!item || !item.cardId) {
+      res.status(400);
+      throw new Error('Each layout item requires a cardId');
+    }
+    if (item.size !== undefined && !CARD_SIZES.includes(item.size)) {
+      res.status(400);
+      throw new Error(`Invalid card size: '${item.size}'`);
+    }
+  }
+  const layout = await WorkspaceLayout.findOneAndUpdate(
+    { userId: req.user._id },
+    { $set: { organization: req.user.organization, userId: req.user._id, items } },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+  );
+  res.json({ success: true, data: layout, message: 'Layout saved' });
+});
