@@ -44,4 +44,23 @@ describe('nlToQueryPlan', () => {
     expect(callArg.tool_choice).toEqual({ type: 'tool', name: 'emit_query_plan' });
     expect(callArg.tools[0].name).toBe('emit_query_plan');
   });
+
+  it('returns a clarification (not a throw) when the model references an unknown field', async () => {
+    const client = fakeClient([
+      planResponse({
+        module: 'leads',
+        logic: 'AND',
+        filters: [{ field: 'totallyMadeUpField', op: 'is', value: 'x' }],
+        sort: null,
+        limit: 50,
+      }),
+    ]);
+
+    const result = await nlToQueryPlan('leads with a made up field', { module: 'leads', viewerCtx, client });
+
+    expect(result.plan).toBeNull();
+    expect(typeof result.clarification).toBe('string');
+    expect(result.clarification.length).toBeGreaterThan(0);
+    expect(result.clarification).toMatch(/totallyMadeUpField/);
+  });
 });
