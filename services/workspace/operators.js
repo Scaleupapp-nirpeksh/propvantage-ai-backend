@@ -52,6 +52,9 @@ export const buildMatch = (path, op, value) => {
     case OPERATORS.LTE:
       return { [path]: { $lte: value } };
     case OPERATORS.BETWEEN: {
+      if (Array.isArray(value) && value.length !== 2) {
+        throw new Error('BETWEEN requires a [min, max] array');
+      }
       const [min, max] = Array.isArray(value) ? value : [value, value];
       return { [path]: { $gte: min, $lte: max } };
     }
@@ -62,9 +65,15 @@ export const buildMatch = (path, op, value) => {
     case OPERATORS.IS_EMPTY:
       return { $or: [{ [path]: null }, { [path]: { $exists: false } }] };
     case OPERATORS.IS_NOT_EMPTY:
-      return { [path]: { $nin: [null] }, [`${path}`]: { $exists: true, $ne: null } };
-    case OPERATORS.CONTAINS:
-      return { [path]: { $regex: String(value), $options: 'i' } };
+      // Logical negation of IS_EMPTY: present AND not null. In MongoDB $nin:[null]
+      // also excludes missing fields, so this correctly mirrors IS_EMPTY.
+      return { [path]: { $exists: true, $nin: [null] } };
+    case OPERATORS.CONTAINS: {
+      // Plain substring match: escape regex metacharacters so user input can't
+      // inject anchors/alternation or cause catastrophic backtracking.
+      const escaped = String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return { [path]: { $regex: escaped, $options: 'i' } };
+    }
     default:
       throw new Error(`Unsupported operator: ${op}`);
   }
