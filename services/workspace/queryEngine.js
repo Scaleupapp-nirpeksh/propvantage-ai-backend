@@ -7,8 +7,11 @@
 //   runQueryPlan(plan, viewerCtx, { renderMode:'metric', metricConfig }) -> { value, breakdown }
 //
 // Security: scoping is taken from viewerCtx (built from the authenticated req in
-// the controller), NEVER from the plan. Derived fields are materialised only
-// when referenced by a filter or sort, keeping pipelines minimal.
+// the controller), NEVER from the plan. Derived fields referenced by filters/sort
+// are materialised before the filter $match. Displayable derived fields and ref
+// fields are additionally materialised in the rows pipeline (after the filter
+// $match) so display columns always populate; the count pipeline skips this for
+// efficiency and correctness.
 
 import mongoose from 'mongoose';
 import { validateQueryPlan } from './queryPlanSchema.js';
@@ -21,11 +24,71 @@ const indexFields = (catalog) => {
   return map;
 };
 
-/** Keys referenced by the plan's filters + sort (the only derived fields we add). */
+/** Keys referenced by the plan's filters + sort (the only derived fields we add before $match). */
 const referencedKeys = (plan) => {
   const keys = new Set(plan.filters.map((f) => f.field));
   if (plan.sort?.field) keys.add(plan.sort.field);
   return keys;
+};
+
+/**
+ * Build aggregation stages that materialise displayable derived fields and
+ * resolve ref fields to human-readable labels. These run AFTER the filter
+ * $match in the rows pipeline only (never in count or metric pipelines).
+ *
+ * @param {import('./catalogs/index.js').FieldDescriptor[]} fields All catalog fields.
+ * @param {Set<string>} alreadyAdded Keys already materialised before the filter $match.
+ * @returns {object[]} Additional aggregation stages.
+ */
+const buildDisplayStages = (fields, alreadyAdded) => {
+  const stages = [];
+  for (const f of fields) {
+    if (!f.displayable) continue;
+
+    // Fix 1: materialise displayable derived fields not yet added.
+    if (f.derived && typeof f.addFields === 'function' && !alreadyAdded.has(f.key)) {
+      const result = f.addFields();
+      // addFields() may return a single stage object or an array of stages.
+      if (Array.isArray(result)) {
+        stages.push(...result);
+      } else {
+        stages.push(result);
+      }
+    }
+
+    // Fix 2: resolve ref fields to human-readable label via $lookup.
+    if (f.type === 'ref' && f.refModel) {
+      const coll = mongoose.model(f.refModel).collection.collectionName;
+      const docAlias = `__${f.key}_doc`;          // starts with __ → stripped by final strip
+      const labelFields = f.refLabelFields || ['name'];
+      const dParts = labelFields.map((lf) => ({ $ifNull: [`$$d.${lf}`, ''] }));
+
+      stages.push(
+        { $lookup: { from: coll, localField: f.key, foreignField: '_id', as: docAlias } },
+        {
+          $addFields: {
+            [`${f.key}_label`]: {
+              $let: {
+                vars: { d: { $arrayElemAt: [`$${docAlias}`, 0] } },
+                in: {
+                  $trim: {
+                    input: {
+                      $reduce: {
+                        input: dParts,
+                        initialValue: '',
+                        in: { $concat: ['$$value', ' ', '$$this'] },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+    }
+  }
+  return stages;
 };
 
 /**
@@ -49,17 +112,25 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   });
 
   const Model = mongoose.model(catalog.baseModel);
+
+  // Build the shared base pipeline: scope + filter-referenced derived addFields + filter $match.
   const pipeline = [];
 
   // 1) Base scope ($match): org + project-access (from the viewer, not the plan).
   pipeline.push({ $match: catalog.scope(viewerCtx) });
 
   // 2) addFields() for derived fields referenced by filters/sort (dedup by key).
+  //    These MUST run before the filter $match so filtering on a derived field works.
   const added = new Set();
   refKeys.forEach((key) => {
     const f = byKey.get(key);
     if (f?.derived && typeof f.addFields === 'function' && !added.has(key)) {
-      pipeline.push(...f.addFields());
+      const result = f.addFields();
+      if (Array.isArray(result)) {
+        pipeline.push(...result);
+      } else {
+        pipeline.push(result);
+      }
       added.add(key);
     }
   });
@@ -93,15 +164,23 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   }
 
   // ---- List mode ----------------------------------------------------------
-  if (validPlan.sort) {
-    pipeline.push({ $sort: { [validPlan.sort.field]: validPlan.sort.dir === 'asc' ? 1 : -1 } });
-  }
+  // Count pipeline: scope + filter-referenced-derived + filter $match + $count.
+  // Intentionally omits display stages and sort (cheap and correct).
+  const countPipeline = [...pipeline, { $count: 'total' }];
 
-  // Total before limit (clone the scope+derived+filter stages, count them).
-  const countPipeline = [...pipeline.filter((s) => s.$sort === undefined), { $count: 'total' }];
+  // Display stages: materialise remaining displayable derived fields + ref lookups.
+  // Run AFTER the filter $match so they don't affect count or filter semantics.
+  const displayStages = buildDisplayStages(catalog.fields, added);
+
+  // Rows pipeline: base + display + sort + limit.
+  const sortStage = validPlan.sort
+    ? [{ $sort: { [validPlan.sort.field]: validPlan.sort.dir === 'asc' ? 1 : -1 } }]
+    : [];
+  const rowsPipeline = [...pipeline, ...displayStages, ...sortStage, { $limit: validPlan.limit }];
+
   const [countRes, rows] = await Promise.all([
     Model.aggregate(countPipeline),
-    Model.aggregate([...pipeline, { $limit: validPlan.limit }]),
+    Model.aggregate(rowsPipeline),
   ]);
 
   // Strip internal temp fields (convention: derived catalog stages prefix

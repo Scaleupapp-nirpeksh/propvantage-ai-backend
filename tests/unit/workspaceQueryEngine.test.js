@@ -1,11 +1,14 @@
 // tests/unit/workspaceQueryEngine.test.js
 // Engine integration test against an in-memory Mongo. Seeds leads across two
 // orgs/projects and asserts: cross-org isolation, project-access scoping, a
-// derived-field filter (daysSinceLastCPFollowUp gte 15), and metric count mode.
+// derived-field filter (daysSinceLastCPFollowUp gte 15), metric count mode,
+// display materialization of derived columns (Fix 1), and ref-field label
+// resolution via $lookup (Fix 2).
 import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import Lead from '../../models/leadModel.js';
+import User from '../../models/userModel.js';
 import { runQueryPlan } from '../../services/workspace/queryEngine.js';
 
 jest.setTimeout(60000);
@@ -149,5 +152,90 @@ describe('runQueryPlan — metric (count) mode', () => {
       metricConfig: { agg: 'sum', field: 'score' },
     });
     expect(typeof value).toBe('number');
+  });
+});
+
+// ---- Fix 1 + Fix 2: display materialization and ref-label resolution --------
+describe('runQueryPlan — display materialization and ref labels', () => {
+  let seededUser;
+
+  beforeAll(async () => {
+    // Seed a User in ORG_A so we can verify assignedTo_label resolution.
+    // Required fields: organization, firstName, lastName, email.
+    // password is only required when invitationStatus === 'accepted' (default is 'pending').
+    seededUser = await User.create({
+      organization: ORG_A,
+      firstName: 'Rohan',
+      lastName: 'Marwah',
+      email: 'rohan.marwah@test-workspace.example.com',
+    });
+
+    // Seed two leads in ORG_A/PROJ_A1 assigned to seededUser, with CP history
+    // so daysSinceLastCPFollowUp is computable. Status = 'New' so filtered by status.
+    await seedLead({
+      project: PROJ_A1,
+      status: 'New',
+      assignedTo: seededUser._id,
+      channelPartnerAttribution: {
+        viaChannelPartner: true,
+        history: [{ at: daysAgo(5), action: 'note' }],
+      },
+    });
+    await seedLead({
+      project: PROJ_A1,
+      status: 'New',
+      assignedTo: seededUser._id,
+      channelPartnerAttribution: {
+        viaChannelPartner: true,
+        history: [{ at: daysAgo(7), action: 'note' }],
+      },
+    });
+  });
+
+  const statusPlan = (over = {}) => ({
+    module: 'leads',
+    logic: 'AND',
+    filters: [{ field: 'status', op: 'is', value: 'New' }],
+    sort: null,
+    limit: 50,
+    nlSource: null,
+    ...over,
+  });
+
+  it('Fix 1: daysSinceLastCPFollowUp is a number even when not referenced by the filter', async () => {
+    const { rows } = await runQueryPlan(statusPlan(), ownerViewer(ORG_A));
+    // All rows with status=New in ORG_A (includes the original seed leads too).
+    // Filter to just the two seeded by this describe block (they have assignedTo set).
+    const myRows = rows.filter((r) => r.assignedTo?.toString() === seededUser._id.toString());
+    expect(myRows.length).toBeGreaterThanOrEqual(1);
+    myRows.forEach((r) => {
+      expect(typeof r.daysSinceLastCPFollowUp).toBe('number');
+    });
+  });
+
+  it('Fix 2: assignedTo_label resolves to the user\'s full name', async () => {
+    const { rows } = await runQueryPlan(statusPlan(), ownerViewer(ORG_A));
+    const myRows = rows.filter((r) => r.assignedTo?.toString() === seededUser._id.toString());
+    expect(myRows.length).toBeGreaterThanOrEqual(1);
+    myRows.forEach((r) => {
+      expect(r.assignedTo_label).toBe('Rohan Marwah');
+    });
+  });
+
+  it('Fix 2: __assignedTo_doc lookup temp is stripped from returned rows', async () => {
+    const { rows } = await runQueryPlan(statusPlan(), ownerViewer(ORG_A));
+    rows.forEach((r) => {
+      expect(r.__assignedTo_doc).toBeUndefined();
+    });
+  });
+
+  it('total is correct (count pipeline unaffected by display stages)', async () => {
+    // Two leads seeded here plus the original ORG_A/PROJ_A1 seed with status=New
+    // (the fresh CP lead also has status=New). So total for ORG_A with status=New
+    // should be at least 3 (original fresh + 2 new). We just verify it's a number
+    // and matches the actual row count returned.
+    const { rows, total } = await runQueryPlan(statusPlan(), ownerViewer(ORG_A));
+    expect(typeof total).toBe('number');
+    expect(total).toBe(rows.length);
   });
 });

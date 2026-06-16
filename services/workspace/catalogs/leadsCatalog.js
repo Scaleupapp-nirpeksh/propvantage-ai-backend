@@ -55,6 +55,8 @@ const fields = [
     key: 'assignedTo',
     label: 'Assigned To',
     type: 'ref',
+    refModel: 'User',
+    refLabelFields: ['firstName', 'lastName'],
     operators: [OPERATORS.IS, OPERATORS.IN, OPERATORS.IS_EMPTY, OPERATORS.IS_NOT_EMPTY],
     displayable: true,
     defaultColumn: false,

@@ -68,6 +68,8 @@ const fields = [
     key: 'channelPartner',
     label: 'Channel Partner',
     type: 'ref',
+    refModel: 'Organization',
+    refLabelFields: ['name'],
     operators: [OPERATORS.IS, OPERATORS.IN, OPERATORS.IS_EMPTY, OPERATORS.IS_NOT_EMPTY],
     displayable: true,
     defaultColumn: false,
