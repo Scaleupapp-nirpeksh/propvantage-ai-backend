@@ -247,9 +247,15 @@ describe('workspaceController — card CRUD', () => {
   });
 });
 
-describe('workspaceController — stub endpoints', () => {
-  test('GET /cards returns { success: true, data: [] }', async () => {
+describe('workspaceController — listCards (real implementation)', () => {
+  test('GET /cards queries own + shared cards and returns them org-scoped', async () => {
+    mockFind.mockReturnValue({ sort: jest.fn().mockResolvedValue([]) });
     const { res } = await run(listCards, baseReq());
-    expect(res._json).toEqual({ success: true, data: [] });
+    expect(res._json.success).toBe(true);
+    expect(Array.isArray(res._json.data)).toBe(true);
+    // Verify the query includes org scope and $or with at least the owner clause.
+    const query = mockFind.mock.calls[0][0];
+    expect(String(query.organization)).toBe(String(ORG));
+    expect(query.$or).toEqual(expect.arrayContaining([{ ownerId: USER }]));
   });
 });

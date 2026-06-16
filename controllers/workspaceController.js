@@ -167,9 +167,61 @@ export const deleteCard = asyncHandler(async (req, res) => {
   res.json({ success: true, message: `Card '${card.title}' deleted` });
 });
 
-// listCards, getCardData (Task 12) and getLayout/saveLayout (Task 13) are
-// appended below in subsequent tasks.
-export const listCards = asyncHandler(async (req, res) => { res.json({ success: true, data: [] }); });
-export const getCardData = asyncHandler(async (req, res) => { res.status(501); throw new Error('Not implemented'); });
+/**
+ * @desc    List the user's own cards + cards shared with them (by user or role)
+ * @route   GET /api/workspace/cards
+ * @access  Private (protect)
+ */
+export const listCards = asyncHandler(async (req, res) => {
+  const roleName = req.user.roleRef?.name;
+  const orClauses = [
+    { ownerId: req.user._id },
+    { visibility: 'shared', sharedWithUsers: req.user._id },
+  ];
+  if (roleName) {
+    orClauses.push({ visibility: 'shared', sharedWithRoles: roleName });
+  }
+  const cards = await WorkspaceCard.find({
+    organization: req.user.organization,
+    $or: orClauses,
+  }).sort({ updatedAt: -1 });
+  res.json({ success: true, data: cards });
+});
+
+// Is this requester allowed to read this card's data?
+//  - owner: always
+//  - shared card: recipient by explicit user id OR by current role name
+const canReadCard = (card, req) => {
+  if (String(card.ownerId) === String(req.user._id)) return true;
+  if (card.visibility !== 'shared') return false;
+  const byUser = (card.sharedWithUsers || []).some((u) => String(u) === String(req.user._id));
+  const roleName = req.user.roleRef?.name;
+  const byRole = Boolean(roleName) && (card.sharedWithRoles || []).includes(roleName);
+  return byUser || byRole;
+};
+
+/**
+ * @desc    Run a saved card under the REQUESTING viewer's scope (never the owner's)
+ * @route   POST /api/workspace/cards/:id/data
+ * @access  Private (protect) — owner or valid share recipient only
+ */
+export const getCardData = asyncHandler(async (req, res) => {
+  const card = await WorkspaceCard.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  });
+  if (!card) {
+    res.status(404);
+    throw new Error('Card not found');
+  }
+  if (!canReadCard(card, req)) {
+    res.status(403);
+    throw new Error('You do not have access to this card');
+  }
+  // Re-execute under the requester's ViewerContext — sharing can never widen
+  // a recipient beyond data they could already see (spec §3.4).
+  const result = await runQueryPlan(card.queryPlan, viewerFromReq(req));
+  res.json({ success: true, data: result });
+});
 export const getLayout = asyncHandler(async (req, res) => { res.json({ success: true, data: { items: [] } }); });
 export const saveLayout = asyncHandler(async (req, res) => { res.status(501); throw new Error('Not implemented'); });
