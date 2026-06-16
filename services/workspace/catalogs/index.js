@@ -27,12 +27,13 @@
 import { leadsCatalog } from './leadsCatalog.js';
 import salesCatalog from './salesCatalog.js';
 import paymentsCatalog from './paymentsCatalog.js';
+import tasksCatalog from './tasksCatalog.js';
 
 const REGISTRY = {
   leads: leadsCatalog,
   sales: salesCatalog,
   payments: paymentsCatalog,
-  // tasks: tasksCatalog,                 // added by the Tasks region
+  tasks: tasksCatalog,
   // channelPartners: channelPartnersCatalog, // added by the CP region
 };
 
