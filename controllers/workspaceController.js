@@ -259,7 +259,7 @@ export const saveLayout = asyncHandler(async (req, res) => {
     }
   }
   const layout = await WorkspaceLayout.findOneAndUpdate(
-    { userId: req.user._id },
+    { organization: req.user.organization, userId: req.user._id },
     { $set: { organization: req.user.organization, userId: req.user._id, items } },
     { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
   );

@@ -65,7 +65,7 @@ describe('saveLayout', () => {
     mockLayoutFindOneAndUpdate.mockResolvedValue({ organization: ORG, userId: USER, items });
     const { res } = await run(saveLayout, baseReq({ body: { items } }));
     const [filter, update, opts] = mockLayoutFindOneAndUpdate.mock.calls[0];
-    expect(filter).toEqual({ userId: USER });
+    expect(filter).toEqual({ organization: ORG, userId: USER });
     expect(update.$set.organization).toEqual(ORG);
     expect(update.$set.items).toEqual(items);
     expect(opts).toMatchObject({ upsert: true, new: true });
