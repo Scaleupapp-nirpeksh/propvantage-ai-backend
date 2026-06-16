@@ -61,7 +61,7 @@ export const getCatalog = asyncHandler(async (req, res) => {
  * @access  Private (protect)
  */
 export const previewCard = asyncHandler(async (req, res) => {
-  const { queryPlan } = req.body;
+  const { queryPlan, renderMode, metricConfig } = req.body;
   // Fix 1: validateQueryPlan returns Joi { value, error } — not { valid, errors }.
   const { value: validatedPlan, error } = validateQueryPlan(queryPlan);
   if (error) {
@@ -69,7 +69,7 @@ export const previewCard = asyncHandler(async (req, res) => {
     throw new Error(`Invalid query plan: ${error.message}`);
   }
   // Use the coerced plan (Joi defaults applied) — not raw body queryPlan.
-  const result = await runQueryPlan(validatedPlan, viewerFromReq(req));
+  const result = await runQueryPlan(validatedPlan, viewerFromReq(req), { renderMode, metricConfig });
   res.json({ success: true, data: result });
 });
 
@@ -222,7 +222,10 @@ export const getCardData = asyncHandler(async (req, res) => {
   }
   // Re-execute under the requester's ViewerContext — sharing can never widen
   // a recipient beyond data they could already see (spec §3.4).
-  const result = await runQueryPlan(card.queryPlan, viewerFromReq(req));
+  const result = await runQueryPlan(card.queryPlan, viewerFromReq(req), {
+    renderMode: card.renderMode,
+    metricConfig: card.metricConfig,
+  });
   res.json({ success: true, data: result });
 });
 /**

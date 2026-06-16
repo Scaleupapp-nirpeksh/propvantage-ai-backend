@@ -69,30 +69,38 @@ describe('getCardData — recipient-scoped re-execution + 403', () => {
     ownerId: OWNER,
     module: 'sales',
     queryPlan: { module: 'sales', logic: 'AND', filters: [], sort: null, limit: 50 },
+    renderMode: 'metric',
+    metricConfig: { agg: 'count', field: null },
     visibility: 'shared',
     sharedWithUsers: [RECIP_A],
     sharedWithRoles: ['Sales Manager'],
   });
 
   test('recipient A (shared by user, access=PROJ_A) gets rows scoped to PROJ_A', async () => {
-    mockFindOne.mockResolvedValue(sharedCard());
+    const card = sharedCard();
+    mockFindOne.mockResolvedValue(card);
     mockRun.mockResolvedValue({ rows: [{ _id: 'a-row' }], total: 1 });
     const req = reqFor(RECIP_A, { params: { id: 'cardId' }, accessibleProjectIds: [PROJ_A.toString()] });
     const { res } = await run(getCardData, req);
-    const ctx = mockRun.mock.calls[0][1];
+    const [, ctx, opts] = mockRun.mock.calls[0];
     expect(String(ctx.userId)).toBe(String(RECIP_A));
     expect(ctx.accessibleProjectIds).toEqual([PROJ_A.toString()]); // recipient's own scope
+    // renderMode/metricConfig must be taken from the saved card, not the request.
+    expect(opts).toEqual({ renderMode: card.renderMode, metricConfig: card.metricConfig });
     expect(res._json.data.rows).toEqual([{ _id: 'a-row' }]);
   });
 
   test('recipient B (shared by role, access=PROJ_B) re-runs under B scope → DIFFERENT rows', async () => {
-    mockFindOne.mockResolvedValue(sharedCard());
+    const card = sharedCard();
+    mockFindOne.mockResolvedValue(card);
     mockRun.mockResolvedValue({ rows: [{ _id: 'b-row' }], total: 1 });
     const req = reqFor(RECIP_B, { params: { id: 'cardId' }, accessibleProjectIds: [PROJ_B.toString()] });
     const { res } = await run(getCardData, req);
-    const ctx = mockRun.mock.calls[0][1];
+    const [, ctx, opts] = mockRun.mock.calls[0];
     expect(String(ctx.userId)).toBe(String(RECIP_B)); // NOT the owner
     expect(ctx.accessibleProjectIds).toEqual([PROJ_B.toString()]); // B's scope, not A's, not owner's
+    // renderMode/metricConfig must be taken from the saved card.
+    expect(opts).toEqual({ renderMode: card.renderMode, metricConfig: card.metricConfig });
     expect(res._json.data.rows).toEqual([{ _id: 'b-row' }]);
   });
 

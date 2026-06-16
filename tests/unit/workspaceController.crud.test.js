@@ -89,19 +89,26 @@ describe('workspaceController — catalog', () => {
 });
 
 describe('workspaceController — preview', () => {
-  test('POST /preview with a real valid plan calls runQueryPlan with the COERCED plan + viewer ctx', async () => {
+  test('POST /preview with a real valid plan calls runQueryPlan with the COERCED plan + viewer ctx + render opts', async () => {
     mockRun.mockResolvedValue({ rows: [{ _id: 'lead-1' }], total: 1 });
-    const { res } = await run(previewCard, baseReq({ body: { queryPlan: VALID_PLAN } }));
+    const body = {
+      queryPlan: VALID_PLAN,
+      renderMode: 'metric',
+      metricConfig: { agg: 'count', field: null },
+    };
+    const { res } = await run(previewCard, baseReq({ body }));
     expect(res._json).toEqual({ success: true, data: { rows: [{ _id: 'lead-1' }], total: 1 } });
 
     // Confirm runQueryPlan was called with the coerced plan (Joi defaults: logic:'AND', limit:50, etc.)
     expect(mockRun).toHaveBeenCalledTimes(1);
-    const [planArg, ctxArg] = mockRun.mock.calls[0];
+    const [planArg, ctxArg, optsArg] = mockRun.mock.calls[0];
     expect(planArg).toEqual(COERCED_PLAN);
     // Viewer context must carry the organization from the request user.
     expect(String(ctxArg.organization)).toBe(String(ORG));
     expect(String(ctxArg.userId)).toBe(String(USER));
     expect(ctxArg.isOwner).toBe(false);
+    // renderMode and metricConfig must be threaded from the request body.
+    expect(optsArg).toEqual({ renderMode: 'metric', metricConfig: { agg: 'count', field: null } });
   });
 
   test('POST /preview with a real INVALID plan (empty filters) → 400, engine NOT called', async () => {
