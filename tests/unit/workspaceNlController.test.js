@@ -62,4 +62,19 @@ describe('workspaceController.postNlToQueryPlan', () => {
     expect(res._json.data.plan).toBeNull();
     expect(res._json.data.clarification).toBe('Which project did you mean?');
   });
+
+  it('returns 400 when text is missing or blank (and does not call the service)', async () => {
+    // missing text — controller sets res.status(400) then throws; asyncHandler
+    // passes the error to next (our no-op), so _status is 400 before the throw.
+    let res = mockRes();
+    await postNlToQueryPlan(baseReq({ module: 'leads' }), res, () => {});
+    expect(res._status).toBe(400);
+
+    // whitespace-only text
+    res = mockRes();
+    await postNlToQueryPlan(baseReq({ text: '   ', module: 'leads' }), res, () => {});
+    expect(res._status).toBe(400);
+
+    expect(nlToQueryPlan).not.toHaveBeenCalled();
+  });
 });
