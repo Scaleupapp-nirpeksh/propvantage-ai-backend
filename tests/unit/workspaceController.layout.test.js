@@ -9,6 +9,7 @@ jest.unstable_mockModule('../../models/workspaceCardModel.js', () => ({
 jest.unstable_mockModule('../../services/workspace/catalogs/index.js', () => ({ getCatalog: jest.fn() }));
 jest.unstable_mockModule('../../services/workspace/queryPlanSchema.js', () => ({ validateQueryPlan: jest.fn() }));
 jest.unstable_mockModule('../../services/workspace/queryEngine.js', () => ({ runQueryPlan: jest.fn() }));
+jest.unstable_mockModule('../../services/workspace/nlToQueryPlan.js', () => ({ nlToQueryPlan: jest.fn() }));
 
 const mockLayoutFindOne = jest.fn();
 const mockLayoutFindOneAndUpdate = jest.fn();

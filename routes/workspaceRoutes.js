@@ -15,6 +15,7 @@ import {
   getCardData,
   getLayout,
   saveLayout,
+  postNlToQueryPlan,
 } from '../controllers/workspaceController.js';
 
 const router = express.Router();
@@ -29,5 +30,7 @@ router.route('/cards/:id').put(updateCard).delete(deleteCard);
 router.post('/cards/:id/data', getCardData);
 
 router.route('/layout').get(getLayout).put(saveLayout);
+
+router.post('/nl-to-queryplan', postNlToQueryPlan);
 
 export default router;

@@ -9,6 +9,7 @@ import WorkspaceLayout, { CARD_SIZES } from '../models/workspaceLayoutModel.js';
 import { getCatalog as getModuleCatalog } from '../services/workspace/catalogs/index.js';
 import { validateQueryPlan } from '../services/workspace/queryPlanSchema.js';
 import { runQueryPlan } from '../services/workspace/queryEngine.js';
+import { nlToQueryPlan } from '../services/workspace/nlToQueryPlan.js';
 
 // Canonical ViewerContext from the auth-middleware request enhancements.
 // accessibleProjectIds === null means owner (all projects) — preserved as-is.
@@ -264,4 +265,22 @@ export const saveLayout = asyncHandler(async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
   );
   res.json({ success: true, data: layout, message: 'Layout saved' });
+});
+
+/**
+ * @desc  Compile a natural-language request into a validated Query Plan (authoring assist).
+ *        Never executes model output — returns the plan for the builder to show/edit, or a
+ *        clarification when the text can't be mapped to the module's catalog.
+ * @route POST /api/workspace/nl-to-queryplan   body: { text, module? }
+ * @access Private
+ */
+export const postNlToQueryPlan = asyncHandler(async (req, res) => {
+  const { text, module } = req.body || {};
+  if (!text || !String(text).trim()) {
+    res.status(400);
+    throw new Error('A text prompt is required.');
+  }
+  const viewerCtx = viewerFromReq(req);
+  const { plan, clarification } = await nlToQueryPlan(String(text), { module, viewerCtx });
+  res.json({ success: true, data: { plan, clarification } });
 });

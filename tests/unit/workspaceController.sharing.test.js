@@ -13,6 +13,7 @@ jest.unstable_mockModule('../../services/workspace/catalogs/index.js', () => ({ 
 jest.unstable_mockModule('../../services/workspace/queryPlanSchema.js', () => ({ validateQueryPlan: jest.fn() }));
 const mockRun = jest.fn();
 jest.unstable_mockModule('../../services/workspace/queryEngine.js', () => ({ runQueryPlan: mockRun }));
+jest.unstable_mockModule('../../services/workspace/nlToQueryPlan.js', () => ({ nlToQueryPlan: jest.fn() }));
 
 const { listCards, getCardData } = await import('../../controllers/workspaceController.js');
 
