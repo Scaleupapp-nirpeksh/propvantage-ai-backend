@@ -53,7 +53,8 @@ describe('tasksCatalog', () => {
       const expr = f().addFields().$addFields.daysOverdue;
       expect(expr).toHaveProperty('$cond');
       expect(expr.$cond.then).toBe(0);
-      expect(expr.$cond.else.$dateDiff).toMatchObject({ startDate: '$dueDate', unit: 'day' });
+      expect(expr.$cond.else.$max[0]).toBe(0);
+      expect(expr.$cond.else.$max[1].$dateDiff).toMatchObject({ startDate: '$dueDate', endDate: '$$NOW', unit: 'day' });
     });
     it('toMatch gt 0 → overdue filter', () => {
       expect(f().toMatch('gt', 0, viewerCtx)).toEqual({ daysOverdue: { $gt: 0 } });

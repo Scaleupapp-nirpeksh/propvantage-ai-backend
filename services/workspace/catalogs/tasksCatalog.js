@@ -97,7 +97,7 @@ const fields = [
               },
               then: 0,
               else: {
-                $dateDiff: { startDate: '$dueDate', endDate: '$$NOW', unit: 'day' },
+                $max: [0, { $dateDiff: { startDate: '$dueDate', endDate: '$$NOW', unit: 'day' } }],
               },
             },
           },
