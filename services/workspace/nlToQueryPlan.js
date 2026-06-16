@@ -27,7 +27,12 @@ const getClient = () => {
 
 // Build a compact, model-facing vocabulary for one module from its catalog FieldDescriptors.
 const moduleVocab = (moduleKey) => {
-  const catalog = getCatalog(moduleKey);
+  let catalog;
+  try {
+    catalog = getCatalog(moduleKey);
+  } catch {
+    return null;
+  }
   if (!catalog) return null;
   const fields = catalog.fields.map((f) => {
     const entry = { key: f.key, label: f.label, type: f.type, operators: f.operators };
@@ -99,7 +104,12 @@ const emitQueryPlanTool = (vocab) => ({
 // Validate every filter/sort field exists in the catalog and each op is allowed for that field.
 // Returns null on success, or a human-readable reason string on the first violation.
 const catalogViolation = (plan, moduleKey) => {
-  const catalog = getCatalog(moduleKey);
+  let catalog;
+  try {
+    catalog = getCatalog(moduleKey);
+  } catch {
+    return `Unknown module "${moduleKey}".`;
+  }
   if (!catalog) return `Unknown module "${moduleKey}".`;
   const byKey = new Map(catalog.fields.map((f) => [f.key, f]));
   for (const f of plan.filters || []) {

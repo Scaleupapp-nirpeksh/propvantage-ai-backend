@@ -64,6 +64,14 @@ describe('nlToQueryPlan', () => {
     expect(result.clarification).toMatch(/totallyMadeUpField/);
   });
 
+  it('returns a clarification (not a throw) for an unknown module', async () => {
+    const client = fakeClient([]); // should never be called
+    const result = await nlToQueryPlan('anything', { module: 'bogusModule', viewerCtx, client });
+    expect(result.plan).toBeNull();
+    expect(typeof result.clarification).toBe('string');
+    expect(result.clarification.length).toBeGreaterThan(0);
+  });
+
   it('returns a clarification when the operator is not allowed for the field', async () => {
     // `contains` is a string-only operator; a numeric/date field like daysSinceLastCPFollowUp
     // does not list it, so the catalog check must reject the plan rather than run it.
