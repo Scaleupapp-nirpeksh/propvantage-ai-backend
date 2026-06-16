@@ -42,8 +42,11 @@ const serializeCatalog = (catalog) => ({
  * @access  Private (protect)
  */
 export const getCatalog = asyncHandler(async (req, res) => {
-  const catalog = getModuleCatalog(req.params.module);
-  if (!catalog) {
+  // Fix 2: getCatalog THROWS on unknown module — wrap so unknown → 400, not 500.
+  let catalog;
+  try {
+    catalog = getModuleCatalog(req.params.module);
+  } catch (e) {
     res.status(400);
     throw new Error(`Unknown workspace module: '${req.params.module}'`);
   }
@@ -57,12 +60,14 @@ export const getCatalog = asyncHandler(async (req, res) => {
  */
 export const previewCard = asyncHandler(async (req, res) => {
   const { queryPlan } = req.body;
-  const { valid, errors } = validateQueryPlan(queryPlan);
-  if (!valid) {
+  // Fix 1: validateQueryPlan returns Joi { value, error } — not { valid, errors }.
+  const { value: validatedPlan, error } = validateQueryPlan(queryPlan);
+  if (error) {
     res.status(400);
-    throw new Error(`Invalid query plan: ${errors.join('; ')}`);
+    throw new Error(`Invalid query plan: ${error.message}`);
   }
-  const result = await runQueryPlan(queryPlan, viewerFromReq(req));
+  // Use the coerced plan (Joi defaults applied) — not raw body queryPlan.
+  const result = await runQueryPlan(validatedPlan, viewerFromReq(req));
   res.json({ success: true, data: result });
 });
 
@@ -72,28 +77,28 @@ export const previewCard = asyncHandler(async (req, res) => {
  * @access  Private (protect)
  */
 export const createCard = asyncHandler(async (req, res) => {
-  const { title, module, queryPlan, renderMode = 'list', metricConfig, visibility, sharedWithUsers, sharedWithRoles } = req.body;
+  const { title, queryPlan, renderMode = 'list', metricConfig, visibility, sharedWithUsers, sharedWithRoles } = req.body;
 
-  if (!WORKSPACE_MODULES.includes(module)) {
-    res.status(400);
-    throw new Error(`Unknown workspace module: '${module}'`);
-  }
   if (!RENDER_MODES.includes(renderMode)) {
     res.status(400);
     throw new Error(`Unknown render mode: '${renderMode}'`);
   }
-  const { valid, errors } = validateQueryPlan(queryPlan);
-  if (!valid) {
+  // Fix 1: validateQueryPlan returns Joi { value, error } — not { valid, errors }.
+  const { value: validatedPlan, error } = validateQueryPlan(queryPlan);
+  if (error) {
     res.status(400);
-    throw new Error(`Invalid query plan: ${errors.join('; ')}`);
+    throw new Error(`Invalid query plan: ${error.message}`);
   }
 
+  // Fix 3: derive module from the validated plan so body.module can never
+  // desync from the plan's module. No separate WORKSPACE_MODULES guard needed
+  // because validateQueryPlan already enforces the allowed modules.
   const card = await WorkspaceCard.create({
     organization: req.user.organization,
     ownerId: req.user._id,
     title,
-    module,
-    queryPlan,
+    module: validatedPlan.module,
+    queryPlan: validatedPlan,
     renderMode,
     metricConfig,
     visibility,
@@ -120,15 +125,21 @@ export const updateCard = asyncHandler(async (req, res) => {
     throw new Error('Card not found');
   }
 
+  // Fix 1 + Fix 3: if a new queryPlan is provided, validate it with the correct
+  // Joi contract and update module from the coerced plan (never from body.module).
   if (req.body.queryPlan !== undefined) {
-    const { valid, errors } = validateQueryPlan(req.body.queryPlan);
-    if (!valid) {
+    const { value: validatedPlan, error } = validateQueryPlan(req.body.queryPlan);
+    if (error) {
       res.status(400);
-      throw new Error(`Invalid query plan: ${errors.join('; ')}`);
+      throw new Error(`Invalid query plan: ${error.message}`);
     }
+    card.queryPlan = validatedPlan;
+    card.module = validatedPlan.module;
   }
 
-  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt']);
+  // Immutable fields — also treat 'module' as immutable from body (it's derived
+  // from queryPlan above), so strip it too.
+  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt', 'module', 'queryPlan']);
   Object.keys(req.body).forEach((key) => {
     if (!immutable.has(key) && req.body[key] !== undefined) card[key] = req.body[key];
   });
