@@ -43,7 +43,8 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   const byKey = indexFields(catalog);
 
   // Every referenced field must be in the catalog allow-list.
-  referencedKeys(validPlan).forEach((key) => {
+  const refKeys = referencedKeys(validPlan);
+  refKeys.forEach((key) => {
     if (!byKey.has(key)) throw new Error(`Unknown field for module ${validPlan.module}: ${key}`);
   });
 
@@ -55,7 +56,7 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
 
   // 2) addFields() for derived fields referenced by filters/sort (dedup by key).
   const added = new Set();
-  referencedKeys(validPlan).forEach((key) => {
+  refKeys.forEach((key) => {
     const f = byKey.get(key);
     if (f?.derived && typeof f.addFields === 'function' && !added.has(key)) {
       pipeline.push(...f.addFields());
@@ -81,13 +82,11 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
       const res = await Model.aggregate([...pipeline, { $count: 'value' }]);
       return { value: res[0]?.value || 0, breakdown: [] };
     }
-    // sum/avg over a numeric catalog field (near extension per design §3.5).
-    if ((agg === 'sum' || agg === 'avg') && field) {
+    if (agg === 'sum' || agg === 'avg') {
+      if (!field) throw new Error(`Metric aggregation '${agg}' requires a field`);
+      if (!byKey.has(field)) throw new Error(`Unknown field for module ${validPlan.module}: ${field}`);
       const accumulator = agg === 'sum' ? { $sum: `$${field}` } : { $avg: `$${field}` };
-      const res = await Model.aggregate([
-        ...pipeline,
-        { $group: { _id: null, value: accumulator } },
-      ]);
+      const res = await Model.aggregate([...pipeline, { $group: { _id: null, value: accumulator } }]);
       return { value: res[0]?.value || 0, breakdown: [] };
     }
     throw new Error(`Unsupported metric aggregation: ${agg}`);
@@ -99,12 +98,17 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   }
 
   // Total before limit (clone the scope+derived+filter stages, count them).
-  const countPipeline = [...pipeline.filter((s) => !s.$sort), { $count: 'total' }];
+  const countPipeline = [...pipeline.filter((s) => s.$sort === undefined), { $count: 'total' }];
   const [countRes, rows] = await Promise.all([
     Model.aggregate(countPipeline),
     Model.aggregate([...pipeline, { $limit: validPlan.limit }]),
   ]);
 
+  // Strip internal temp fields (convention: derived catalog stages prefix
+  // intermediate values with "__") so they never leak into API responses.
+  for (const row of rows) {
+    for (const k of Object.keys(row)) if (k.startsWith('__')) delete row[k];
+  }
   return { rows, total: countRes[0]?.total || 0 };
 };
 

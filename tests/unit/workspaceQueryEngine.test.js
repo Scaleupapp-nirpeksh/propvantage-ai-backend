@@ -105,6 +105,14 @@ describe('runQueryPlan — list mode', () => {
     expect(total).toBe(0);
     expect(rows).toEqual([]);
   });
+
+  it('(d2) temp "__"-prefixed fields are stripped from returned rows', async () => {
+    const { rows } = await runQueryPlan(stalePlan(), ownerViewer(ORG_A));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(Object.keys(rows[0]).some((k) => k.startsWith('__'))).toBe(false);
+    expect(rows[0].__lastCPFollowUpAt).toBeUndefined();
+    expect(typeof rows[0].daysSinceLastCPFollowUp).toBe('number');
+  });
 });
 
 describe('runQueryPlan — metric (count) mode', () => {
@@ -124,5 +132,22 @@ describe('runQueryPlan — metric (count) mode', () => {
       { renderMode: 'metric', metricConfig: { agg: 'count', field: null } },
     );
     expect(value).toBe(1);
+  });
+
+  it('metric sum over an unknown field rejects with /Unknown field/', async () => {
+    await expect(
+      runQueryPlan(stalePlan(), ownerViewer(ORG_A), {
+        renderMode: 'metric',
+        metricConfig: { agg: 'sum', field: 'nonexistentField' },
+      }),
+    ).rejects.toThrow(/Unknown field/);
+  });
+
+  it('metric sum over a valid catalog field returns a number', async () => {
+    const { value } = await runQueryPlan(stalePlan(), ownerViewer(ORG_A), {
+      renderMode: 'metric',
+      metricConfig: { agg: 'sum', field: 'score' },
+    });
+    expect(typeof value).toBe('number');
   });
 });
