@@ -63,4 +63,24 @@ describe('nlToQueryPlan', () => {
     expect(result.clarification.length).toBeGreaterThan(0);
     expect(result.clarification).toMatch(/totallyMadeUpField/);
   });
+
+  it('returns a clarification when the operator is not allowed for the field', async () => {
+    // `contains` is a string-only operator; a numeric/date field like daysSinceLastCPFollowUp
+    // does not list it, so the catalog check must reject the plan rather than run it.
+    const client = fakeClient([
+      planResponse({
+        module: 'leads',
+        logic: 'AND',
+        filters: [{ field: 'daysSinceLastCPFollowUp', op: 'contains', value: 15 }],
+        sort: null,
+        limit: 50,
+      }),
+    ]);
+
+    const result = await nlToQueryPlan('leads cp follow up contains 15', { module: 'leads', viewerCtx, client });
+
+    expect(result.plan).toBeNull();
+    expect(typeof result.clarification).toBe('string');
+    expect(result.clarification).toMatch(/contains/);
+  });
 });
