@@ -28,13 +28,14 @@ import { leadsCatalog } from './leadsCatalog.js';
 import salesCatalog from './salesCatalog.js';
 import paymentsCatalog from './paymentsCatalog.js';
 import tasksCatalog from './tasksCatalog.js';
+import channelPartnersCatalog from './channelPartnersCatalog.js';
 
 const REGISTRY = {
   leads: leadsCatalog,
   sales: salesCatalog,
   payments: paymentsCatalog,
   tasks: tasksCatalog,
-  // channelPartners: channelPartnersCatalog, // added by the CP region
+  channelPartners: channelPartnersCatalog,
 };
 
 /** @returns {string[]} the module keys currently wired into the registry. */
