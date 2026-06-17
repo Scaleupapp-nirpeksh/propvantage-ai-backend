@@ -40,9 +40,7 @@ export const queryPlanSchema = Joi.object({
   // v1 is AND-only; the field exists so OR/grouping can land later without a
   // data migration.
   logic: Joi.string().valid('AND').default('AND'),
-  // Empty filters are valid: an unfiltered plan = all in-scope records. This is
-  // required for chart cards (group all records) and "all X" list/metric cards.
-  filters: Joi.array().items(filterSchema).default([]),
+  filters: Joi.array().items(filterSchema).min(1).required(),
   sort: sortSchema.allow(null).default(null),
   limit: Joi.number().integer().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   nlSource: Joi.string().allow(null, '').default(null),

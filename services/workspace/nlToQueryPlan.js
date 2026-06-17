@@ -61,9 +61,6 @@ const SYSTEM_PROMPT = [
   'ambiguous to map confidently, set "needsClarification" true and put a short, specific question in',
   '"clarification" instead of guessing. Keep "limit" reasonable (default 50). Use "sort": null if no',
   'ordering is implied.',
-  'If the user asks for a chart, funnel, bar, line, trend, breakdown, or "by <field>", also populate the',
-  '"chart" object: choose a chartType (bar/line/funnel/pie); "groupBy" MUST be a field key from the vocabulary;',
-  'for sums set agg:"sum" and a numeric "metricField"; for date group-bys set timeBucket:"month". Otherwise omit "chart".',
 ].join(' ');
 
 // The single forced-output tool. Its input schema mirrors the QueryPlan contract, plus a
@@ -99,17 +96,6 @@ const emitQueryPlanTool = (vocab) => ({
       limit: { type: 'number' },
       needsClarification: { type: 'boolean', description: 'True if the request cannot be mapped confidently.' },
       clarification: { type: 'string', description: 'A short question to the user when needsClarification is true.' },
-      chart: {
-        type: 'object',
-        description: 'Optional chart spec when the user asks for a chart/funnel/bar/line/trend/breakdown/"by <field>".',
-        properties: {
-          chartType: { type: 'string', enum: ['bar', 'line', 'funnel', 'pie'] },
-          groupBy: { type: 'string', description: 'A field key from the vocabulary to group by.' },
-          agg: { type: 'string', enum: ['count', 'sum'] },
-          metricField: { type: 'string', description: 'A numeric field key (required when agg is "sum").' },
-          timeBucket: { type: 'string', enum: ['month'] },
-        },
-      },
     },
     required: ['module', 'filters'],
   },
@@ -136,15 +122,6 @@ const catalogViolation = (plan, moduleKey) => {
   if (plan.sort && plan.sort.field) {
     if (!byKey.has(plan.sort.field)) return `I can't sort by "${plan.sort.field}" for ${moduleKey}.`;
   }
-  // When a chart spec is present, its groupBy/metricField must also be catalog fields.
-  if (plan.chart) {
-    if (plan.chart.groupBy && !byKey.has(plan.chart.groupBy)) {
-      return `I can't chart by "${plan.chart.groupBy}" for ${moduleKey}.`;
-    }
-    if (plan.chart.metricField && !byKey.has(plan.chart.metricField)) {
-      return `I don't have a numeric field called "${plan.chart.metricField}" for ${moduleKey}.`;
-    }
-  }
   return null;
 };
 
@@ -155,17 +132,17 @@ const catalogViolation = (plan, moduleKey) => {
  * @param {string} [opts.module] - target module; if omitted the model also picks the module.
  * @param {object} [opts.viewerCtx] - viewer scope (reserved; the plan is viewer-scoped at run time, not here).
  * @param {object} [opts.client] - injected Anthropic client (tests pass a fake); defaults to a real lazy client.
- * @returns {Promise<{ plan: object|null, chart?: object, clarification: string|null }>}
+ * @returns {Promise<{ plan: object|null, clarification: string|null }>}
  */
 export const nlToQueryPlan = async (text, { module, viewerCtx, client } = {}) => {
   const trimmed = (text || '').trim();
-  if (!trimmed) return { plan: null, chart: undefined, clarification: 'Please type what you want to see.' };
+  if (!trimmed) return { plan: null, clarification: 'Please type what you want to see.' };
 
   const anthropic = client || getClient();
-  if (!anthropic) return { plan: null, chart: undefined, clarification: 'AI is not configured (ANTHROPIC_API_KEY missing).' };
+  if (!anthropic) return { plan: null, clarification: 'AI is not configured (ANTHROPIC_API_KEY missing).' };
 
   const vocab = buildVocab(module);
-  if (!vocab.length) return { plan: null, chart: undefined, clarification: `I don't recognize the module "${module}".` };
+  if (!vocab.length) return { plan: null, clarification: `I don't recognize the module "${module}".` };
 
   const tool = emitQueryPlanTool(vocab);
 
@@ -192,7 +169,7 @@ export const nlToQueryPlan = async (text, { module, viewerCtx, client } = {}) =>
 
   const out = toolUse.input;
   if (out.needsClarification) {
-    return { plan: null, chart: undefined, clarification: out.clarification || 'Could you add a bit more detail?' };
+    return { plan: null, clarification: out.clarification || 'Could you add a bit more detail?' };
   }
 
   // Assemble a candidate plan in the canonical shape; the module is the requested one or the model's choice.
@@ -205,19 +182,16 @@ export const nlToQueryPlan = async (text, { module, viewerCtx, client } = {}) =>
     nlSource: trimmed,
   };
 
-  // An optional chart spec the model emitted (travels alongside the plan, not through Joi).
-  const chart = out.chart && typeof out.chart === 'object' && out.chart.groupBy ? out.chart : undefined;
-
   // 1) Shape/whitelist validation via the shared Joi schema.
   const { value, error } = validateQueryPlan(candidate);
   if (error) {
-    return { plan: null, chart: undefined, clarification: "I couldn't build a valid filter from that — try the builder, or rephrase." };
+    return { plan: null, clarification: "I couldn't build a valid filter from that — try the builder, or rephrase." };
   }
-  // 2) Catalog validation: every field/op (and any chart group-by/measure) is allowed.
-  const violation = catalogViolation({ ...value, chart }, value.module);
-  if (violation) return { plan: null, chart: undefined, clarification: violation };
+  // 2) Catalog validation: every field exists and every op is allowed for that field.
+  const violation = catalogViolation(value, value.module);
+  if (violation) return { plan: null, clarification: violation };
 
-  return { plan: { ...value, nlSource: trimmed }, chart, clarification: null };
+  return { plan: { ...value, nlSource: trimmed }, clarification: null };
 };
 
 export default { nlToQueryPlan };

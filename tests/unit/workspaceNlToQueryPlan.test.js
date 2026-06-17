@@ -91,42 +91,4 @@ describe('nlToQueryPlan', () => {
     expect(typeof result.clarification).toBe('string');
     expect(result.clarification).toMatch(/contains/);
   });
-
-  it('threads a valid chart block (funnel of leads by status) alongside the plan', async () => {
-    const client = fakeClient([
-      planResponse({
-        module: 'leads',
-        logic: 'AND',
-        filters: [{ field: 'status', op: 'in', value: ['New', 'Qualified', 'Booked'] }],
-        sort: null,
-        limit: 50,
-        chart: { chartType: 'funnel', groupBy: 'status', agg: 'count' },
-      }),
-    ]);
-
-    const { plan, chart, clarification } = await nlToQueryPlan('funnel of leads by status', { module: 'leads', viewerCtx, client });
-
-    expect(clarification).toBeNull();
-    expect(plan).not.toBeNull();
-    expect(chart).toEqual({ chartType: 'funnel', groupBy: 'status', agg: 'count' });
-  });
-
-  it('rejects a chart block whose groupBy is not a catalog field', async () => {
-    const client = fakeClient([
-      planResponse({
-        module: 'leads',
-        logic: 'AND',
-        filters: [{ field: 'status', op: 'is', value: 'New' }],
-        sort: null,
-        limit: 50,
-        chart: { chartType: 'bar', groupBy: 'madeUpGroup', agg: 'count' },
-      }),
-    ]);
-
-    const result = await nlToQueryPlan('bar of leads by madeUpGroup', { module: 'leads', viewerCtx, client });
-
-    expect(result.plan).toBeNull();
-    expect(result.chart).toBeUndefined();
-    expect(result.clarification).toMatch(/madeUpGroup/);
-  });
 });

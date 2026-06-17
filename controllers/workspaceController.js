@@ -37,8 +37,6 @@ const serializeCatalog = (catalog) => ({
     displayable: f.displayable,
     defaultColumn: f.defaultColumn || false,
     derived: f.derived || false,
-    // Can this field back a chart group-by? (enum/string/date or single-ref.)
-    groupable: ['enum', 'string', 'date'].includes(f.type) || (f.type === 'ref' && !!f.refModel && !f.refArray),
   })),
 });
 
@@ -60,40 +58,6 @@ const validateInsightConfig = (cfg, res) => {
     throw new Error(`Invalid ${paramKey} '${value}' for insight source '${cfg.source}'`);
   }
   return source;
-};
-
-// Validate a chartConfig against the module catalog: a known chartType, a
-// groupBy that exists + is groupable, and (for sum) a numeric metricField in
-// the catalog. Throws (res.status set) on bad input so create/update/preview
-// reject with 400 before running.
-const CHART_TYPES = ['bar', 'line', 'funnel', 'pie'];
-const isGroupable = (f) =>
-  ['enum', 'string', 'date'].includes(f.type) || (f.type === 'ref' && !!f.refModel && !f.refArray);
-
-const validateChartConfig = (cfg, module, res) => {
-  const c = cfg || {};
-  if (!CHART_TYPES.includes(c.chartType)) {
-    res.status(400);
-    throw new Error(`Unknown chart type: '${c.chartType}'`);
-  }
-  const catalog = getModuleCatalog(module);
-  const byKey = new Map(catalog.fields.map((f) => [f.key, f]));
-  const gf = byKey.get(c.groupBy);
-  if (!gf) {
-    res.status(400);
-    throw new Error(`Unknown group-by field: '${c.groupBy}'`);
-  }
-  if (!isGroupable(gf)) {
-    res.status(400);
-    throw new Error(`Field '${c.groupBy}' is not groupable`);
-  }
-  if ((c.agg || 'count') === 'sum') {
-    const mf = byKey.get(c.metricField);
-    if (!mf || mf.type !== 'number') {
-      res.status(400);
-      throw new Error(`Sum charts require a numeric metricField (got '${c.metricField}')`);
-    }
-  }
 };
 
 // Resolve + permission-gate + project-scope an insight run for this viewer.
@@ -160,16 +124,6 @@ export const previewCard = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(`Invalid query plan: ${error.message}`);
   }
-  // Chart cards carry a normal query plan PLUS a chartConfig (group-by + measure).
-  if (renderMode === 'chart') {
-    validateChartConfig(req.body.chartConfig, validatedPlan.module, res);
-    const result = await runQueryPlan(validatedPlan, viewerFromReq(req), {
-      renderMode: 'chart',
-      chartConfig: req.body.chartConfig,
-    });
-    res.json({ success: true, data: result });
-    return;
-  }
   // Use the coerced plan (Joi defaults applied) — not raw body queryPlan.
   const result = await runQueryPlan(validatedPlan, viewerFromReq(req), { renderMode, metricConfig });
   res.json({ success: true, data: result });
@@ -181,7 +135,7 @@ export const previewCard = asyncHandler(async (req, res) => {
  * @access  Private (protect)
  */
 export const createCard = asyncHandler(async (req, res) => {
-  const { title, queryPlan, renderMode = 'list', metricConfig, chartConfig, visibility, sharedWithUsers, sharedWithRoles, columns } = req.body;
+  const { title, queryPlan, renderMode = 'list', metricConfig, visibility, sharedWithUsers, sharedWithRoles, columns } = req.body;
 
   if (!RENDER_MODES.includes(renderMode)) {
     res.status(400);
@@ -217,11 +171,6 @@ export const createCard = asyncHandler(async (req, res) => {
     throw new Error(`Invalid query plan: ${error.message}`);
   }
 
-  // Chart cards carry a normal query plan PLUS a validated chartConfig.
-  if (renderMode === 'chart') {
-    validateChartConfig(chartConfig, validatedPlan.module, res);
-  }
-
   // Fix 3: derive module from the validated plan so body.module can never
   // desync from the plan's module. No separate WORKSPACE_MODULES guard needed
   // because validateQueryPlan already enforces the allowed modules.
@@ -233,7 +182,6 @@ export const createCard = asyncHandler(async (req, res) => {
     queryPlan: validatedPlan,
     renderMode,
     metricConfig,
-    chartConfig: renderMode === 'chart' ? chartConfig : undefined,
     visibility,
     sharedWithUsers,
     sharedWithRoles,
@@ -281,15 +229,9 @@ export const updateCard = asyncHandler(async (req, res) => {
     card.module = validatedPlan.module;
   }
 
-  // Chart cards: validate + apply a new chartConfig against the card's module.
-  if (effectiveRenderMode === 'chart' && req.body.chartConfig !== undefined) {
-    validateChartConfig(req.body.chartConfig, card.module, res);
-    card.chartConfig = req.body.chartConfig;
-  }
-
   // Immutable fields — also treat 'module' as immutable from body (it's derived
-  // from queryPlan above), so strip it too. insightConfig/chartConfig applied above.
-  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt', 'module', 'queryPlan', 'insightConfig', 'chartConfig']);
+  // from queryPlan above), so strip it too. insightConfig is applied above.
+  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt', 'module', 'queryPlan', 'insightConfig']);
   Object.keys(req.body).forEach((key) => {
     if (!immutable.has(key) && req.body[key] !== undefined) card[key] = req.body[key];
   });
@@ -375,15 +317,6 @@ export const getCardData = asyncHandler(async (req, res) => {
     res.json({ success: true, data });
     return;
   }
-  // Chart cards run their saved query plan in grouped-aggregation mode.
-  if (card.renderMode === 'chart') {
-    const result = await runQueryPlan(card.queryPlan, viewerFromReq(req), {
-      renderMode: 'chart',
-      chartConfig: card.chartConfig,
-    });
-    res.json({ success: true, data: result });
-    return;
-  }
   // Re-execute under the requester's ViewerContext — sharing can never widen
   // a recipient beyond data they could already see (spec §3.4).
   const result = await runQueryPlan(card.queryPlan, viewerFromReq(req), {
@@ -448,10 +381,8 @@ export const postNlToQueryPlan = asyncHandler(async (req, res) => {
     throw new Error('A text prompt is required.');
   }
   const viewerCtx = viewerFromReq(req);
-  const { plan, chart, clarification } = await nlToQueryPlan(String(text), { module, viewerCtx });
-  const data = { plan, clarification };
-  if (chart) data.chart = chart;
-  res.json({ success: true, data });
+  const { plan, clarification } = await nlToQueryPlan(String(text), { module, viewerCtx });
+  res.json({ success: true, data: { plan, clarification } });
 });
 
 /**
