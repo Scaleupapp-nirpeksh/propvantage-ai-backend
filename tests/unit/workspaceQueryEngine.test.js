@@ -120,6 +120,53 @@ describe('runQueryPlan — list mode', () => {
   });
 });
 
+describe('runQueryPlan — global project filter (scopeProjectId)', () => {
+  it('owner + scopeProjectId narrows to that one project', async () => {
+    const { rows, total } = await runQueryPlan(
+      stalePlan(),
+      { ...ownerViewer(ORG_A), scopeProjectId: PROJ_A1.toString() },
+    );
+    expect(total).toBe(1);
+    expect(rows[0].project.toString()).toBe(PROJ_A1.toString());
+  });
+
+  it('owner + scopeProjectId for a different project narrows to that project', async () => {
+    const { rows, total } = await runQueryPlan(
+      stalePlan(),
+      { ...ownerViewer(ORG_A), scopeProjectId: PROJ_A2.toString() },
+    );
+    expect(total).toBe(1);
+    expect(rows[0].project.toString()).toBe(PROJ_A2.toString());
+  });
+
+  it('non-owner with access to both + scopeProjectId narrows to the selected one', async () => {
+    const { rows, total } = await runQueryPlan(
+      stalePlan(),
+      { ...scopedViewer(ORG_A, [PROJ_A1.toString(), PROJ_A2.toString()]), scopeProjectId: PROJ_A1.toString() },
+    );
+    expect(total).toBe(1);
+    expect(rows[0].project.toString()).toBe(PROJ_A1.toString());
+  });
+
+  it('SECURITY: a scopeProjectId outside the viewer access is ignored (no leak)', async () => {
+    // User can only access PROJ_A1, but selects PROJ_A2 (a project with a stale lead).
+    const { rows, total } = await runQueryPlan(
+      stalePlan(),
+      { ...scopedViewer(ORG_A, [PROJ_A1.toString()]), scopeProjectId: PROJ_A2.toString() },
+    );
+    expect(total).toBe(1); // falls back to the access scope, never PROJ_A2
+    expect(rows[0].project.toString()).toBe(PROJ_A1.toString());
+  });
+
+  it('a malformed scopeProjectId is ignored (full access scope stands)', async () => {
+    const { total } = await runQueryPlan(
+      stalePlan(),
+      { ...ownerViewer(ORG_A), scopeProjectId: 'not-a-valid-objectid' },
+    );
+    expect(total).toBe(2);
+  });
+});
+
 describe('runQueryPlan — metric (count) mode', () => {
   it('(d) returns a count value for the stale-CP plan under the viewer scope', async () => {
     const { value } = await runQueryPlan(

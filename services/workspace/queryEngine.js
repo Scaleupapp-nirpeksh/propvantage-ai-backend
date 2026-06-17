@@ -160,7 +160,25 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   const pipeline = [];
 
   // 1) Base scope ($match): org + project-access (from the viewer, not the plan).
-  pipeline.push({ $match: catalog.scope(viewerCtx) });
+  const baseMatch = catalog.scope(viewerCtx);
+  // Global project switcher: if the viewer selected one project, narrow to it —
+  // but ONLY if it is within their access (owner, or in accessibleProjectIds).
+  // This can only ever narrow the access scope, never widen it.
+  const pid = viewerCtx.scopeProjectId;
+  if (pid && catalog.projectField) {
+    const allowed =
+      viewerCtx.isOwner ||
+      viewerCtx.accessibleProjectIds == null ||
+      (viewerCtx.accessibleProjectIds || []).map(String).includes(String(pid));
+    if (allowed) {
+      try {
+        baseMatch[catalog.projectField] = new mongoose.Types.ObjectId(String(pid));
+      } catch {
+        /* malformed id → ignore the selection, keep the access scope */
+      }
+    }
+  }
+  pipeline.push({ $match: baseMatch });
 
   // 2) addFields() for derived fields referenced by filters/sort (dedup by key).
   //    These MUST run before the filter $match so filtering on a derived field works.

@@ -113,6 +113,7 @@ const salesCatalog = {
   module: 'sales',
   label: 'Sales / Bookings',
   baseModel: 'Sale',
+  projectField: 'project', // global project switcher narrows on this field
   fields,
   scope: (viewerCtx) => {
     const match = { organization: viewerCtx.organization };

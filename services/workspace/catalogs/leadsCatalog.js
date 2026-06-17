@@ -249,6 +249,7 @@ export const leadsCatalog = {
   module: 'leads',
   label: 'Leads',
   baseModel: 'Lead',
+  projectField: 'project', // global project switcher narrows on this field
   fields,
   scope: (viewerCtx) => {
     const match = { organization: toObjectId(viewerCtx.organization) };

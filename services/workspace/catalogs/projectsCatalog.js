@@ -122,6 +122,7 @@ export const projectsCatalog = {
   module: 'projects',
   label: 'Projects',
   baseModel: 'Project',
+  projectField: '_id', // global project switcher narrows on the project's own _id
   fields,
   scope: (viewerCtx) => {
     const match = { organization: toObjectId(viewerCtx.organization) };

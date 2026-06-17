@@ -21,6 +21,9 @@ const viewerFromReq = (req) => ({
   accessibleProjectIds: req.accessibleProjectIds,
   isOwner: req.isOwner || false,
   permissions: req.userPermissions || [],
+  // Global project switcher (optional): narrows project-scoped modules to one
+  // project. The engine intersects this with access, so it can only narrow.
+  scopeProjectId: req.body?.scopeProjectId || null,
 });
 
 // Strip function-valued descriptor props so the catalog is JSON-safe for the client.

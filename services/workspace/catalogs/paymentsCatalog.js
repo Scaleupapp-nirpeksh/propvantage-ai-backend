@@ -115,6 +115,7 @@ const paymentsCatalog = {
   module: 'payments',
   label: 'Payments',
   baseModel: 'PaymentTransaction',
+  projectField: 'project', // global project switcher narrows on this field
   fields,
   scope(viewerCtx) {
     const match = { organization: viewerCtx.organization };
