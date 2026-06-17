@@ -61,10 +61,16 @@ describe('validateQueryPlan', () => {
     expect(error).toBeDefined();
   });
 
-  it('requires at least one filter', () => {
-    const { error } = validateQueryPlan(basePlan({ filters: [] }));
-    expect(error).toBeDefined();
-    expect(error.message).toMatch(/filters/);
+  it('allows an empty filter array (unfiltered = all in-scope records)', () => {
+    const { value, error } = validateQueryPlan(basePlan({ filters: [] }));
+    expect(error).toBeUndefined();
+    expect(value.filters).toEqual([]);
+  });
+
+  it('defaults filters to [] when omitted', () => {
+    const { value, error } = validateQueryPlan({ module: 'leads' });
+    expect(error).toBeUndefined();
+    expect(value.filters).toEqual([]);
   });
 
   it('allows sort to be null', () => {

@@ -128,9 +128,17 @@ describe('workspaceController — preview', () => {
     expect(optsArg).toEqual({ renderMode: 'metric', metricConfig: { agg: 'count', field: null } });
   });
 
-  test('POST /preview with a real INVALID plan (empty filters) → 400, engine NOT called', async () => {
-    // filters:[] violates the real schema's min(1) constraint.
-    const { res, thrown } = await run(previewCard, baseReq({ body: { queryPlan: { module: 'leads', filters: [] } } }));
+  test('POST /preview with empty filters is valid (all in-scope records) and calls the engine', async () => {
+    mockRun.mockResolvedValue({ rows: [], total: 0 });
+    const { res } = await run(previewCard, baseReq({ body: { queryPlan: { module: 'leads', filters: [] }, renderMode: 'list' } }));
+    expect(res._json.success).toBe(true);
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    // Coerced plan carries the empty filter array.
+    expect(mockRun.mock.calls[0][0].filters).toEqual([]);
+  });
+
+  test('POST /preview with a malformed filter (missing field) → 400, engine NOT called', async () => {
+    const { res, thrown } = await run(previewCard, baseReq({ body: { queryPlan: { module: 'leads', filters: [{ op: 'is', value: 'New' }] } } }));
     expect(res._status).toBe(400);
     expect(thrown).toBeInstanceOf(Error);
     expect(thrown.message).toMatch(/Invalid query plan/);
@@ -187,8 +195,8 @@ describe('workspaceController — card CRUD', () => {
   });
 
   test('POST /cards 400s when the real schema rejects the plan, never calls create', async () => {
-    // filters is required and must have at least 1 item.
-    const { res, thrown } = await run(createCard, baseReq({ body: { title: 'bad', queryPlan: { module: 'leads', filters: [] } } }));
+    // A malformed filter (missing required `field`) is rejected by the schema.
+    const { res, thrown } = await run(createCard, baseReq({ body: { title: 'bad', queryPlan: { module: 'leads', filters: [{ op: 'is', value: 'x' }] } } }));
     expect(res._status).toBe(400);
     expect(thrown).toBeInstanceOf(Error);
     expect(thrown.message).toMatch(/Invalid query plan/);
@@ -249,7 +257,7 @@ describe('workspaceController — card CRUD', () => {
     mockFindOne.mockResolvedValue({ _id: id, organization: ORG, ownerId: USER, title: 'old', save });
     const { res, thrown } = await run(updateCard, baseReq({
       params: { id: id.toString() },
-      body: { queryPlan: { module: 'leads', filters: [] } },
+      body: { queryPlan: { module: 'leads', filters: [{ op: 'is', value: 'x' }] } },
     }));
     expect(res._status).toBe(400);
     expect(thrown).toBeInstanceOf(Error);
