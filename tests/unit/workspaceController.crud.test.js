@@ -131,12 +131,14 @@ describe('workspaceController — preview', () => {
 describe('workspaceController — card CRUD', () => {
   test('POST /cards with a valid plan stamps org+owner, derives module from plan, stores coerced plan, returns 201', async () => {
     mockCreate.mockImplementation(async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc }));
-    const body = { title: 'My Leads Card', queryPlan: VALID_PLAN, renderMode: 'list' };
+    const body = { title: 'My Leads Card', queryPlan: VALID_PLAN, renderMode: 'list', columns: ['firstName', 'status', 'daysSinceLastCPFollowUp'] };
     const { res } = await run(createCard, baseReq({ body }));
     expect(res._status).toBe(201);
     expect(res._json.success).toBe(true);
 
     const created = mockCreate.mock.calls[0][0];
+    // Display columns must be persisted from the body.
+    expect(created.columns).toEqual(['firstName', 'status', 'daysSinceLastCPFollowUp']);
     // Organization and ownerId must come from req.user (not body).
     expect(String(created.organization)).toBe(String(ORG));
     expect(String(created.ownerId)).toBe(String(USER));
@@ -147,6 +149,14 @@ describe('workspaceController — card CRUD', () => {
     expect(created.queryPlan).toEqual(COERCED_PLAN);
     expect(created.queryPlan.logic).toBe('AND');
     expect(created.queryPlan.limit).toBe(50);
+  });
+
+  test('POST /cards without columns defaults them to []', async () => {
+    mockCreate.mockImplementation(async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc }));
+    const body = { title: 'No columns', queryPlan: VALID_PLAN, renderMode: 'list' };
+    const { res } = await run(createCard, baseReq({ body }));
+    expect(res._status).toBe(201);
+    expect(mockCreate.mock.calls[0][0].columns).toEqual([]);
   });
 
   test('POST /cards with a mismatched body.module — module is ignored; plan module wins', async () => {
@@ -191,6 +201,8 @@ describe('workspaceController — card CRUD', () => {
         queryPlan: VALID_PLAN,
         // body.module must be ignored (derived from queryPlan).
         module: 'payments',
+        // columns is a mutable field — must be applied via the passthrough loop.
+        columns: ['firstName', 'status'],
       },
     }));
 
@@ -208,6 +220,8 @@ describe('workspaceController — card CRUD', () => {
     expect(doc.module).toBe('leads');
     // queryPlan stored is the coerced plan.
     expect(doc.queryPlan).toEqual(COERCED_PLAN);
+    // columns is mutable and updated via the passthrough loop.
+    expect(doc.columns).toEqual(['firstName', 'status']);
     expect(save).toHaveBeenCalled();
     expect(res._json.success).toBe(true);
   });

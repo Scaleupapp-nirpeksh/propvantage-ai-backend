@@ -36,6 +36,13 @@ describe('WorkspaceCard model', () => {
     expect(doc.metricConfig.field).toBeNull();
     expect(doc.sharedWithUsers).toEqual([]);
     expect(doc.sharedWithRoles).toEqual([]);
+    expect(doc.columns).toEqual([]);
+  });
+
+  it('accepts an array of column keys and coerces entries to strings', () => {
+    const doc = new WorkspaceCard(valid({ columns: ['firstName', 'status', 'daysSinceLastCPFollowUp'] }));
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.columns).toEqual(['firstName', 'status', 'daysSinceLastCPFollowUp']);
   });
 
   it('rejects an unknown module', () => {

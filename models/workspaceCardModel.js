@@ -47,6 +47,11 @@ const workspaceCardSchema = new mongoose.Schema(
     queryPlan: { type: mongoose.Schema.Types.Mixed, default: {} },
     renderMode: { type: String, enum: RENDER_MODES, default: 'list' },
     metricConfig: { type: metricConfigSchema, default: () => ({}) },
+    // List-mode display columns: an ordered allow-list of catalog field keys to
+    // show. Empty → the frontend falls back to the catalog's default columns.
+    // Keys are validated client-side against the module catalog; unknown keys
+    // are harmless (rendering ignores keys absent from a row).
+    columns: { type: [String], default: [] },
     visibility: { type: String, enum: VISIBILITIES, default: 'private' },
     sharedWithUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     sharedWithRoles: [{ type: String, trim: true }], // role names, e.g. 'Sales Manager'

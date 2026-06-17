@@ -79,7 +79,7 @@ export const previewCard = asyncHandler(async (req, res) => {
  * @access  Private (protect)
  */
 export const createCard = asyncHandler(async (req, res) => {
-  const { title, queryPlan, renderMode = 'list', metricConfig, visibility, sharedWithUsers, sharedWithRoles } = req.body;
+  const { title, queryPlan, renderMode = 'list', metricConfig, visibility, sharedWithUsers, sharedWithRoles, columns } = req.body;
 
   if (!RENDER_MODES.includes(renderMode)) {
     res.status(400);
@@ -106,6 +106,7 @@ export const createCard = asyncHandler(async (req, res) => {
     visibility,
     sharedWithUsers,
     sharedWithRoles,
+    columns: Array.isArray(columns) ? columns : [],
   });
   res.status(201).json({ success: true, data: card, message: 'Card created' });
 });
