@@ -10,6 +10,8 @@ import { getCatalog as getModuleCatalog } from '../services/workspace/catalogs/i
 import { validateQueryPlan } from '../services/workspace/queryPlanSchema.js';
 import { runQueryPlan } from '../services/workspace/queryEngine.js';
 import { nlToQueryPlan } from '../services/workspace/nlToQueryPlan.js';
+import { listInsightSources, getInsightSource } from '../services/workspace/insightSources.js';
+import { PERMISSIONS } from '../config/permissions.js';
 
 // Canonical ViewerContext from the auth-middleware request enhancements.
 // accessibleProjectIds === null means owner (all projects) — preserved as-is.
@@ -38,6 +40,51 @@ const serializeCatalog = (catalog) => ({
   })),
 });
 
+// Validate an insightConfig against the registry: known source + a period/
+// timeframe that the source actually allows. Throws (res.status set) on bad
+// input so create/update reject with 400 before persisting.
+const validateInsightConfig = (cfg, res) => {
+  const source = getInsightSource(cfg?.source);
+  if (!source) {
+    res.status(400);
+    throw new Error(`Unknown insight source: '${cfg?.source}'`);
+  }
+  // Each source declares exactly one of period/timeframe in its params.
+  const paramKey = source.params.period ? 'period' : 'timeframe';
+  const allowed = source.params[paramKey] || [];
+  const value = cfg?.[paramKey] ?? cfg?.period;
+  if (value !== undefined && value !== null && !allowed.includes(value)) {
+    res.status(400);
+    throw new Error(`Invalid ${paramKey} '${value}' for insight source '${cfg.source}'`);
+  }
+  return source;
+};
+
+// Resolve + permission-gate + project-scope an insight run for this viewer.
+// Returns the normalized payload from source.run(). Sets res.status on failure.
+const runInsight = async (cfg, req, res) => {
+  const source = getInsightSource(cfg?.source);
+  if (!source) {
+    res.status(400);
+    throw new Error(`Unknown insight source: '${cfg?.source}'`);
+  }
+  const permissions = req.userPermissions || [];
+  if (!permissions.includes(source.permission)) {
+    res.status(403);
+    throw new Error('You do not have permission to view this insight');
+  }
+  // Project-scoped insights: a non-owner can only run them for a project they
+  // can access. Org-wide (projectId:null) is allowed for permission-holders.
+  if (cfg.projectId && !req.isOwner) {
+    const accessible = (req.accessibleProjectIds || []).map(String);
+    if (!accessible.includes(String(cfg.projectId))) {
+      res.status(403);
+      throw new Error('You do not have access to this project');
+    }
+  }
+  return source.run(viewerFromReq(req), cfg);
+};
+
 /**
  * @desc    Field catalog that drives the builder UI for one module
  * @route   GET /api/workspace/catalog/:module
@@ -62,6 +109,15 @@ export const getCatalog = asyncHandler(async (req, res) => {
  */
 export const previewCard = asyncHandler(async (req, res) => {
   const { queryPlan, renderMode, metricConfig } = req.body;
+
+  // Insight cards have no query plan — run the source directly under the viewer.
+  if (renderMode === 'insight') {
+    const cfg = req.body.insightConfig || {};
+    validateInsightConfig(cfg, res);
+    const data = await runInsight(cfg, req, res);
+    res.json({ success: true, data });
+    return;
+  }
   // Fix 1: validateQueryPlan returns Joi { value, error } — not { valid, errors }.
   const { value: validatedPlan, error } = validateQueryPlan(queryPlan);
   if (error) {
@@ -85,6 +141,29 @@ export const createCard = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(`Unknown render mode: '${renderMode}'`);
   }
+
+  // Insight cards carry an insightConfig instead of a query plan. Validate the
+  // source/period against the registry, then persist with a sentinel module +
+  // empty queryPlan so the list/metric read paths stay unaffected.
+  if (renderMode === 'insight') {
+    const insightConfig = req.body.insightConfig || {};
+    validateInsightConfig(insightConfig, res);
+    const card = await WorkspaceCard.create({
+      organization: req.user.organization,
+      ownerId: req.user._id,
+      title,
+      module: 'leads', // sentinel — module enum requires a value; unused by insight cards
+      queryPlan: {},
+      renderMode,
+      insightConfig,
+      visibility,
+      sharedWithUsers,
+      sharedWithRoles,
+    });
+    res.status(201).json({ success: true, data: card, message: 'Card created' });
+    return;
+  }
+
   // Fix 1: validateQueryPlan returns Joi { value, error } — not { valid, errors }.
   const { value: validatedPlan, error } = validateQueryPlan(queryPlan);
   if (error) {
@@ -128,9 +207,19 @@ export const updateCard = asyncHandler(async (req, res) => {
     throw new Error('Card not found');
   }
 
+  // Insight cards: validate + apply a new insightConfig (no query plan).
+  const effectiveRenderMode = req.body.renderMode || card.renderMode;
+  if (effectiveRenderMode === 'insight' && req.body.insightConfig !== undefined) {
+    const insightConfig = req.body.insightConfig || {};
+    validateInsightConfig(insightConfig, res);
+    card.insightConfig = insightConfig;
+    card.module = 'leads'; // sentinel — see createCard
+    card.queryPlan = {};
+  }
+
   // Fix 1 + Fix 3: if a new queryPlan is provided, validate it with the correct
   // Joi contract and update module from the coerced plan (never from body.module).
-  if (req.body.queryPlan !== undefined) {
+  if (req.body.queryPlan !== undefined && effectiveRenderMode !== 'insight') {
     const { value: validatedPlan, error } = validateQueryPlan(req.body.queryPlan);
     if (error) {
       res.status(400);
@@ -141,8 +230,8 @@ export const updateCard = asyncHandler(async (req, res) => {
   }
 
   // Immutable fields — also treat 'module' as immutable from body (it's derived
-  // from queryPlan above), so strip it too.
-  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt', 'module', 'queryPlan']);
+  // from queryPlan above), so strip it too. insightConfig is applied above.
+  const immutable = new Set(['organization', 'ownerId', '_id', 'createdAt', 'updatedAt', 'module', 'queryPlan', 'insightConfig']);
   Object.keys(req.body).forEach((key) => {
     if (!immutable.has(key) && req.body[key] !== undefined) card[key] = req.body[key];
   });
@@ -221,6 +310,13 @@ export const getCardData = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error('You do not have access to this card');
   }
+  // Insight cards run their registered source under the viewer (permission +
+  // project scope re-checked inside runInsight) instead of a query plan.
+  if (card.renderMode === 'insight') {
+    const data = await runInsight(card.insightConfig || {}, req, res);
+    res.json({ success: true, data });
+    return;
+  }
   // Re-execute under the requester's ViewerContext — sharing can never widen
   // a recipient beyond data they could already see (spec §3.4).
   const result = await runQueryPlan(card.queryPlan, viewerFromReq(req), {
@@ -288,3 +384,12 @@ export const postNlToQueryPlan = asyncHandler(async (req, res) => {
   const { plan, clarification } = await nlToQueryPlan(String(text), { module, viewerCtx });
   res.json({ success: true, data: { plan, clarification } });
 });
+
+/**
+ * @desc    Insight-source registry metadata for the card builder (no functions)
+ * @route   GET /api/workspace/insight-sources
+ * @access  Private (protect)
+ */
+export const getInsightSources = asyncHandler(async (req, res) =>
+  res.json({ success: true, data: listInsightSources() })
+);

@@ -13,17 +13,34 @@ const mockDeleteOne = jest.fn();
 jest.unstable_mockModule('../../models/workspaceCardModel.js', () => ({
   default: { create: mockCreate, find: mockFind, findOne: mockFindOne, deleteOne: mockDeleteOne },
   WORKSPACE_MODULES: ['leads', 'sales', 'payments', 'tasks', 'channelPartners'],
-  RENDER_MODES: ['list', 'metric'],
+  RENDER_MODES: ['list', 'metric', 'insight'],
 }));
 
 const mockRun = jest.fn();
 jest.unstable_mockModule('../../services/workspace/queryEngine.js', () => ({ runQueryPlan: mockRun }));
 
+// Mock the insight source registry so insight branches are exercised without
+// touching the underlying analytics services.
+const mockSalesForecastRun = jest.fn();
+const INSIGHT_PREDICTIVE = 'analytics:predictive';
+const FAKE_SOURCES = {
+  salesForecast: {
+    key: 'salesForecast', label: 'Sales forecast', kind: 'forecast',
+    permission: INSIGHT_PREDICTIVE, params: { period: ['3_months', '6_months', '12_months'] },
+    run: mockSalesForecastRun,
+  },
+};
+jest.unstable_mockModule('../../services/workspace/insightSources.js', () => ({
+  INSIGHT_SOURCES: FAKE_SOURCES,
+  listInsightSources: () => Object.values(FAKE_SOURCES).map(({ key, label, kind, params }) => ({ key, label, kind, params })),
+  getInsightSource: (k) => FAKE_SOURCES[k],
+}));
+
 // validateQueryPlan and getCatalog are NOT mocked — we run the real
 // implementations so test failures catch actual contract drift.
 
 const {
-  getCatalog, previewCard, createCard, listCards, updateCard, deleteCard,
+  getCatalog, previewCard, createCard, listCards, updateCard, deleteCard, getCardData,
 } = await import('../../controllers/workspaceController.js');
 
 // ─── Test helpers ──────────────────────────────────────────────────────────
@@ -48,7 +65,7 @@ const baseReq = (over = {}) => ({
 });
 
 beforeEach(() => {
-  [mockCreate, mockFind, mockFindOne, mockDeleteOne, mockRun].forEach((m) => m.mockReset());
+  [mockCreate, mockFind, mockFindOne, mockDeleteOne, mockRun, mockSalesForecastRun].forEach((m) => m.mockReset());
 });
 
 // A valid minimal query plan — filters has 1 item (schema requires min:1).
@@ -265,6 +282,110 @@ describe('workspaceController — card CRUD', () => {
     }));
     expect(res._status).toBe(404);
     expect(thrown).toBeInstanceOf(Error);
+  });
+});
+
+describe('workspaceController — insight cards', () => {
+  const PROJ = new mongoose.Types.ObjectId();
+  const NORMALIZED = {
+    kind: 'forecast',
+    headline: { label: 'Forecasted bookings', value: 42, format: 'number' },
+    bands: [], confidence: null, series: null, bullets: [], asOf: '2026-06-17T00:00:00.000Z',
+    scope: { period: '6_months', projectId: null },
+  };
+
+  test('POST /cards (insight) persists insightConfig, sets sentinel module + empty plan, never validates a query plan', async () => {
+    mockCreate.mockImplementation(async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc }));
+    const body = {
+      title: 'Sales forecast', renderMode: 'insight',
+      insightConfig: { source: 'salesForecast', period: '6_months', projectId: PROJ },
+    };
+    const { res } = await run(createCard, baseReq({ body, userPermissions: [INSIGHT_PREDICTIVE] }));
+    expect(res._status).toBe(201);
+    const created = mockCreate.mock.calls[0][0];
+    expect(created.renderMode).toBe('insight');
+    expect(created.insightConfig).toEqual({ source: 'salesForecast', period: '6_months', projectId: PROJ });
+    // Sentinel module + empty query plan keep the list/metric paths unaffected.
+    expect(created.module).toBe('leads');
+    expect(created.queryPlan).toEqual({});
+    // The insight create path must not call the query engine.
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('POST /cards (insight) 400s on an unknown source, never creates', async () => {
+    const { res, thrown } = await run(createCard, baseReq({
+      body: { title: 'x', renderMode: 'insight', insightConfig: { source: 'bogus', period: '6_months' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown.message).toMatch(/Unknown insight source/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('POST /cards (insight) 400s on a period outside the source allow-list', async () => {
+    const { res, thrown } = await run(createCard, baseReq({
+      body: { title: 'x', renderMode: 'insight', insightConfig: { source: 'salesForecast', period: '99_months' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown.message).toMatch(/Invalid period/);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('POST /preview (insight) returns the source payload without query-plan validation', async () => {
+    mockSalesForecastRun.mockResolvedValue(NORMALIZED);
+    const { res } = await run(previewCard, baseReq({
+      body: { renderMode: 'insight', insightConfig: { source: 'salesForecast', period: '6_months' } },
+      userPermissions: [INSIGHT_PREDICTIVE],
+    }));
+    expect(res._json).toEqual({ success: true, data: NORMALIZED });
+    expect(mockSalesForecastRun).toHaveBeenCalledTimes(1);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('getCardData (insight) runs the source under the viewer and returns its payload', async () => {
+    mockSalesForecastRun.mockResolvedValue(NORMALIZED);
+    const id = new mongoose.Types.ObjectId();
+    mockFindOne.mockResolvedValue({
+      _id: id, organization: ORG, ownerId: USER, renderMode: 'insight',
+      insightConfig: { source: 'salesForecast', period: '6_months', projectId: null },
+    });
+    const { res } = await run(getCardData, baseReq({
+      params: { id: id.toString() }, userPermissions: [INSIGHT_PREDICTIVE],
+    }));
+    expect(res._json).toEqual({ success: true, data: NORMALIZED });
+    expect(mockSalesForecastRun).toHaveBeenCalledTimes(1);
+    // Insight branch must not run a query plan.
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('getCardData (insight) 403s when the viewer lacks the source permission', async () => {
+    const id = new mongoose.Types.ObjectId();
+    mockFindOne.mockResolvedValue({
+      _id: id, organization: ORG, ownerId: USER, renderMode: 'insight',
+      insightConfig: { source: 'salesForecast', period: '6_months', projectId: null },
+    });
+    const { res, thrown } = await run(getCardData, baseReq({
+      params: { id: id.toString() }, userPermissions: [], // no predictive permission
+    }));
+    expect(res._status).toBe(403);
+    expect(thrown.message).toMatch(/permission/i);
+    expect(mockSalesForecastRun).not.toHaveBeenCalled();
+  });
+
+  test('getCardData (insight) 403s when a specific projectId is outside accessibleProjectIds for a non-owner', async () => {
+    const id = new mongoose.Types.ObjectId();
+    mockFindOne.mockResolvedValue({
+      _id: id, organization: ORG, ownerId: USER, renderMode: 'insight',
+      insightConfig: { source: 'salesForecast', period: '6_months', projectId: PROJ },
+    });
+    const { res, thrown } = await run(getCardData, baseReq({
+      params: { id: id.toString() },
+      userPermissions: [INSIGHT_PREDICTIVE],
+      isOwner: false,
+      accessibleProjectIds: [new mongoose.Types.ObjectId()], // PROJ not included
+    }));
+    expect(res._status).toBe(403);
+    expect(thrown.message).toMatch(/project/i);
+    expect(mockSalesForecastRun).not.toHaveBeenCalled();
   });
 });
 

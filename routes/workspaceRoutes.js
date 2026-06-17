@@ -16,6 +16,7 @@ import {
   getLayout,
   saveLayout,
   postNlToQueryPlan,
+  getInsightSources,
 } from '../controllers/workspaceController.js';
 
 const router = express.Router();
@@ -23,6 +24,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/catalog/:module', getCatalog);
+router.get('/insight-sources', getInsightSources);
 router.post('/preview', previewCard);
 
 router.route('/cards').get(listCards).post(createCard);

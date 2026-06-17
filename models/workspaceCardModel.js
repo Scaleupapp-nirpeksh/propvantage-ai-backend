@@ -6,7 +6,7 @@
 import mongoose from 'mongoose';
 
 export const WORKSPACE_MODULES = ['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects'];
-export const RENDER_MODES = ['list', 'metric'];
+export const RENDER_MODES = ['list', 'metric', 'insight'];
 export const METRIC_AGGS = ['count', 'sum', 'avg'];
 export const VISIBILITIES = ['private', 'shared'];
 
@@ -14,6 +14,19 @@ const metricConfigSchema = new mongoose.Schema(
   {
     agg: { type: String, enum: METRIC_AGGS, default: 'count' },
     field: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+// Config for renderMode:'insight' cards (Theme D3). These surface an existing
+// analytics service (see services/workspace/insightSources.js) instead of a
+// query plan, so they carry a source key + a period/timeframe + an optional
+// project scope rather than filters/columns.
+const insightConfigSchema = new mongoose.Schema(
+  {
+    source: { type: String, default: null },
+    period: { type: String, default: null },
+    projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
   },
   { _id: false }
 );
@@ -47,6 +60,8 @@ const workspaceCardSchema = new mongoose.Schema(
     queryPlan: { type: mongoose.Schema.Types.Mixed, default: {} },
     renderMode: { type: String, enum: RENDER_MODES, default: 'list' },
     metricConfig: { type: metricConfigSchema, default: () => ({}) },
+    // Config for renderMode:'insight' cards — see insightConfigSchema above.
+    insightConfig: { type: insightConfigSchema, default: () => ({}) },
     // List-mode display columns: an ordered allow-list of catalog field keys to
     // show. Empty → the frontend falls back to the catalog's default columns.
     // Keys are validated client-side against the module catalog; unknown keys

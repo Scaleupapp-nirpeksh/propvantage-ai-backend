@@ -11,9 +11,29 @@ const valid = (over = {}) => ({
 });
 
 describe('WorkspaceCard model', () => {
-  it('exports the six modules and two render modes', () => {
+  it('exports the six modules and three render modes (incl. insight)', () => {
     expect(WORKSPACE_MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects']);
-    expect(RENDER_MODES).toEqual(['list', 'metric']);
+    expect(RENDER_MODES).toEqual(['list', 'metric', 'insight']);
+  });
+
+  it('accepts renderMode=insight and persists insightConfig source/period/projectId', () => {
+    const projectId = new mongoose.Types.ObjectId();
+    const doc = new WorkspaceCard(valid({
+      renderMode: 'insight',
+      insightConfig: { source: 'salesForecast', period: '6_months', projectId },
+    }));
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.renderMode).toBe('insight');
+    expect(doc.insightConfig.source).toBe('salesForecast');
+    expect(doc.insightConfig.period).toBe('6_months');
+    expect(String(doc.insightConfig.projectId)).toBe(String(projectId));
+  });
+
+  it('defaults insightConfig to empty (null source/period/projectId)', () => {
+    const doc = new WorkspaceCard(valid());
+    expect(doc.insightConfig.source).toBeNull();
+    expect(doc.insightConfig.period).toBeNull();
+    expect(doc.insightConfig.projectId).toBeNull();
   });
 
   it('validates a minimal valid document', () => {
