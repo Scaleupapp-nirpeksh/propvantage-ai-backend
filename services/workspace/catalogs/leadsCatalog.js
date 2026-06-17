@@ -31,6 +31,7 @@ export const LEAD_STATUS_VALUES = [
 export const LEAD_SOURCE_VALUES = [
   'Channel Partner', 'Management', 'Direct', 'Referral', 'Marketing', 'Cold Calling',
 ];
+export const CP_ATTRIBUTION_STATUS_VALUES = ['tagged', 'pending', 'approved', 'rejected'];
 
 const toObjectId = (v) => (v instanceof ObjectId ? v : new ObjectId(String(v)));
 
@@ -74,6 +75,52 @@ const fields = [
       }
       return { assignedTo: toObjectId(value) };
     },
+  },
+  {
+    key: 'cpStatus',
+    label: 'CP status',
+    type: 'enum',
+    enumValues: CP_ATTRIBUTION_STATUS_VALUES,
+    operators: [OPERATORS.IS, OPERATORS.IN, OPERATORS.NOT_IN],
+    displayable: true,
+    defaultColumn: false,
+    derived: true,
+    // The value lives at a nested path; lift it to a top-level `cpStatus` so it
+    // renders as a column. Filtering still targets the nested path (toMatch).
+    addFields: () => [{ $addFields: { cpStatus: '$channelPartnerAttribution.status' } }],
+    toMatch: (op, value) => buildMatch('channelPartnerAttribution.status', op, value),
+  },
+  {
+    key: 'channelPartner',
+    label: 'Channel Partner',
+    type: 'ref',
+    refArray: true,
+    refModel: 'ChannelPartner',
+    refPath: 'channelPartnerAttribution.partners.channelPartner',
+    refLabelFields: ['firmName'],
+    operators: [OPERATORS.IS_EMPTY, OPERATORS.IS_NOT_EMPTY],
+    displayable: true,
+    defaultColumn: true,
+    // "has CP / no CP" via array-element existence (viaChannelPartner can be stale).
+    toMatch: (op) => ({
+      'channelPartnerAttribution.partners.0': { $exists: op === OPERATORS.IS_NOT_EMPTY },
+    }),
+  },
+  {
+    key: 'cpAgent',
+    label: 'CP Agent',
+    type: 'ref',
+    refArray: true,
+    refModel: 'User',
+    refPath: 'channelPartnerAttribution.partners.agentUser',
+    refLabelFields: ['firstName', 'lastName'],
+    operators: [OPERATORS.IS_EMPTY, OPERATORS.IS_NOT_EMPTY],
+    displayable: true,
+    defaultColumn: false,
+    toMatch: (op) =>
+      op === OPERATORS.IS_NOT_EMPTY
+        ? { 'channelPartnerAttribution.partners': { $elemMatch: { agentUser: { $ne: null } } } }
+        : { 'channelPartnerAttribution.partners': { $not: { $elemMatch: { agentUser: { $ne: null } } } } },
   },
   {
     key: 'assignedToMe',

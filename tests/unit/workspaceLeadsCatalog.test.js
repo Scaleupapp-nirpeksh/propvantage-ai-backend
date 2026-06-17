@@ -181,4 +181,58 @@ describe('leadsCatalog', () => {
       expect.arrayContaining(['status', 'source', 'score', 'daysSinceLastCPFollowUp']),
     );
   });
+
+  describe('cpStatus (enum)', () => {
+    const f = () => field('cpStatus');
+    it('carries the real attribution status enum', () => {
+      expect(f().type).toBe('enum');
+      expect(f().enumValues).toEqual(['tagged', 'pending', 'approved', 'rejected']);
+    });
+    it('is -> { "channelPartnerAttribution.status": value }', () => {
+      expect(f().toMatch(OPERATORS.IS, 'pending', viewer()))
+        .toEqual({ 'channelPartnerAttribution.status': 'pending' });
+    });
+    it('lifts the nested status to a top-level cpStatus for display', () => {
+      expect(f().addFields()).toEqual([
+        { $addFields: { cpStatus: '$channelPartnerAttribution.status' } },
+      ]);
+    });
+  });
+
+  describe('channelPartner (array ref)', () => {
+    const f = () => field('channelPartner');
+    it('is an array ref to ChannelPartner.firmName, displayable', () => {
+      expect(f().type).toBe('ref');
+      expect(f().refArray).toBe(true);
+      expect(f().refModel).toBe('ChannelPartner');
+      expect(f().refPath).toBe('channelPartnerAttribution.partners.channelPartner');
+      expect(f().refLabelFields).toEqual(['firmName']);
+      expect(f().displayable).toBe(true);
+    });
+    it('isNotEmpty -> a CP is tagged (partners.0 exists)', () => {
+      expect(f().toMatch(OPERATORS.IS_NOT_EMPTY, null, viewer()))
+        .toEqual({ 'channelPartnerAttribution.partners.0': { $exists: true } });
+    });
+    it('isEmpty -> no CP tagged', () => {
+      expect(f().toMatch(OPERATORS.IS_EMPTY, null, viewer()))
+        .toEqual({ 'channelPartnerAttribution.partners.0': { $exists: false } });
+    });
+  });
+
+  describe('cpAgent (array ref)', () => {
+    const f = () => field('cpAgent');
+    it('is an array ref to User, displayable', () => {
+      expect(f().type).toBe('ref');
+      expect(f().refArray).toBe(true);
+      expect(f().refModel).toBe('User');
+      expect(f().refPath).toBe('channelPartnerAttribution.partners.agentUser');
+      expect(f().refLabelFields).toEqual(['firstName', 'lastName']);
+      expect(f().displayable).toBe(true);
+    });
+    it('isNotEmpty -> some partner has an agentUser', () => {
+      expect(f().toMatch(OPERATORS.IS_NOT_EMPTY, null, viewer())).toEqual({
+        'channelPartnerAttribution.partners': { $elemMatch: { agentUser: { $ne: null } } },
+      });
+    });
+  });
 });
