@@ -163,11 +163,14 @@ export const INSIGHT_SOURCES = {
     permission: PERMISSIONS.ANALYTICS.PREDICTIVE,
     params: { timeframe: ['7_days', '30_days', '90_days'] },
     run: async (viewerCtx, cfg) => {
+      // The persisted card stores the chosen value in insightConfig.period
+      // (the single model field); accept legacy cfg.timeframe too.
+      const timeframe = cfg.period || cfg.timeframe || '30_days';
       const result = await calculateLeadConversionProbabilities(
         viewerCtx.organization,
         null,
         70,
-        cfg.timeframe || '30_days'
+        timeframe
       );
 
       const totalLeads = num(result?.totalLeads);
@@ -198,7 +201,7 @@ export const INSIGHT_SOURCES = {
         series: null,
         bullets: bullets.slice(0, 4),
         asOf: new Date().toISOString(),
-        scope: { period: cfg.timeframe || '30_days', projectId: cfg.projectId || null },
+        scope: { period: timeframe, projectId: cfg.projectId || null },
       };
     },
   },
