@@ -127,32 +127,51 @@ describe('leadsCatalog', () => {
     });
   });
 
-  describe('daysSinceLastCPFollowUp (headline derived field)', () => {
+  describe('daysSinceLastCPFollowUp (CP-only, headline derived field)', () => {
     const f = () => field('daysSinceLastCPFollowUp');
     it('is derived, numeric, displayable, sortable', () => {
       expect(f().derived).toBe(true);
       expect(f().type).toBe('number');
       expect(f().displayable).toBe(true);
     });
-    it('addFields computes lastCPFollowUpAt then days-since with documented fallback chain', () => {
+    it('addFields uses ONLY the max CP history timestamp (no fallback)', () => {
       const stages = f().addFields();
       expect(stages).toHaveLength(2);
-      // Stage 1: most-recent CP-history timestamp, falling back to last
-      // interaction, then createdAt.
       expect(stages[0].$addFields.__lastCPFollowUpAt).toEqual({
-        $ifNull: [
-          { $max: '$channelPartnerAttribution.history.at' },
-          { $ifNull: ['$engagementMetrics.lastInteractionDate', '$createdAt'] },
-        ],
+        $max: '$channelPartnerAttribution.history.at',
       });
-      // Stage 2: integer day delta to now.
       expect(stages[1].$addFields.daysSinceLastCPFollowUp).toEqual({
         $dateDiff: { startDate: '$__lastCPFollowUpAt', endDate: '$$NOW', unit: 'day' },
       });
     });
-    it('gte 15 -> { daysSinceLastCPFollowUp: { $gte: 15 } }', () => {
-      expect(f().toMatch(OPERATORS.GTE, 15, viewer()))
-        .toEqual({ daysSinceLastCPFollowUp: { $gte: 15 } });
+    it('gte 20 -> { daysSinceLastCPFollowUp: { $gte: 20 } }', () => {
+      expect(f().toMatch(OPERATORS.GTE, 20, viewer()))
+        .toEqual({ daysSinceLastCPFollowUp: { $gte: 20 } });
+    });
+  });
+
+  describe('daysSinceLastActivity (general, with fallback)', () => {
+    const f = () => field('daysSinceLastActivity');
+    it('exists, derived, numeric, displayable', () => {
+      expect(f()).toBeDefined();
+      expect(f().derived).toBe(true);
+      expect(f().type).toBe('number');
+      expect(f().displayable).toBe(true);
+    });
+    it('addFields takes the max of CP history, last interaction, status change, created', () => {
+      const stages = f().addFields();
+      expect(stages).toHaveLength(2);
+      expect(stages[0].$addFields.__lastActivityAt).toEqual({
+        $max: [
+          { $max: '$channelPartnerAttribution.history.at' },
+          '$engagementMetrics.lastInteractionDate',
+          '$statusChangedAt',
+          '$createdAt',
+        ],
+      });
+      expect(stages[1].$addFields.daysSinceLastActivity).toEqual({
+        $dateDiff: { startDate: '$__lastActivityAt', endDate: '$$NOW', unit: 'day' },
+      });
     });
   });
 

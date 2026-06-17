@@ -4,14 +4,19 @@
 // query engine. Each FieldDescriptor owns its own toMatch(); derived fields
 // additionally declare addFields() aggregation stages.
 //
-// DERIVATION NOTE (daysSinceLastCPFollowUp): the Lead model has NO dedicated
-// "last CP follow-up" timestamp (verified against models/leadModel.js and
-// models/interactionModel.js). We derive it from the most recent
-// channelPartnerAttribution.history[].at entry (CP actions are appended there),
-// falling back to engagementMetrics.lastInteractionDate, then createdAt. This
-// keeps the mapper co-located with the catalog and avoids a cross-collection
-// $lookup. If a first-class CP-follow-up timestamp is added later, only this
-// file changes.
+// DERIVATION NOTE (daysSinceLastCPFollowUp / daysSinceLastActivity):
+// The Lead model has NO dedicated "last CP follow-up" timestamp (verified
+// against models/leadModel.js and models/interactionModel.js).
+//
+// daysSinceLastCPFollowUp — CP-ONLY. Uses ONLY the max channelPartnerAttribution
+// .history[].at timestamp. Null when the lead has no CP history (no fallback),
+// so "stale CP" filters only match genuine CP leads and non-CP leads render "—".
+//
+// daysSinceLastActivity — general staleness lens. Takes the max of CP history,
+// engagementMetrics.lastInteractionDate, statusChangedAt, and createdAt.
+// ($max ignores nulls, so the result is always non-null.)
+//
+// If a first-class CP-follow-up timestamp is added later, only this file changes.
 
 import mongoose from 'mongoose';
 import { OPERATORS, buildMatch } from '../operators.js';
@@ -131,24 +136,17 @@ const fields = [
   },
   {
     key: 'daysSinceLastCPFollowUp',
-    label: 'Days since last CP follow-up',
+    label: 'Days since CP follow-up',
     type: 'number',
     operators: [OPERATORS.GT, OPERATORS.LT, OPERATORS.GTE, OPERATORS.LTE, OPERATORS.BETWEEN],
     displayable: true,
     defaultColumn: true,
     derived: true,
+    // CP-ONLY: days since the most recent channel-partner action. NULL when the
+    // lead has no CP history (no fallback) — so "stale CP" filters only match
+    // genuine CP leads, and non-CP leads render "—".
     addFields: () => [
-      {
-        $addFields: {
-          // Most recent CP action timestamp; documented fallback chain.
-          __lastCPFollowUpAt: {
-            $ifNull: [
-              { $max: '$channelPartnerAttribution.history.at' },
-              { $ifNull: ['$engagementMetrics.lastInteractionDate', '$createdAt'] },
-            ],
-          },
-        },
-      },
+      { $addFields: { __lastCPFollowUpAt: { $max: '$channelPartnerAttribution.history.at' } } },
       {
         $addFields: {
           daysSinceLastCPFollowUp: {
@@ -158,6 +156,39 @@ const fields = [
       },
     ],
     toMatch: (op, value) => buildMatch('daysSinceLastCPFollowUp', op, value),
+  },
+  {
+    key: 'daysSinceLastActivity',
+    label: 'Days since last activity',
+    type: 'number',
+    operators: [OPERATORS.GT, OPERATORS.LT, OPERATORS.GTE, OPERATORS.LTE, OPERATORS.BETWEEN],
+    displayable: true,
+    defaultColumn: false,
+    derived: true,
+    // General staleness: most recent of CP action, internal interaction, status
+    // change, or creation. ($max ignores nulls.)
+    addFields: () => [
+      {
+        $addFields: {
+          __lastActivityAt: {
+            $max: [
+              { $max: '$channelPartnerAttribution.history.at' },
+              '$engagementMetrics.lastInteractionDate',
+              '$statusChangedAt',
+              '$createdAt',
+            ],
+          },
+        },
+      },
+      {
+        $addFields: {
+          daysSinceLastActivity: {
+            $dateDiff: { startDate: '$__lastActivityAt', endDate: '$$NOW', unit: 'day' },
+          },
+        },
+      },
+    ],
+    toMatch: (op, value) => buildMatch('daysSinceLastActivity', op, value),
   },
 ];
 
