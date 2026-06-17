@@ -9,6 +9,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import Lead from '../../models/leadModel.js';
 import User from '../../models/userModel.js';
+import ChannelPartner from '../../models/channelPartnerModel.js';
 import { runQueryPlan } from '../../services/workspace/queryEngine.js';
 
 jest.setTimeout(60000);
@@ -237,5 +238,68 @@ describe('runQueryPlan — display materialization and ref labels', () => {
     const { rows, total } = await runQueryPlan(statusPlan(), ownerViewer(ORG_A));
     expect(typeof total).toBe('number');
     expect(total).toBe(rows.length);
+  });
+});
+
+describe('runQueryPlan — channel-partner array-ref labels + CP-only staleness', () => {
+  let CP_A; let CP_B; let CP_AGENT;
+  beforeAll(async () => {
+    CP_AGENT = await User.create({
+      organization: ORG_A, firstName: 'Cee', lastName: 'Pee', email: `cpagent-${Date.now()}@x.com`,
+    });
+    CP_A = await ChannelPartner.create({ organization: ORG_A, firmName: 'Acme Realty' });
+    CP_B = await ChannelPartner.create({ organization: ORG_A, firmName: 'BlueKey' });
+
+    // Stale CP lead, 2 partners, last CP touch 25 days ago, one partner has an agentUser.
+    await Lead.create({
+      firstName: 'CPLead', phone: '9111111111', organization: ORG_A, project: PROJ_A1,
+      source: 'Channel Partner', status: 'New',
+      channelPartnerAttribution: {
+        viaChannelPartner: true, status: 'approved',
+        partners: [
+          { channelPartner: CP_A._id, agentUser: CP_AGENT._id },
+          { channelPartner: CP_B._id },
+        ],
+        history: [{ at: daysAgo(40), action: 'tagged' }, { at: daysAgo(25), action: 'note' }],
+      },
+    });
+    // Non-CP lead: no partners, no CP history.
+    await Lead.create({
+      firstName: 'DirectLead', phone: '9222222222', organization: ORG_A, project: PROJ_A1,
+      source: 'Direct', status: 'New',
+    });
+  });
+
+  const cpStalePlan = {
+    module: 'leads', logic: 'AND',
+    filters: [
+      { field: 'channelPartner', op: 'isNotEmpty', value: null },
+      { field: 'daysSinceLastCPFollowUp', op: 'gte', value: 20 },
+    ],
+    sort: { field: 'daysSinceLastCPFollowUp', dir: 'desc' }, limit: 50, nlSource: null,
+  };
+
+  it('resolves multiple CP firms into a joined channelPartner_label', async () => {
+    const { rows } = await runQueryPlan(cpStalePlan, ownerViewer(ORG_A));
+    const row = rows.find((r) => r.firstName === 'CPLead');
+    expect(row).toBeTruthy();
+    expect(row.channelPartner_label).toBe('Acme Realty, BlueKey');
+    expect(row.cpAgent_label).toBe('Cee Pee');
+    expect(row.daysSinceLastCPFollowUp).toBeGreaterThanOrEqual(20);
+    // internal temp lookup arrays are stripped
+    expect(row.__channelPartner_docs).toBeUndefined();
+    expect(row.__cpAgent_docs).toBeUndefined();
+  });
+
+  it('excludes non-CP leads (channelPartner isNotEmpty) and CP-only stale is null for them', async () => {
+    const { rows } = await runQueryPlan(cpStalePlan, ownerViewer(ORG_A));
+    expect(rows.some((r) => r.firstName === 'DirectLead')).toBe(false);
+  });
+
+  it('channelPartner isEmpty matches the non-CP lead', async () => {
+    const plan = { ...cpStalePlan, filters: [{ field: 'channelPartner', op: 'isEmpty', value: null }], sort: null };
+    const { rows } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    expect(rows.some((r) => r.firstName === 'DirectLead')).toBe(true);
+    expect(rows.some((r) => r.firstName === 'CPLead')).toBe(false);
   });
 });

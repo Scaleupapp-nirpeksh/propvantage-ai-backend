@@ -56,8 +56,51 @@ const buildDisplayStages = (fields, alreadyAdded) => {
       }
     }
 
+    // Fix: resolve ARRAY ref fields (e.g. a lead's multiple CP firms/agents) to a joined label.
+    if (f.type === 'ref' && f.refArray && f.refPath) {
+      const coll = mongoose.model(f.refModel).collection.collectionName;
+      const docsAlias = `__${f.key}_docs`;                 // __-prefixed → stripped by final cleanup
+      const labelFields = f.refLabelFields || ['name'];
+      const perDoc = {
+        $trim: {
+          input: {
+            $reduce: {
+              input: labelFields.map((lf) => ({ $ifNull: [`$$d.${lf}`, ''] })),
+              initialValue: '',
+              in: { $concat: ['$$value', ' ', '$$this'] },
+            },
+          },
+        },
+      };
+      stages.push(
+        { $lookup: { from: coll, localField: f.refPath, foreignField: '_id', as: docsAlias } },
+        {
+          $addFields: {
+            [`${f.key}_label`]: {
+              $trim: {
+                input: {
+                  $reduce: {
+                    input: { $map: { input: `$${docsAlias}`, as: 'd', in: perDoc } },
+                    initialValue: '',
+                    in: {
+                      $cond: [
+                        { $eq: ['$$value', ''] },
+                        '$$this',
+                        { $concat: ['$$value', ', ', '$$this'] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+      continue; // handled as an array ref; skip the single-ref branch below
+    }
+
     // Fix 2: resolve ref fields to human-readable label via $lookup.
-    if (f.type === 'ref' && f.refModel) {
+    if (f.type === 'ref' && f.refModel && !f.refArray) {
       const coll = mongoose.model(f.refModel).collection.collectionName;
       const docAlias = `__${f.key}_doc`;          // starts with __ → stripped by final strip
       const labelFields = f.refLabelFields || ['name'];
