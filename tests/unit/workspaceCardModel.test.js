@@ -11,9 +11,9 @@ const valid = (over = {}) => ({
 });
 
 describe('WorkspaceCard model', () => {
-  it('exports the six modules and three render modes (incl. insight)', () => {
+  it('exports the six modules and four render modes (incl. insight + chart)', () => {
     expect(WORKSPACE_MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects']);
-    expect(RENDER_MODES).toEqual(['list', 'metric', 'insight']);
+    expect(RENDER_MODES).toEqual(['list', 'metric', 'insight', 'chart']);
   });
 
   it('accepts renderMode=insight and persists insightConfig source/period/projectId', () => {
@@ -69,8 +69,31 @@ describe('WorkspaceCard model', () => {
     expect(new WorkspaceCard(valid({ module: 'bogus' })).validateSync().errors.module).toBeDefined();
   });
 
+  it('accepts renderMode=chart and persists chartConfig fields', () => {
+    const doc = new WorkspaceCard(valid({
+      renderMode: 'chart',
+      chartConfig: { chartType: 'bar', groupBy: 'status', agg: 'sum', metricField: 'score', timeBucket: 'month' },
+    }));
+    expect(doc.validateSync()).toBeUndefined();
+    expect(doc.renderMode).toBe('chart');
+    expect(doc.chartConfig.chartType).toBe('bar');
+    expect(doc.chartConfig.groupBy).toBe('status');
+    expect(doc.chartConfig.agg).toBe('sum');
+    expect(doc.chartConfig.metricField).toBe('score');
+    expect(doc.chartConfig.timeBucket).toBe('month');
+  });
+
+  it('defaults chartConfig to empty (null fields, agg=count)', () => {
+    const doc = new WorkspaceCard(valid());
+    expect(doc.chartConfig.chartType).toBeNull();
+    expect(doc.chartConfig.groupBy).toBeNull();
+    expect(doc.chartConfig.agg).toBe('count');
+    expect(doc.chartConfig.metricField).toBeNull();
+    expect(doc.chartConfig.timeBucket).toBeNull();
+  });
+
   it('rejects an unknown renderMode and an unknown metricConfig.agg', () => {
-    expect(new WorkspaceCard(valid({ renderMode: 'chart' })).validateSync().errors.renderMode).toBeDefined();
+    expect(new WorkspaceCard(valid({ renderMode: 'bogusMode' })).validateSync().errors.renderMode).toBeDefined();
     expect(
       new WorkspaceCard(valid({ metricConfig: { agg: 'median' } })).validateSync().errors['metricConfig.agg']
     ).toBeDefined();

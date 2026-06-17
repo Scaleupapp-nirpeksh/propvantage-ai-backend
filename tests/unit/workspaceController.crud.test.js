@@ -13,7 +13,7 @@ const mockDeleteOne = jest.fn();
 jest.unstable_mockModule('../../models/workspaceCardModel.js', () => ({
   default: { create: mockCreate, find: mockFind, findOne: mockFindOne, deleteOne: mockDeleteOne },
   WORKSPACE_MODULES: ['leads', 'sales', 'payments', 'tasks', 'channelPartners'],
-  RENDER_MODES: ['list', 'metric', 'insight'],
+  RENDER_MODES: ['list', 'metric', 'insight', 'chart'],
 }));
 
 const mockRun = jest.fn();
@@ -196,7 +196,7 @@ describe('workspaceController — card CRUD', () => {
   });
 
   test('POST /cards 400s on invalid renderMode', async () => {
-    const { res, thrown } = await run(createCard, baseReq({ body: { title: 'x', queryPlan: VALID_PLAN, renderMode: 'chart' } }));
+    const { res, thrown } = await run(createCard, baseReq({ body: { title: 'x', queryPlan: VALID_PLAN, renderMode: 'bogusMode' } }));
     expect(res._status).toBe(400);
     expect(thrown).toBeInstanceOf(Error);
     expect(mockCreate).not.toHaveBeenCalled();
@@ -282,6 +282,86 @@ describe('workspaceController — card CRUD', () => {
     }));
     expect(res._status).toBe(404);
     expect(thrown).toBeInstanceOf(Error);
+  });
+});
+
+describe('workspaceController — chart cards', () => {
+  // A valid chart config: count of leads grouped by the enum 'status' field.
+  const CHART_CFG = { chartType: 'bar', groupBy: 'status', agg: 'count', metricField: null, timeBucket: null };
+
+  test('POST /cards (chart) persists chartConfig + the coerced query plan', async () => {
+    mockCreate.mockImplementation(async (doc) => ({ _id: new mongoose.Types.ObjectId(), ...doc }));
+    const body = { title: 'Leads by status', queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: CHART_CFG };
+    const { res } = await run(createCard, baseReq({ body }));
+    expect(res._status).toBe(201);
+    const created = mockCreate.mock.calls[0][0];
+    expect(created.renderMode).toBe('chart');
+    expect(created.chartConfig).toEqual(CHART_CFG);
+    expect(created.module).toBe('leads');
+    expect(created.queryPlan).toEqual(COERCED_PLAN);
+  });
+
+  test('POST /cards (chart) 400s on an unknown chartType, never creates', async () => {
+    const { res, thrown } = await run(createCard, baseReq({
+      body: { title: 'x', queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: { ...CHART_CFG, chartType: 'donut' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown.message).toMatch(/chart type/i);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('POST /cards (chart) 400s on a non-groupable groupBy (array-ref), never creates', async () => {
+    const { res, thrown } = await run(createCard, baseReq({
+      body: { title: 'x', queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: { ...CHART_CFG, groupBy: 'channelPartner' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown.message).toMatch(/not groupable/i);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('POST /cards (chart) 400s on sum without a numeric metricField, never creates', async () => {
+    const { res, thrown } = await run(createCard, baseReq({
+      body: { title: 'x', queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: { ...CHART_CFG, agg: 'sum', metricField: 'status' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown.message).toMatch(/numeric metricField/i);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('POST /preview (chart) validates config and returns buckets from the engine', async () => {
+    mockRun.mockResolvedValue({ buckets: [{ key: 'New', value: 3 }, { key: 'Booked', value: 1 }] });
+    const { res } = await run(previewCard, baseReq({
+      body: { queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: CHART_CFG },
+    }));
+    expect(res._json).toEqual({ success: true, data: { buckets: [{ key: 'New', value: 3 }, { key: 'Booked', value: 1 }] } });
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    const [planArg, , optsArg] = mockRun.mock.calls[0];
+    expect(planArg).toEqual(COERCED_PLAN);
+    expect(optsArg).toEqual({ renderMode: 'chart', chartConfig: CHART_CFG });
+  });
+
+  test('POST /preview (chart) 400s on bad config without running the engine', async () => {
+    const { res, thrown } = await run(previewCard, baseReq({
+      body: { queryPlan: VALID_PLAN, renderMode: 'chart', chartConfig: { ...CHART_CFG, groupBy: 'nope' } },
+    }));
+    expect(res._status).toBe(400);
+    expect(thrown).toBeInstanceOf(Error);
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  test('getCardData (chart) runs the saved plan with chart opts and returns buckets', async () => {
+    mockRun.mockResolvedValue({ buckets: [{ key: 'New', value: 5 }] });
+    const id = new mongoose.Types.ObjectId();
+    mockFindOne.mockResolvedValue({
+      _id: id, organization: ORG, ownerId: USER, renderMode: 'chart',
+      queryPlan: COERCED_PLAN, chartConfig: CHART_CFG,
+    });
+    const { res } = await run(getCardData, baseReq({ params: { id: id.toString() } }));
+    expect(res._json).toEqual({ success: true, data: { buckets: [{ key: 'New', value: 5 }] } });
+    expect(mockRun).toHaveBeenCalledTimes(1);
+    const [planArg, , optsArg] = mockRun.mock.calls[0];
+    expect(planArg).toEqual(COERCED_PLAN);
+    expect(optsArg).toEqual({ renderMode: 'chart', chartConfig: CHART_CFG });
   });
 });
 

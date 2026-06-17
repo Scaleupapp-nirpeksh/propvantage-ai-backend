@@ -6,7 +6,7 @@
 import mongoose from 'mongoose';
 
 export const WORKSPACE_MODULES = ['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects'];
-export const RENDER_MODES = ['list', 'metric', 'insight'];
+export const RENDER_MODES = ['list', 'metric', 'insight', 'chart'];
 export const METRIC_AGGS = ['count', 'sum', 'avg'];
 export const VISIBILITIES = ['private', 'shared'];
 
@@ -27,6 +27,20 @@ const insightConfigSchema = new mongoose.Schema(
     source: { type: String, default: null },
     period: { type: String, default: null },
     projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', default: null },
+  },
+  { _id: false }
+);
+
+// Config for renderMode:'chart' cards (Chart Cards spec). A chart card carries a
+// normal query plan (module + filters) AND this grouped-aggregation config: the
+// field to group by, the aggregation, and (for sums) the numeric measure.
+const chartConfigSchema = new mongoose.Schema(
+  {
+    chartType: { type: String, default: null },
+    groupBy: { type: String, default: null },
+    agg: { type: String, default: 'count' },
+    metricField: { type: String, default: null },
+    timeBucket: { type: String, default: null },
   },
   { _id: false }
 );
@@ -62,6 +76,8 @@ const workspaceCardSchema = new mongoose.Schema(
     metricConfig: { type: metricConfigSchema, default: () => ({}) },
     // Config for renderMode:'insight' cards — see insightConfigSchema above.
     insightConfig: { type: insightConfigSchema, default: () => ({}) },
+    // Config for renderMode:'chart' cards — see chartConfigSchema above.
+    chartConfig: { type: chartConfigSchema, default: () => ({}) },
     // List-mode display columns: an ordered allow-list of catalog field keys to
     // show. Empty → the frontend falls back to the catalog's default columns.
     // Keys are validated client-side against the module catalog; unknown keys

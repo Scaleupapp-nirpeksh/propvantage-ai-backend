@@ -5,6 +5,7 @@
 //
 //   runQueryPlan(plan, viewerCtx)                                   -> { rows, total }
 //   runQueryPlan(plan, viewerCtx, { renderMode:'metric', metricConfig }) -> { value, breakdown }
+//   runQueryPlan(plan, viewerCtx, { renderMode:'chart', chartConfig })   -> { buckets:[{key,value}] }
 //
 // Security: scoping is taken from viewerCtx (built from the authenticated req in
 // the controller), NEVER from the plan. Derived fields referenced by filters/sort
@@ -138,8 +139,8 @@ const buildDisplayStages = (fields, alreadyAdded) => {
  * Run a Query Plan under a viewer's scope.
  * @param {object} plan Raw or validated Query Plan (§3.3).
  * @param {object} viewerCtx { organization, userId, accessibleProjectIds, isOwner, permissions }.
- * @param {object} [opts] { renderMode:'list'|'metric', metricConfig:{ agg, field } }.
- * @returns {Promise<{rows:object[], total:number}|{value:number, breakdown:object[]}>}
+ * @param {object} [opts] { renderMode:'list'|'metric'|'chart', metricConfig:{ agg, field }, chartConfig:{ chartType, groupBy, agg, metricField, timeBucket } }.
+ * @returns {Promise<{rows:object[], total:number}|{value:number, breakdown:object[]}|{buckets:{key:string|number, value:number}[]}>}
  */
 export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
   const { value: validPlan, error } = validateQueryPlan(plan);
@@ -204,6 +205,65 @@ export const runQueryPlan = async (plan, viewerCtx, opts = {}) => {
       return { value: res[0]?.value || 0, breakdown: [] };
     }
     throw new Error(`Unsupported metric aggregation: ${agg}`);
+  }
+
+  // ---- Chart mode ---------------------------------------------------------
+  // Grouped aggregation over a groupable field → { buckets:[{key,value}] }.
+  if (renderMode === 'chart') {
+    const cfg = opts.chartConfig || {};
+    const { chartType, groupBy, timeBucket } = cfg;
+    const agg = cfg.agg || 'count';
+    const metricField = cfg.metricField || null;
+
+    const f = byKey.get(groupBy);
+    if (!f) throw new Error(`Unknown field for module ${validPlan.module}: ${groupBy}`);
+    const isSingleRef = f.type === 'ref' && f.refModel && !f.refArray;
+    const groupable = ['enum', 'string', 'date'].includes(f.type) || isSingleRef;
+    if (!groupable) throw new Error(`Field ${groupBy} is not groupable`);
+
+    // Materialise the group key: lift derived fields to top-level ${key} and
+    // resolve single-ref fields to ${key}_label (reusing the display stages).
+    const groupStages = buildDisplayStages([f], new Set());
+
+    // Group-key expression.
+    let gk;
+    if (isSingleRef) {
+      gk = `$${f.key}_label`;
+    } else if (f.type === 'date' && timeBucket === 'month') {
+      gk = { $dateToString: { format: '%Y-%m', date: `$${f.key}` } };
+    } else {
+      gk = `$${f.key}`;
+    }
+
+    // Accumulator: sum over a numeric measure, else a count.
+    let accumulator;
+    if (agg === 'sum') {
+      if (!metricField) throw new Error(`Chart aggregation 'sum' requires a metricField`);
+      const mf = byKey.get(metricField);
+      if (!mf) throw new Error(`Unknown field for module ${validPlan.module}: ${metricField}`);
+      if (mf.type !== 'number') throw new Error(`Field ${metricField} is not numeric`);
+      accumulator = { $sum: `$${metricField}` };
+    } else {
+      accumulator = { $sum: 1 };
+    }
+
+    // Date/line charts sort chronologically by key; others by value desc.
+    const sortByKey = chartType === 'line' || (f.type === 'date' && timeBucket === 'month');
+    const sortStage = sortByKey ? { $sort: { _id: 1 } } : { $sort: { value: -1 } };
+
+    const res = await Model.aggregate([
+      ...pipeline,
+      ...groupStages,
+      { $group: { _id: gk, value: accumulator } },
+      sortStage,
+      { $limit: 50 },
+    ]);
+    return {
+      buckets: res.map((r) => ({
+        key: (r._id ?? '—') === '' ? '—' : (r._id ?? '—'),
+        value: r.value || 0,
+      })),
+    };
   }
 
   // ---- List mode ----------------------------------------------------------
