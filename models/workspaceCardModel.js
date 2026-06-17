@@ -5,7 +5,7 @@
 
 import mongoose from 'mongoose';
 
-export const WORKSPACE_MODULES = ['leads', 'sales', 'payments', 'tasks', 'channelPartners'];
+export const WORKSPACE_MODULES = ['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects'];
 export const RENDER_MODES = ['list', 'metric'];
 export const METRIC_AGGS = ['count', 'sum', 'avg'];
 export const VISIBILITIES = ['private', 'shared'];

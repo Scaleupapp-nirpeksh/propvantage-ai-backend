@@ -29,6 +29,7 @@ import salesCatalog from './salesCatalog.js';
 import paymentsCatalog from './paymentsCatalog.js';
 import tasksCatalog from './tasksCatalog.js';
 import channelPartnersCatalog from './channelPartnersCatalog.js';
+import projectsCatalog from './projectsCatalog.js';
 
 const REGISTRY = {
   leads: leadsCatalog,
@@ -36,6 +37,7 @@ const REGISTRY = {
   payments: paymentsCatalog,
   tasks: tasksCatalog,
   channelPartners: channelPartnersCatalog,
+  projects: projectsCatalog,
 };
 
 /** @returns {string[]} the module keys currently wired into the registry. */

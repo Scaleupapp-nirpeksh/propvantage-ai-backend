@@ -3,13 +3,14 @@
 // orgs/projects and asserts: cross-org isolation, project-access scoping, a
 // derived-field filter (daysSinceLastCPFollowUp gte 15), metric count mode,
 // display materialization of derived columns (Fix 1), and ref-field label
-// resolution via $lookup (Fix 2).
+// resolution via $lookup (Fix 2). Also covers the projects module (Theme D1).
 import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import Lead from '../../models/leadModel.js';
 import User from '../../models/userModel.js';
 import ChannelPartner from '../../models/channelPartnerModel.js';
+import Project from '../../models/projectModel.js';
 import { runQueryPlan } from '../../services/workspace/queryEngine.js';
 
 jest.setTimeout(60000);
@@ -301,5 +302,118 @@ describe('runQueryPlan — channel-partner array-ref labels + CP-only staleness'
     const { rows } = await runQueryPlan(plan, ownerViewer(ORG_A));
     expect(rows.some((r) => r.firstName === 'DirectLead')).toBe(true);
     expect(rows.some((r) => r.firstName === 'CPLead')).toBe(false);
+  });
+});
+
+// ---- Theme D1: Projects catalog engine integration --------------------------
+describe('runQueryPlan — projects module', () => {
+  // Required Project fields: organization, name, type, status,
+  // location.city, location.area, totalUnits, priceRange.min/max, targetRevenue.
+  const seedProject = (over) =>
+    Project.create({
+      organization: ORG_A,
+      name: 'Default Project',
+      type: 'apartment',
+      status: 'launched',
+      location: { city: 'Mumbai', area: 'Andheri' },
+      totalUnits: 100,
+      priceRange: { min: 5000000, max: 10000000 },
+      targetRevenue: 500000000,
+      ...over,
+    });
+
+  let PROJ_DOC_A1;
+  let PROJ_DOC_A2;
+
+  beforeAll(async () => {
+    PROJ_DOC_A1 = await seedProject({
+      name: 'Sunrise Heights',
+      type: 'apartment',
+      status: 'launched',
+      location: { city: 'Mumbai', area: 'Bandra' },
+      totalUnits: 120,
+      targetRevenue: 600000000,
+    });
+    PROJ_DOC_A2 = await seedProject({
+      name: 'Green Villas',
+      type: 'villa',
+      status: 'planning',
+      location: { city: 'Pune', area: 'Wakad' },
+      totalUnits: 50,
+      targetRevenue: 250000000,
+    });
+    // Seed an Org B project — must never appear in ORG_A queries.
+    await seedProject({
+      organization: ORG_B,
+      name: 'Other Org Project',
+      type: 'plot',
+      status: 'completed',
+      location: { city: 'Delhi', area: 'Noida' },
+    });
+  });
+
+  const projectsPlan = (filterOverride) => ({
+    module: 'projects',
+    logic: 'AND',
+    filters: filterOverride || [{ field: 'status', op: 'is', value: 'launched' }],
+    sort: null,
+    limit: 50,
+    nlSource: null,
+  });
+
+  it('org owner sees only ORG_A projects (cross-org isolation)', async () => {
+    // Use a no-filter plan via a status in both values
+    const plan = projectsPlan([{ field: 'status', op: 'in', value: ['launched', 'planning', 'completed', 'on-hold', 'pre-launch', 'under-construction'] }]);
+    const { rows } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    rows.forEach((r) => expect(r.organization.toString()).toBe(ORG_A.toString()));
+  });
+
+  it('status filter returns only matching rows (launched)', async () => {
+    const { rows, total } = await runQueryPlan(projectsPlan(), ownerViewer(ORG_A));
+    expect(total).toBeGreaterThanOrEqual(1);
+    rows.forEach((r) => expect(r.status).toBe('launched'));
+    expect(rows.some((r) => r.name === 'Sunrise Heights')).toBe(true);
+    expect(rows.some((r) => r.name === 'Green Villas')).toBe(false);
+  });
+
+  it('city is lifted onto rows as a top-level field (derived display)', async () => {
+    const { rows } = await runQueryPlan(projectsPlan(), ownerViewer(ORG_A));
+    const proj = rows.find((r) => r.name === 'Sunrise Heights');
+    expect(proj).toBeDefined();
+    // The city derived field should have been materialised by buildDisplayStages.
+    expect(proj.city).toBe('Mumbai');
+  });
+
+  it('non-owner scoped to PROJ_DOC_A1 only sees that project', async () => {
+    const ctx = scopedViewer(ORG_A, [PROJ_DOC_A1._id.toString()]);
+    const plan = projectsPlan([{ field: 'status', op: 'in', value: ['launched', 'planning', 'completed', 'on-hold', 'pre-launch', 'under-construction'] }]);
+    const { rows, total } = await runQueryPlan(plan, ctx);
+    expect(total).toBe(1);
+    expect(rows[0]._id.toString()).toBe(PROJ_DOC_A1._id.toString());
+  });
+
+  it('non-owner with empty accessibleProjectIds gets no rows', async () => {
+    const ctx = scopedViewer(ORG_A, []);
+    const { rows, total } = await runQueryPlan(projectsPlan(), ctx);
+    expect(total).toBe(0);
+    expect(rows).toEqual([]);
+  });
+
+  it('type in filter works', async () => {
+    const plan = projectsPlan([{ field: 'type', op: 'in', value: ['villa'] }]);
+    const { rows, total } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    expect(total).toBeGreaterThanOrEqual(1);
+    rows.forEach((r) => expect(r.type).toBe('villa'));
+    expect(rows.some((r) => r.name === 'Green Villas')).toBe(true);
+  });
+
+  it('metric count mode returns the correct project count', async () => {
+    const plan = projectsPlan([{ field: 'status', op: 'in', value: ['launched', 'planning', 'completed', 'on-hold', 'pre-launch', 'under-construction'] }]);
+    const { value } = await runQueryPlan(plan, ownerViewer(ORG_A), {
+      renderMode: 'metric',
+      metricConfig: { agg: 'count', field: null },
+    });
+    // ORG_A has at least PROJ_DOC_A1 + PROJ_DOC_A2
+    expect(value).toBeGreaterThanOrEqual(2);
   });
 });

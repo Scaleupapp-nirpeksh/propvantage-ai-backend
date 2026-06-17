@@ -5,13 +5,14 @@
 import Joi from 'joi';
 import { OPERATOR_LIST } from './operators.js';
 
-/** The five queryable modules. Order is contract — tests assert it. */
+/** The six queryable modules. Order is contract — tests assert it. */
 export const MODULES = Object.freeze([
   'leads',
   'sales',
   'payments',
   'tasks',
   'channelPartners',
+  'projects',
 ]);
 
 export const DEFAULT_LIMIT = 50;
