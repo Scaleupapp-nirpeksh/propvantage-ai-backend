@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PropVantage support email-to-ticket INBOUND ingestion via Amazon SES.
+  Receives mail for a helpdesk subdomain and POSTs it to the app webhook
+  (POST /api/support/inbound/ses) through an SNS topic. Deploy in an SES
+  inbound region (us-east-1 | us-west-2 | eu-west-1) — the app can stay in
+  ap-south-1; SNS delivers over HTTPS to the public API.
+
+Parameters:
+  HelpdeskDomain:
+    Type: String
+    Default: helpdesk.prop-vantage.com
+    Description: The subdomain that receives client mail (per-org local-parts route inside the app).
+  WebhookUrl:
+    Type: String
+    Default: https://api.prop-vantage.com/api/support/inbound/ses
+    Description: The app inbound webhook (handles the SNS SubscriptionConfirmation + Notification).
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: Route 53 hosted zone ID for prop-vantage.com.
+  SesInboundHost:
+    Type: String
+    Default: inbound-smtp.us-east-1.amazonaws.com
+    Description: SES inbound SMTP endpoint for the deploy region (match the stack region).
+
+Resources:
+  InboundTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: propvantage-support-inbound
+
+  # Allow SES to publish received mail to the topic.
+  InboundTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [ !Ref InboundTopic ]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSESPublish
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref InboundTopic
+            Condition:
+              StringEquals: { 'AWS:SourceAccount': !Ref 'AWS::AccountId' }
+
+  # HTTPS subscription → the app webhook. The app must confirm the subscription
+  # (the ses adapter returns SES_SUBSCRIPTION_CONFIRMATION and the controller
+  # GETs the SubscribeURL). RawMessageDelivery=false so the SES envelope is intact.
+  InboundSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref InboundTopic
+      Protocol: https
+      Endpoint: !Ref WebhookUrl
+      RawMessageDelivery: false
+
+  InboundRuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: propvantage-support
+
+  InboundRule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn: InboundTopicPolicy
+    Properties:
+      RuleSetName: !Ref InboundRuleSet
+      Rule:
+        Name: helpdesk-to-app
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: Optional
+        Recipients: [ !Ref HelpdeskDomain ]
+        Actions:
+          # Publishes the full received message (Base64) to SNS for messages
+          # under the SNS size limit; the app parses it with mailparser.
+          - SNSAction:
+              TopicArn: !Ref InboundTopic
+              Encoding: BASE64
+
+  # DNS: route helpdesk subdomain mail to SES, plus SPF/DMARC for deliverability.
+  HelpdeskMx:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '${HelpdeskDomain}.'
+      Type: MX
+      TTL: '1800'
+      ResourceRecords: [ !Sub '10 ${SesInboundHost}' ]
+
+  HelpdeskSpf:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '${HelpdeskDomain}.'
+      Type: TXT
+      TTL: '1800'
+      ResourceRecords: [ '"v=spf1 include:amazonses.com ~all"' ]
+
+  HelpdeskDmarc:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '_dmarc.${HelpdeskDomain}.'
+      Type: TXT
+      TTL: '1800'
+      ResourceRecords: [ '"v=DMARC1; p=none; rua=mailto:dmarc@prop-vantage.com"' ]
+
+Outputs:
+  TopicArn:
+    Value: !Ref InboundTopic
+  RuleSetName:
+    Value: !Ref InboundRuleSet
+  PostDeploy:
+    Description: Run after deploy — SES rule sets must be activated (not a CFN op).
+    Value: !Sub 'aws ses set-active-receipt-rule-set --rule-set-name ${InboundRuleSet} --region ${AWS::Region}'
