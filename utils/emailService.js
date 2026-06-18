@@ -708,7 +708,7 @@ export const sendTestEmail = async (toEmail) => {
  * @param {{ to: string, subject: string, html: string, text?: string }} opts
  * @returns {Promise<{ success: boolean, messageId?: string }>}
  */
-export const sendEmail = async ({ to, subject, html, text }) => {
+export const sendEmail = async ({ to, subject, html, text, replyTo }) => {
   if (!to || !subject || !html) throw new Error('sendEmail requires to, subject, and html');
   if (!transporter) transporter = createTransporter();
   if (!transporter) throw new Error('Email service not available');
@@ -717,6 +717,9 @@ export const sendEmail = async ({ to, subject, html, text }) => {
     from: { name: EMAIL_CONFIG.from.name, address: EMAIL_CONFIG.from.email },
     to, subject, html, text: text || '',
   };
+  // Route client replies to a designated address (e.g. the helpdesk inbox) so
+  // replying to the email threads back into the system instead of the sender.
+  if (replyTo) emailOptions.replyTo = replyTo;
 
   let lastError = null;
   for (let attempt = 1; attempt <= EMAIL_CONFIG.maxRetries; attempt++) {

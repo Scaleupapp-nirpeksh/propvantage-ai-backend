@@ -6,6 +6,14 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 const mockFindOne = jest.fn();
 jest.unstable_mockModule('../../models/supportTicketModel.js', () => ({
   default: { findOne: mockFindOne },
+  TICKET_STATUSES: ['new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'],
+}));
+
+// Mock the service so importing the controller doesn't pull in the whole
+// support-service dependency chain; these read-only tests only exercise GET.
+const mockAddPublicReply = jest.fn();
+jest.unstable_mockModule('../../services/support/supportService.js', () => ({
+  addPublicClientReply: mockAddPublicReply,
 }));
 
 const { getPublicTicket } = await import('../../controllers/publicTicketController.js');

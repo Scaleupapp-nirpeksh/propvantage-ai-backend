@@ -83,7 +83,7 @@ export function autoReplyEmail({ displayId, subject, clientName, link }) {
     <p style="margin:0 0 14px;">Thank you for reaching out. We've received your request${subject ? ` regarding <strong>&ldquo;${esc(subject)}&rdquo;</strong>` : ''} and opened a ticket for you. Our team has been notified and will be in touch shortly.</p>
     <p style="margin:0;">You can follow every update in real time on your private status page below — no login required.</p>`;
   return {
-    subject: `We've received your request — ${displayId}`,
+    subject: `We've received your request — [${displayId}]`,
     html: shell({
       preheader: `Your request is logged as ${displayId}. Track it anytime.`,
       heading: 'Your request has been received',
@@ -114,7 +114,7 @@ export function statusUpdateEmail({ displayId, status, link }) {
     <p style="margin:0 0 14px;">There's a new update on your ticket.</p>
     <p style="margin:0;">Its status is now <strong style="color:${INK};">${esc(label)}</strong>. Open your status page for the full timeline.</p>`;
   return {
-    subject: `Update on ${displayId} — ${label}`,
+    subject: `Update on [${displayId}] — ${label}`,
     html: shell({
       preheader: `Your ticket ${displayId} is now ${label}.`,
       heading: `Your ticket is now: ${label}`,

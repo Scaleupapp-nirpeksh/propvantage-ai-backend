@@ -5,6 +5,7 @@
 
 import asyncHandler from 'express-async-handler';
 import SupportTicket from '../models/supportTicketModel.js';
+import { addPublicClientReply } from '../services/support/supportService.js';
 
 /**
  * Build the client-facing timeline: a leading 'received' status event, then the
@@ -43,16 +44,44 @@ export const getPublicTicket = asyncHandler(async (req, res) => {
     throw new Error('Ticket not found');
   }
 
-  res.json({
-    success: true,
-    data: {
-      displayId: ticket.displayId,
-      subject: ticket.subject,
-      status: ticket.status,
-      category: ticket.category,
-      createdAt: ticket.createdAt,
-      updatedAt: ticket.updatedAt,
-      timeline: buildTimeline(ticket),
-    },
-  });
+  res.json({ success: true, data: publicShape(ticket) });
+});
+
+// Public-safe projection shared by the GET + reply endpoints.
+function publicShape(ticket) {
+  return {
+    displayId: ticket.displayId,
+    subject: ticket.subject,
+    status: ticket.status,
+    category: ticket.category,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+    timeline: buildTimeline(ticket),
+  };
+}
+
+/**
+ * @desc    Public: client posts a reply on their ticket from the status page
+ * @route   POST /api/public/tickets/:token/reply
+ * @access  Public (guarded by the unguessable token + rate limiter)
+ */
+export const postPublicReply = asyncHandler(async (req, res) => {
+  const body = (req.body?.body || '').trim();
+  if (!body) {
+    res.status(400);
+    throw new Error('A message is required');
+  }
+  if (body.length > 5000) {
+    res.status(400);
+    throw new Error('Message is too long');
+  }
+
+  const ticket = await addPublicClientReply(req.params.token, body);
+  // Generic 404 — never reveal whether a token exists.
+  if (!ticket) {
+    res.status(404);
+    throw new Error('Ticket not found');
+  }
+
+  res.json({ success: true, data: publicShape(ticket) });
 });

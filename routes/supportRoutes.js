@@ -15,6 +15,7 @@ import {
   getTicket,
   replyToClient,
   addNote,
+  updateStatus,
   getInbox,
   regenerateInbox,
 } from '../controllers/supportController.js';
@@ -60,5 +61,6 @@ router.get('/', listTickets);
 router.get('/:id', getTicket);
 router.post('/:id/reply', replyToClient);
 router.post('/:id/note', addNote);
+router.patch('/:id/status', updateStatus);
 
 export default router;

@@ -12,6 +12,7 @@ import {
   replyToClient as replyToClientSvc,
   addInternalNote as addInternalNoteSvc,
   appendInboundReply,
+  updateTicketStatus as updateTicketStatusSvc,
 } from '../services/support/supportService.js';
 import { getOrgInbox, regenerateOrgInbox } from '../services/support/supportInboxService.js';
 import * as testAdapter from '../services/support/inbound/test.js';
@@ -308,6 +309,36 @@ export const addNote = asyncHandler(async (req, res) => {
 
   const ticket = await addInternalNoteSvc(req.params.id, req.user._id, body);
   res.json({ success: true, data: ticket });
+});
+
+/**
+ * @desc    Change a ticket's status (move stage / resolve / close)
+ * @route   PATCH /api/support/:id/status
+ * @access  Authenticated
+ */
+export const updateStatus = asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  if (!status) {
+    res.status(400);
+    throw new Error('A status is required');
+  }
+
+  const exists = await SupportTicket.findOne({
+    _id: req.params.id,
+    organization: req.user.organization,
+  }).select('_id');
+  if (!exists) {
+    res.status(404);
+    throw new Error('Ticket not found');
+  }
+
+  try {
+    const ticket = await updateTicketStatusSvc(req.params.id, req.user._id, status);
+    res.json({ success: true, data: ticket });
+  } catch (err) {
+    res.status(400);
+    throw err;
+  }
 });
 
 // =============================================================================

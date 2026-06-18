@@ -8,10 +8,25 @@
 
 import User from '../../models/userModel.js';
 import Task from '../../models/taskModel.js';
-import SupportTicket from '../../models/supportTicketModel.js';
+import SupportTicket, { TICKET_STATUSES } from '../../models/supportTicketModel.js';
 import { sendEmail } from '../../utils/emailService.js';
 import { createNotification } from '../notificationService.js';
 import { autoReplyEmail, clientReplyEmail, statusUpdateEmail } from './supportEmails.js';
+import { getOrgInbox } from './supportInboxService.js';
+
+/**
+ * The org's helpdesk address, used as the Reply-To on client emails so a reply
+ * threads back into the system (inbound webhook) instead of the SMTP sender.
+ * Best-effort: returns undefined if no inbox is provisioned.
+ */
+async function helpdeskReplyTo(orgId) {
+  try {
+    const inbox = await getOrgInbox(orgId);
+    return inbox?.address || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 // ─── ROUTING CONFIG ──────────────────────────────────────────────
 
@@ -190,7 +205,8 @@ export async function createTicketFromMessage(orgId, msg) {
   try {
     const link = publicTicketLink(ticket);
     const mail = autoReplyEmail({ displayId, subject: msg.subject, clientName: msg.fromName, link });
-    const sent = await sendEmail({ to: msg.from, subject: mail.subject, html: mail.html, text: mail.text });
+    const replyTo = msg.to || (await helpdeskReplyTo(orgId));
+    const sent = await sendEmail({ to: msg.from, subject: mail.subject, html: mail.html, text: mail.text, replyTo });
     console.log(`✅ [supportService] auto-reply sent for ${displayId} → ${msg.from} (messageId=${sent?.messageId})`);
     ticket.lastClientNotifiedAt = new Date();
     await ticket.save();
@@ -228,7 +244,8 @@ export async function replyToClient(ticketId, userId, bodyText) {
   try {
     const link = publicTicketLink(ticket);
     const mail = clientReplyEmail({ displayId: ticket.displayId, subject: ticket.subject, body: bodyText, link });
-    const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+    const replyTo = await helpdeskReplyTo(ticket.organization);
+    const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text, replyTo });
     console.log(`✅ [supportService] reply sent for ${ticket.displayId} → ${ticket.client.email} (messageId=${sent?.messageId})`);
     ticket.lastClientNotifiedAt = now;
   } catch (err) {
@@ -354,11 +371,127 @@ export async function syncStatusFromTask(taskId, newStatus) {
     try {
       const link = publicTicketLink(ticket);
       const mail = statusUpdateEmail({ displayId: ticket.displayId, status: mapped, link });
-      const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+      const replyTo = await helpdeskReplyTo(ticket.organization);
+      const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text, replyTo });
       console.log(`✅ [supportService] status update sent for ${ticket.displayId} → ${ticket.client.email} (messageId=${sent?.messageId})`);
       ticket.lastClientNotifiedAt = new Date();
     } catch (err) {
       console.error(`❌ [supportService] status email failed for ${ticket.displayId} → ${ticket.client.email}:`, err?.response || err?.message || err);
+    }
+  }
+
+  await ticket.save();
+  return ticket;
+}
+
+// ─── STAFF STATUS CHANGE (manual, from the ticket UI) ────────────
+
+// Statuses an agent can set by hand (excludes 'new' — that's the pre-assignment
+// machine state). Ticket status the client sees is the source of truth.
+const MANUAL_STATUSES = ['assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'];
+const TICKET_STATUS_TO_TASK = {
+  in_progress: 'In Progress',
+  waiting_on_client: 'In Progress',
+  resolved: 'Completed',
+  closed: 'Cancelled',
+};
+
+/**
+ * Set the ticket status by hand. Records an internal audit note, emails the
+ * client a templated update, keeps the linked Task roughly in sync, and stamps
+ * closedAt when resolving/closing (clearing it when reopening).
+ */
+export async function updateTicketStatus(ticketId, userId, status) {
+  if (!MANUAL_STATUSES.includes(status) || !TICKET_STATUSES.includes(status)) {
+    throw new Error('Invalid status');
+  }
+  const ticket = await SupportTicket.findById(ticketId);
+  if (!ticket) throw new Error('Ticket not found');
+  if (ticket.status === status) return ticket;
+
+  const now = new Date();
+  ticket.status = status;
+  ticket.closedAt = status === 'resolved' || status === 'closed' ? now : undefined;
+  ticket.messages.push({
+    direction: 'internal',
+    visibility: 'internal',
+    authorUser: userId,
+    body: `Status changed to "${status}".`,
+    at: now,
+  });
+
+  // Email the client the new status (best-effort).
+  try {
+    const link = publicTicketLink(ticket);
+    const mail = statusUpdateEmail({ displayId: ticket.displayId, status, link });
+    const replyTo = await helpdeskReplyTo(ticket.organization);
+    const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text, replyTo });
+    console.log(`✅ [supportService] status update sent for ${ticket.displayId} → ${ticket.client.email} (messageId=${sent?.messageId})`);
+    ticket.lastClientNotifiedAt = now;
+  } catch (err) {
+    console.error(`❌ [supportService] status email failed for ${ticket.displayId} → ${ticket.client.email}:`, err?.response || err?.message || err);
+  }
+
+  await ticket.save();
+
+  // Keep the linked Task roughly in step (best-effort, no reverse-sync wired).
+  const taskStatus = TICKET_STATUS_TO_TASK[status];
+  if (ticket.linkedTask && taskStatus) {
+    try {
+      const task = await Task.findById(ticket.linkedTask);
+      if (task && task.status !== taskStatus) {
+        task.status = taskStatus;
+        await task.save();
+      }
+    } catch (err) {
+      console.error(`❌ [supportService] linked task sync failed for ${ticket.displayId}:`, err?.message || err);
+    }
+  }
+
+  return ticket;
+}
+
+// ─── PUBLIC-PAGE CLIENT REPLY (from the status page, no login) ────
+
+/**
+ * Append a client reply submitted from the public status page (by publicToken).
+ * Mirrors an inbound email reply: public message, reopen if resolved/closed,
+ * notify the assignee. Returns the ticket, or null if the token is unknown.
+ */
+export async function addPublicClientReply(token, bodyText) {
+  const body = (bodyText || '').trim();
+  if (!body) throw new Error('Empty message');
+  const ticket = await SupportTicket.findOne({ publicToken: token });
+  if (!ticket) return null;
+
+  const now = new Date();
+  ticket.messages.push({
+    direction: 'inbound',
+    visibility: 'public',
+    from: ticket.client?.email || 'client',
+    body: body.substring(0, 5000),
+    at: now,
+  });
+  if (ticket.status === 'resolved' || ticket.status === 'closed') {
+    ticket.status = 'in_progress';
+    ticket.closedAt = undefined;
+  } else if (ticket.status !== 'new') {
+    ticket.status = 'in_progress';
+  }
+
+  if (ticket.assignee) {
+    try {
+      await createNotification({
+        organization: ticket.organization,
+        recipient: ticket.assignee,
+        type: 'ticket_client_reply',
+        title: `Client replied on ${ticket.displayId}`,
+        message: ticket.subject || '(no subject)',
+        relatedEntity: { entityType: 'SupportTicket', entityId: ticket._id, displayLabel: ticket.displayId },
+        priority: 'high',
+      });
+    } catch (err) {
+      console.error(`❌ [supportService] notify public reply failed for ${ticket.displayId}:`, err.message);
     }
   }
 

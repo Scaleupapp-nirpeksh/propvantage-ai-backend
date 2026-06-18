@@ -25,6 +25,7 @@ jest.unstable_mockModule('../../services/support/supportService.js', () => ({
   replyToClient: jest.fn(),
   addInternalNote: jest.fn(),
   appendInboundReply: mockAppendReply,
+  updateTicketStatus: jest.fn(),
 }));
 
 // axios is imported by the controller (used only for SES confirmation).

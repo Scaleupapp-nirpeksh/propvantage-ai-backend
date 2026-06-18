@@ -14,8 +14,18 @@ jest.unstable_mockModule('../../models/userModel.js', () => ({
 const usersFind = (arr) => mockUserFind.mockReturnValue({ populate: () => Promise.resolve(arr) });
 
 const mockTaskCreate = jest.fn();
+const mockTaskFindById = jest.fn();
 jest.unstable_mockModule('../../models/taskModel.js', () => ({
-  default: { create: mockTaskCreate },
+  default: { create: mockTaskCreate, findById: mockTaskFindById },
+}));
+
+// supportInboxService.getOrgInbox is called via helpdeskReplyTo on every client
+// send — mock it so unit tests never touch the DB.
+const mockGetOrgInbox = jest.fn();
+jest.unstable_mockModule('../../services/support/supportInboxService.js', () => ({
+  getOrgInbox: mockGetOrgInbox,
+  provisionSupportInbox: jest.fn(),
+  regenerateOrgInbox: jest.fn(),
 }));
 
 const mockTicketCreate = jest.fn();
@@ -29,7 +39,7 @@ jest.unstable_mockModule('../../models/supportTicketModel.js', () => ({
     findById: mockTicketFindById,
     findOne: mockTicketFindOne,
   },
-  TICKET_STATUSES: [],
+  TICKET_STATUSES: ['new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'],
   TICKET_PRIORITIES: [],
   TICKET_CATEGORIES: [],
 }));
@@ -48,6 +58,8 @@ const {
   parseCategory,
   resolveAssignee,
   createTicketFromMessage,
+  updateTicketStatus,
+  addPublicClientReply,
   CATEGORY_TO_ROLE,
   TICKET_TASK_CATEGORY,
 } = await import('../../services/support/supportService.js');
@@ -59,13 +71,17 @@ beforeEach(() => {
     mockUserFindOne,
     mockUserFind,
     mockTaskCreate,
+    mockTaskFindById,
     mockTicketCreate,
     mockMint,
     mockTicketFindById,
     mockTicketFindOne,
     mockSendEmail,
     mockCreateNotification,
+    mockGetOrgInbox,
   ].forEach((m) => m.mockReset());
+  // Default: an inbox exists, so client emails get a Reply-To.
+  mockGetOrgInbox.mockResolvedValue({ address: 'demo@helpdesk.prop-vantage.com' });
 });
 
 // ─── parseCategory ───────────────────────────────────────────────────────────
@@ -237,5 +253,126 @@ describe('createTicketFromMessage', () => {
     const result = await createTicketFromMessage(ORG, msg);
     expect(result).toBeDefined();
     expect(savedTicket.populate).toHaveBeenCalled();
+  });
+
+  test('auto-reply sets Reply-To to the helpdesk address so client replies thread back', async () => {
+    usersFind([{ _id: new mongoose.Types.ObjectId(), role: 'Legal Head' }]);
+    mockMint.mockResolvedValueOnce({ ticketNumber: 9, displayId: 'TKT-000009' });
+    const savedTicket = {
+      _id: new mongoose.Types.ObjectId(),
+      displayId: 'TKT-000009',
+      save: jest.fn().mockResolvedValue(undefined),
+      populate: jest.fn().mockResolvedValue({}),
+    };
+    mockTicketCreate.mockResolvedValueOnce(savedTicket);
+    mockTaskCreate.mockResolvedValueOnce({ _id: new mongoose.Types.ObjectId() });
+    mockSendEmail.mockResolvedValue({ success: true, messageId: 'x' });
+    mockCreateNotification.mockResolvedValue({});
+
+    await createTicketFromMessage(ORG, msg); // msg has no `to` → falls back to helpdeskReplyTo
+
+    expect(mockSendEmail.mock.calls[0][0].replyTo).toBe('demo@helpdesk.prop-vantage.com');
+  });
+});
+
+// ─── updateTicketStatus ──────────────────────────────────────────────────────
+describe('updateTicketStatus', () => {
+  const makeTicket = (overrides = {}) => ({
+    _id: new mongoose.Types.ObjectId(),
+    displayId: 'TKT-000010',
+    organization: ORG,
+    status: 'assigned',
+    client: { email: 'buyer@example.com' },
+    messages: [],
+    save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  });
+
+  test('rejects an invalid status', async () => {
+    await expect(updateTicketStatus('id', 'user', 'bogus')).rejects.toThrow('Invalid status');
+  });
+
+  test('sets status + closedAt, records an internal note, and emails the client', async () => {
+    const ticket = makeTicket();
+    mockTicketFindById.mockResolvedValueOnce(ticket);
+    mockSendEmail.mockResolvedValue({ success: true, messageId: 'm' });
+
+    const userId = new mongoose.Types.ObjectId();
+    await updateTicketStatus(ticket._id, userId, 'resolved');
+
+    expect(ticket.status).toBe('resolved');
+    expect(ticket.closedAt).toBeInstanceOf(Date);
+    expect(ticket.messages).toHaveLength(1);
+    expect(ticket.messages[0]).toMatchObject({ direction: 'internal', visibility: 'internal' });
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'buyer@example.com', replyTo: 'demo@helpdesk.prop-vantage.com' })
+    );
+    expect(ticket.save).toHaveBeenCalled();
+  });
+
+  test('syncs the linked task when resolving', async () => {
+    const linkedTaskId = new mongoose.Types.ObjectId();
+    const ticket = makeTicket({ linkedTask: linkedTaskId });
+    mockTicketFindById.mockResolvedValueOnce(ticket);
+    mockSendEmail.mockResolvedValue({ success: true });
+    const task = { status: 'In Progress', save: jest.fn().mockResolvedValue(undefined) };
+    mockTaskFindById.mockResolvedValueOnce(task);
+
+    await updateTicketStatus(ticket._id, new mongoose.Types.ObjectId(), 'resolved');
+
+    expect(task.status).toBe('Completed');
+    expect(task.save).toHaveBeenCalled();
+  });
+
+  test('no-ops when the status is unchanged', async () => {
+    const ticket = makeTicket({ status: 'in_progress' });
+    mockTicketFindById.mockResolvedValueOnce(ticket);
+    await updateTicketStatus(ticket._id, new mongoose.Types.ObjectId(), 'in_progress');
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(ticket.save).not.toHaveBeenCalled();
+  });
+});
+
+// ─── addPublicClientReply ────────────────────────────────────────────────────
+describe('addPublicClientReply', () => {
+  test('appends a public inbound message, reopens a closed ticket, notifies assignee', async () => {
+    const assignee = new mongoose.Types.ObjectId();
+    const ticket = {
+      _id: new mongoose.Types.ObjectId(),
+      displayId: 'TKT-000011',
+      organization: ORG,
+      status: 'closed',
+      assignee,
+      client: { email: 'buyer@example.com' },
+      messages: [],
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    mockTicketFindOne.mockResolvedValueOnce(ticket);
+    mockCreateNotification.mockResolvedValue({});
+
+    const result = await addPublicClientReply('tok_123', '  Any update?  ');
+
+    expect(result).toBe(ticket);
+    expect(ticket.status).toBe('in_progress'); // reopened
+    expect(ticket.messages).toHaveLength(1);
+    expect(ticket.messages[0]).toMatchObject({
+      direction: 'inbound',
+      visibility: 'public',
+      from: 'buyer@example.com',
+      body: 'Any update?',
+    });
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'ticket_client_reply', recipient: assignee })
+    );
+  });
+
+  test('rejects an empty message', async () => {
+    await expect(addPublicClientReply('tok', '   ')).rejects.toThrow('Empty message');
+  });
+
+  test('returns null for an unknown token', async () => {
+    mockTicketFindOne.mockResolvedValueOnce(null);
+    const result = await addPublicClientReply('nope', 'hello');
+    expect(result).toBeNull();
   });
 });
