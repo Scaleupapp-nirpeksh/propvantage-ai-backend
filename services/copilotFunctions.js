@@ -14,6 +14,7 @@ import Installment from '../models/installmentModel.js';
 import CommissionRecord from '../models/commissionRecordModel.js';
 import User from '../models/userModel.js';
 import Task from '../models/taskModel.js';
+import SupportTicket from '../models/supportTicketModel.js';
 import CompetitorProject from '../models/competitorProjectModel.js';
 import {
   getVolumeBreakdown,
@@ -576,6 +577,21 @@ export const copilotTools = [
         properties: {
           period: { type: 'string', enum: ['this_week', 'this_month', 'this_quarter', 'this_year', 'last_month'] },
           category: { type: 'string', enum: ['Lead & Sales', 'Payment & Collection', 'Construction', 'Document & Compliance', 'Customer Service', 'Approval', 'General'] },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_support_tickets',
+      description: 'Get support ticket overview — counts by status and category, plus a few recent tickets (id, subject, status, category, assignee, age in days). Use for questions like "how many open support tickets", "support ticket status breakdown", "what tickets are unresolved", "recent support tickets".',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'] },
+          category: { type: 'string', enum: ['sales', 'legal', 'crm', 'finance', 'other'] },
+          limit: { type: 'number', description: 'Max recent tickets to return, default 5' },
         },
       },
     },
@@ -2151,6 +2167,61 @@ const functionImplementations = {
       overdueAging: result.overdueAging.map(a => ({
         bucket: a._id === 0 ? '1-7 days' : a._id === 8 ? '8-14 days' : a._id === 15 ? '15-30 days' : '30+ days',
         count: a.count,
+      })),
+    };
+  },
+
+  get_support_tickets: async (params, user) => {
+    // Org-scoped, read-only. SupportTicket has no project field.
+    const filter = { organization: user.organization };
+    if (params.status) filter.status = params.status;
+    if (params.category) filter.category = params.category;
+
+    const limit = params.limit || 5;
+    const totalCount = await SupportTicket.countDocuments(filter);
+
+    // By status
+    const byStatus = await SupportTicket.aggregate([
+      { $match: filter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // By category
+    const byCategory = await SupportTicket.aggregate([
+      { $match: filter },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Open count (anything not resolved/closed)
+    const openCount = await SupportTicket.countDocuments({
+      ...filter,
+      status: { $nin: ['resolved', 'closed'] },
+    });
+
+    // Recent tickets
+    const now = new Date();
+    const recent = await SupportTicket.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select('displayId subject status category priority assignee createdAt')
+      .populate('assignee', 'firstName lastName')
+      .lean();
+
+    return {
+      totalCount,
+      openCount,
+      byStatus: byStatus.map(s => ({ status: s._id, count: s.count })),
+      byCategory: byCategory.map(c => ({ category: c._id, count: c.count })),
+      recentTickets: recent.map(t => ({
+        displayId: t.displayId,
+        subject: t.subject,
+        status: t.status,
+        category: t.category,
+        priority: t.priority,
+        assignee: t.assignee ? `${t.assignee.firstName} ${t.assignee.lastName || ''}`.trim() : 'Unassigned',
+        ageDays: Math.floor((now - new Date(t.createdAt)) / (1000 * 60 * 60 * 24)),
       })),
     };
   },

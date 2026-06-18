@@ -11,8 +11,8 @@ const valid = (over = {}) => ({
 });
 
 describe('WorkspaceCard model', () => {
-  it('exports the six modules and three render modes (incl. insight)', () => {
-    expect(WORKSPACE_MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects']);
+  it('exports the modules and three render modes (incl. insight)', () => {
+    expect(WORKSPACE_MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects', 'supportTickets']);
     expect(RENDER_MODES).toEqual(['list', 'metric', 'insight']);
   });
 

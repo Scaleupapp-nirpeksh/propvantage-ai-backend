@@ -23,7 +23,7 @@ describe('validateQueryPlan', () => {
   });
 
   it('exposes the exact module enum', () => {
-    expect(MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects']);
+    expect(MODULES).toEqual(['leads', 'sales', 'payments', 'tasks', 'channelPartners', 'projects', 'supportTickets']);
   });
 
   it('exposes the exact operator enum', () => {

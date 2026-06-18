@@ -11,6 +11,7 @@ import Task from '../../models/taskModel.js';
 import SupportTicket from '../../models/supportTicketModel.js';
 import { sendEmail } from '../../utils/emailService.js';
 import { createNotification } from '../notificationService.js';
+import { autoReplyEmail, clientReplyEmail, statusUpdateEmail } from './supportEmails.js';
 
 // ─── ROUTING CONFIG ──────────────────────────────────────────────
 
@@ -178,12 +179,8 @@ export async function createTicketFromMessage(orgId, msg) {
   // 4. Auto-reply to the client (best-effort — never fail ticket creation).
   try {
     const link = publicTicketLink(ticket);
-    await sendEmail({
-      to: msg.from,
-      subject: `Re: ${msg.subject || 'your request'} [${displayId}]`,
-      html: autoReplyHtml(displayId, msg.subject, link),
-      text: autoReplyText(displayId, msg.subject, link),
-    });
+    const mail = autoReplyEmail({ displayId, subject: msg.subject, clientName: msg.fromName, link });
+    await sendEmail({ to: msg.from, subject: mail.subject, html: mail.html, text: mail.text });
     ticket.lastClientNotifiedAt = new Date();
     await ticket.save();
   } catch (err) {
@@ -219,12 +216,8 @@ export async function replyToClient(ticketId, userId, bodyText) {
 
   try {
     const link = publicTicketLink(ticket);
-    await sendEmail({
-      to: ticket.client.email,
-      subject: `Re: ${ticket.subject || 'your request'} [${ticket.displayId}]`,
-      html: clientReplyHtml(ticket.displayId, bodyText, link),
-      text: clientReplyText(ticket.displayId, bodyText, link),
-    });
+    const mail = clientReplyEmail({ displayId: ticket.displayId, subject: ticket.subject, body: bodyText, link });
+    await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
     ticket.lastClientNotifiedAt = now;
   } catch (err) {
     console.error(`❌ [supportService] reply email failed for ${ticket.displayId}:`, err.message);
@@ -348,12 +341,8 @@ export async function syncStatusFromTask(taskId, newStatus) {
   if (now - last >= 30 * 1000) {
     try {
       const link = publicTicketLink(ticket);
-      await sendEmail({
-        to: ticket.client.email,
-        subject: `Update on ${ticket.displayId}`,
-        html: statusUpdateHtml(ticket.displayId, mapped, link),
-        text: statusUpdateText(ticket.displayId, mapped, link),
-      });
+      const mail = statusUpdateEmail({ displayId: ticket.displayId, status: mapped, link });
+      await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
       ticket.lastClientNotifiedAt = new Date();
     } catch (err) {
       console.error(`❌ [supportService] status email failed for ${ticket.displayId}:`, err.message);
@@ -364,69 +353,7 @@ export async function syncStatusFromTask(taskId, newStatus) {
   return ticket;
 }
 
-// ─── EMAIL TEMPLATES (now include the public status link) ────────
-
-function trackLineText(displayId, link) {
-  return link
-    ? `You can track this ticket with reference ${displayId}: ${link}`
-    : `You can track this ticket with reference ${displayId}.`;
-}
-
-function trackLineHtml(displayId, link) {
-  return link
-    ? `You can track this ticket with reference <strong>${displayId}</strong>: <a href="${link}">${link}</a>`
-    : `You can track this ticket with reference <strong>${displayId}</strong>.`;
-}
-
-function autoReplyText(displayId, subject, link) {
-  return `Hi,
-
-We've received your request${subject ? ` regarding "${subject}"` : ''}.
-
-${trackLineText(displayId, link)}
-
-Our team will get back to you shortly.
-
-— Support`;
-}
-
-function autoReplyHtml(displayId, subject, link) {
-  return `<p>Hi,</p>
-<p>We've received your request${subject ? ` regarding "<strong>${subject}</strong>"` : ''}.</p>
-<p>${trackLineHtml(displayId, link)}</p>
-<p>Our team will get back to you shortly.</p>
-<p>— Support</p>`;
-}
-
-function clientReplyText(displayId, body, link) {
-  return `${body}
-
-${trackLineText(displayId, link)}
-
-— Support`;
-}
-
-function clientReplyHtml(displayId, body, link) {
-  return `<p>${(body || '').replace(/\n/g, '<br/>')}</p>
-<p>${trackLineHtml(displayId, link)}</p>
-<p>— Support</p>`;
-}
-
-function statusUpdateText(displayId, status, link) {
-  return `Hi,
-
-The status of your ticket ${displayId} is now: ${status}.
-
-${trackLineText(displayId, link)}
-
-— Support`;
-}
-
-function statusUpdateHtml(displayId, status, link) {
-  return `<p>Hi,</p>
-<p>The status of your ticket <strong>${displayId}</strong> is now: <strong>${status}</strong>.</p>
-<p>${trackLineHtml(displayId, link)}</p>
-<p>— Support</p>`;
-}
+// Premium HTML email templates live in ./supportEmails.js (autoReplyEmail,
+// clientReplyEmail, statusUpdateEmail) and are imported above.
 
 export { CATEGORY_TO_ROLE, FALLBACK_ROLES, TICKET_TASK_CATEGORY };

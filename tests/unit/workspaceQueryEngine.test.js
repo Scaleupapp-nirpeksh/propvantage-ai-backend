@@ -11,6 +11,7 @@ import Lead from '../../models/leadModel.js';
 import User from '../../models/userModel.js';
 import ChannelPartner from '../../models/channelPartnerModel.js';
 import Project from '../../models/projectModel.js';
+import SupportTicket from '../../models/supportTicketModel.js';
 import { runQueryPlan } from '../../services/workspace/queryEngine.js';
 
 jest.setTimeout(60000);
@@ -462,5 +463,124 @@ describe('runQueryPlan — projects module', () => {
     });
     // ORG_A has at least PROJ_DOC_A1 + PROJ_DOC_A2
     expect(value).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---- Support Tickets catalog engine integration -----------------------------
+describe('runQueryPlan — supportTickets module', () => {
+  let TICKET_USER;
+  const daysAgoDate = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+
+  beforeAll(async () => {
+    TICKET_USER = await User.create({
+      organization: ORG_A,
+      firstName: 'Tara',
+      lastName: 'Singh',
+      email: `tara.singh-${Date.now()}@test-workspace.example.com`,
+    });
+
+    // Org A — an in_progress ticket assigned to TICKET_USER, opened 10 days ago.
+    await SupportTicket.create({
+      organization: ORG_A,
+      displayId: 'TKT-000001',
+      ticketNumber: 1,
+      subject: 'Refund request on booking',
+      category: 'finance',
+      status: 'in_progress',
+      priority: 'High',
+      client: { email: 'buyer@acme.com', name: 'Buyer One' },
+      assignee: TICKET_USER._id,
+      createdAt: daysAgoDate(10),
+    });
+    // Org A — a resolved ticket, unassigned.
+    await SupportTicket.create({
+      organization: ORG_A,
+      displayId: 'TKT-000002',
+      ticketNumber: 2,
+      subject: 'Document query',
+      category: 'legal',
+      status: 'resolved',
+      priority: 'Low',
+      client: { email: 'client2@acme.com', name: 'Client Two' },
+      createdAt: daysAgoDate(3),
+    });
+    // Org B — different tenant, must never leak into Org A queries.
+    await SupportTicket.create({
+      organization: ORG_B,
+      displayId: 'TKT-B0001',
+      ticketNumber: 1,
+      subject: 'Other org ticket',
+      category: 'sales',
+      status: 'in_progress',
+      priority: 'Critical',
+      client: { email: 'other@b.com' },
+    });
+  });
+
+  const ticketsPlan = (filterOverride) => ({
+    module: 'supportTickets',
+    logic: 'AND',
+    filters: filterOverride || [{ field: 'status', op: 'is', value: 'in_progress' }],
+    sort: null,
+    limit: 50,
+    nlSource: null,
+  });
+
+  it('cross-org isolation: an Org A owner never sees Org B tickets', async () => {
+    const { rows } = await runQueryPlan(ticketsPlan(), ownerViewer(ORG_A));
+    rows.forEach((r) => expect(r.organization.toString()).toBe(ORG_A.toString()));
+    expect(rows.some((r) => r.displayId === 'TKT-B0001')).toBe(false);
+  });
+
+  it('status filter returns only matching org-scoped rows', async () => {
+    const { rows, total } = await runQueryPlan(ticketsPlan(), ownerViewer(ORG_A));
+    expect(total).toBe(1);
+    expect(rows[0].displayId).toBe('TKT-000001');
+    rows.forEach((r) => expect(r.status).toBe('in_progress'));
+  });
+
+  it('resolves assignee_label via $lookup on the User ref', async () => {
+    const { rows } = await runQueryPlan(ticketsPlan(), ownerViewer(ORG_A));
+    const ticket = rows.find((r) => r.displayId === 'TKT-000001');
+    expect(ticket.assignee_label).toBe('Tara Singh');
+    expect(ticket.__assignee_doc).toBeUndefined();
+  });
+
+  it('lifts clientEmail and daysOpen as displayable derived columns', async () => {
+    const { rows } = await runQueryPlan(ticketsPlan(), ownerViewer(ORG_A));
+    const ticket = rows.find((r) => r.displayId === 'TKT-000001');
+    expect(ticket.clientEmail).toBe('buyer@acme.com');
+    expect(typeof ticket.daysOpen).toBe('number');
+    expect(ticket.daysOpen).toBeGreaterThanOrEqual(9);
+  });
+
+  it('category in filter works org-scoped', async () => {
+    const plan = ticketsPlan([{ field: 'category', op: 'in', value: ['finance', 'legal'] }]);
+    const { rows, total } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    expect(total).toBe(2);
+    rows.forEach((r) => expect(['finance', 'legal']).toContain(r.category));
+  });
+
+  it('daysOpen derived filter (gte) returns the right tickets', async () => {
+    const plan = ticketsPlan([{ field: 'daysOpen', op: 'gte', value: 7 }]);
+    const { rows, total } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    expect(total).toBe(1);
+    expect(rows[0].displayId).toBe('TKT-000001');
+  });
+
+  it('clientEmail contains filter targets the nested client.email path', async () => {
+    const plan = ticketsPlan([{ field: 'clientEmail', op: 'contains', value: 'client2' }]);
+    const { rows, total } = await runQueryPlan(plan, ownerViewer(ORG_A));
+    expect(total).toBe(1);
+    expect(rows[0].displayId).toBe('TKT-000002');
+  });
+
+  it('metric count mode honours org scope', async () => {
+    const plan = ticketsPlan([{ field: 'status', op: 'in', value: ['new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'] }]);
+    const { value } = await runQueryPlan(plan, ownerViewer(ORG_A), {
+      renderMode: 'metric',
+      metricConfig: { agg: 'count', field: null },
+    });
+    expect(value).toBe(2); // only the two Org A tickets
   });
 });
