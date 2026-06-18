@@ -90,6 +90,11 @@ connectDB();
 
 const app = express();
 
+// Behind the load balancer / reverse proxy: trust the first proxy hop so req.ip
+// is the real client IP (X-Forwarded-For). Required for accurate per-IP rate
+// limiting (e.g. the public ticket reply + inbound webhook limiters).
+app.set('trust proxy', 1);
+
 // ─── Security Middleware (order matters) ───────────────────────────────────────
 
 // 1. Security headers (X-Frame-Options, X-Content-Type-Options, HSTS, etc.)
