@@ -66,8 +66,8 @@ function shell({ preheader = '', heading, bodyHtml, displayId, statusLabel, ctaL
       </td></tr>
       <!-- footer -->
       <tr><td style="padding:22px 12px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:${MUTED};text-align:center;">
-        You're receiving this because you contacted <strong style="color:${INK};">${esc(BRAND)}</strong> support.<br>
-        Reply to this email to add to your ticket — please keep the reference in the subject.
+        <strong style="color:${INK};">To reply, either way reaches us:</strong> simply reply to this email, or open your status page above and add a message there.<br>
+        You're receiving this because you contacted <strong style="color:${INK};">${esc(BRAND)}</strong> support.
       </td></tr>
     </table>
   </td></tr>
