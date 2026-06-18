@@ -100,6 +100,8 @@ const userSchema = new mongoose.Schema(
           'Sales Head',
           'Marketing Head',
           'Finance Head',
+          'Legal Head',
+          'CRM Head',
           'Project Director',
           'Sales Manager',
           'Finance Manager',
@@ -452,6 +454,8 @@ userSchema.pre('save', function(next) {
     'Sales Head': 3,
     'Marketing Head': 3,
     'Finance Head': 3,
+    'Legal Head': 3,
+    'CRM Head': 3,
     'Sales Manager': 4,
     'Finance Manager': 4,
     'Channel Partner Manager': 4,
@@ -595,7 +599,7 @@ userSchema.methods.canInviteRole = function(targetRole) {
   } else {
     const roleHierarchy = {
       'Business Head': 1, 'Project Director': 2,
-      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3,
+      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3, 'Legal Head': 3, 'CRM Head': 3,
       'Sales Manager': 4, 'Finance Manager': 4, 'Channel Partner Manager': 4,
       'Sales Executive': 5, 'Channel Partner Admin': 5,
       'Channel Partner Agent': 6,
@@ -610,7 +614,7 @@ userSchema.methods.canInviteRole = function(targetRole) {
   } else {
     const roleHierarchy = {
       'Business Head': 1, 'Project Director': 2,
-      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3,
+      'Sales Head': 3, 'Marketing Head': 3, 'Finance Head': 3, 'Legal Head': 3, 'CRM Head': 3,
       'Sales Manager': 4, 'Finance Manager': 4, 'Channel Partner Manager': 4,
       'Sales Executive': 5, 'Channel Partner Admin': 5,
       'Channel Partner Agent': 6,

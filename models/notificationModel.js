@@ -63,6 +63,11 @@ export const NOTIFICATION_TYPES = [
   'report_approved',           // → author: their report was approved
   'report_changes_requested',  // → author: a reviewer requested changes
   'report_flag_raised',        // → data owner: a value was flagged for correction
+  // Email-to-ticket support system
+  'ticket_created',            // a new support ticket was opened
+  'ticket_assigned',           // a ticket was auto-assigned to a dept head
+  'ticket_client_reply',       // the client replied on a ticket
+  'ticket_status_changed',     // ticket status changed
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -76,6 +81,8 @@ export const RELATED_ENTITY_TYPES = [
   'CommissionInvoice',
   // Leadership Report Builder
   'ReportInstance',
+  // Email-to-ticket support system
+  'SupportTicket',
 ];
 
 // =============================================================================

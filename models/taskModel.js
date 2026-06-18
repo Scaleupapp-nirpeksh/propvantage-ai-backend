@@ -114,6 +114,7 @@ const LINKED_ENTITY_TYPES = [
   'User',
   'File',
   'ApprovalRequest',
+  'SupportTicket',
 ];
 
 const TRIGGER_TYPES = [
@@ -191,6 +192,16 @@ const taskSchema = new mongoose.Schema(
         maxlength: 50,
       },
     ],
+
+    // === SOURCE (task segregation) ===
+    // 'support_ticket' tasks are created from a SupportTicket and carry
+    // client-comms surfaces; everything else is a plain 'internal' task.
+    source: {
+      type: String,
+      enum: ['internal', 'support_ticket'],
+      default: 'internal',
+      index: true,
+    },
 
     // === STATUS & PRIORITY ===
     status: {
