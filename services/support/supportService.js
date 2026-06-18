@@ -72,8 +72,11 @@ export async function resolveAssignee(orgId, category) {
     if (!tryRoles.includes(r)) tryRoles.push(r);
   }
 
+  // Match the role whether it's set as the legacy `role` string OR via roleRef
+  // (the dynamic role doc's name) — so assignment works however the org set it.
+  const users = await User.find({ organization: orgId, isActive: true }).populate('roleRef', 'name');
   for (const role of tryRoles) {
-    const user = await User.findOne({ organization: orgId, role, isActive: true });
+    const user = users.find((u) => u.role === role || u.roleRef?.name === role);
     if (user) return user;
   }
   return null;

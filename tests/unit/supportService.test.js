@@ -6,9 +6,12 @@ import mongoose from 'mongoose';
 
 // ─── Mock the models, email service, and notification service ────────────────
 const mockUserFindOne = jest.fn();
+const mockUserFind = jest.fn();
 jest.unstable_mockModule('../../models/userModel.js', () => ({
-  default: { findOne: mockUserFindOne },
+  default: { findOne: mockUserFindOne, find: mockUserFind },
 }));
+// resolveAssignee does `User.find(...).populate('roleRef','name')` → array of users.
+const usersFind = (arr) => mockUserFind.mockReturnValue({ populate: () => Promise.resolve(arr) });
 
 const mockTaskCreate = jest.fn();
 jest.unstable_mockModule('../../models/taskModel.js', () => ({
@@ -54,6 +57,7 @@ const ORG = new mongoose.Types.ObjectId();
 beforeEach(() => {
   [
     mockUserFindOne,
+    mockUserFind,
     mockTaskCreate,
     mockTicketCreate,
     mockMint,
@@ -89,30 +93,30 @@ describe('parseCategory', () => {
 
 // ─── resolveAssignee ───────────────────────────────────────────────────────
 describe('resolveAssignee', () => {
-  test('picks the mapped department head', async () => {
-    const head = { _id: new mongoose.Types.ObjectId(), role: 'Legal Head' };
-    mockUserFindOne.mockResolvedValueOnce(head);
+  test('picks the mapped department head (by legacy role string)', async () => {
+    const head = { _id: new mongoose.Types.ObjectId(), role: CATEGORY_TO_ROLE.legal };
+    usersFind([head]);
     const result = await resolveAssignee(ORG, 'legal');
     expect(result).toBe(head);
-    expect(mockUserFindOne).toHaveBeenCalledWith({
-      organization: ORG,
-      role: CATEGORY_TO_ROLE.legal,
-      isActive: true,
-    });
+  });
+
+  test('matches the head set via roleRef.name too', async () => {
+    const head = { _id: new mongoose.Types.ObjectId(), role: 'Sales Executive', roleRef: { name: 'Legal Head' } };
+    usersFind([head]);
+    const result = await resolveAssignee(ORG, 'legal');
+    expect(result).toBe(head);
   });
 
   test('falls back when the mapped head is missing', async () => {
     const fallback = { _id: new mongoose.Types.ObjectId(), role: 'CRM Head' };
-    // No Sales Head, then CRM Head (first fallback) hits.
-    mockUserFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce(fallback);
+    // No Sales Head present; the first fallback (CRM Head) is.
+    usersFind([fallback]);
     const result = await resolveAssignee(ORG, 'sales');
     expect(result).toBe(fallback);
-    expect(mockUserFindOne.mock.calls[0][0].role).toBe('Sales Head');
-    expect(mockUserFindOne.mock.calls[1][0].role).toBe('CRM Head');
   });
 
   test('returns null when no head and no fallback exist', async () => {
-    mockUserFindOne.mockResolvedValue(null);
+    usersFind([{ _id: new mongoose.Types.ObjectId(), role: 'Sales Executive' }]);
     const result = await resolveAssignee(ORG, 'finance');
     expect(result).toBeNull();
   });
@@ -131,7 +135,7 @@ describe('createTicketFromMessage', () => {
 
   test('creates a ticket + linked task, assigns to the head, mints displayId, stores the inbound message', async () => {
     const head = { _id: new mongoose.Types.ObjectId(), role: 'Legal Head' };
-    mockUserFindOne.mockResolvedValueOnce(head); // resolveAssignee → Legal Head
+    usersFind([head]); // resolveAssignee → Legal Head
     mockMint.mockResolvedValueOnce({ ticketNumber: 412, displayId: 'TKT-000412' });
 
     const savedTicket = {
@@ -188,15 +192,12 @@ describe('createTicketFromMessage', () => {
   });
 
   test("status is 'new' and no notification when no assignee resolves", async () => {
-    // category 'other' → resolveAssignee tries only the two fallback roles
-    // (CRM Head, Business Head), both null.
-    mockUserFindOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      // getSystemUser then issues a chainable query (.populate().sort()).
-      .mockReturnValueOnce({
-        populate: () => ({ sort: () => Promise.resolve({ _id: new mongoose.Types.ObjectId() }) }),
-      });
+    // category 'other' → resolveAssignee finds no Head in the org → null.
+    usersFind([{ _id: new mongoose.Types.ObjectId(), role: 'Sales Executive' }]);
+    // getSystemUser then issues a chainable query (.populate().sort()).
+    mockUserFindOne.mockReturnValueOnce({
+      populate: () => ({ sort: () => Promise.resolve({ _id: new mongoose.Types.ObjectId() }) }),
+    });
     mockMint.mockResolvedValueOnce({ ticketNumber: 1, displayId: 'TKT-000001' });
 
     const savedTicket = {
@@ -220,7 +221,7 @@ describe('createTicketFromMessage', () => {
 
   test('ticket creation still succeeds when the auto-reply email fails', async () => {
     const head = { _id: new mongoose.Types.ObjectId(), role: 'Legal Head' };
-    mockUserFindOne.mockResolvedValueOnce(head);
+    usersFind([head]);
     mockMint.mockResolvedValueOnce({ ticketNumber: 5, displayId: 'TKT-000005' });
     const savedTicket = {
       _id: new mongoose.Types.ObjectId(),
