@@ -183,11 +183,12 @@ export async function createTicketFromMessage(orgId, msg) {
   try {
     const link = publicTicketLink(ticket);
     const mail = autoReplyEmail({ displayId, subject: msg.subject, clientName: msg.fromName, link });
-    await sendEmail({ to: msg.from, subject: mail.subject, html: mail.html, text: mail.text });
+    const sent = await sendEmail({ to: msg.from, subject: mail.subject, html: mail.html, text: mail.text });
+    console.log(`✅ [supportService] auto-reply sent for ${displayId} → ${msg.from} (messageId=${sent?.messageId})`);
     ticket.lastClientNotifiedAt = new Date();
     await ticket.save();
   } catch (err) {
-    console.error(`❌ [supportService] auto-reply email failed for ${displayId}:`, err.message);
+    console.error(`❌ [supportService] auto-reply email failed for ${displayId} → ${msg.from}:`, err?.response || err?.message || err);
   }
 
   return ticket.populate([
@@ -220,10 +221,11 @@ export async function replyToClient(ticketId, userId, bodyText) {
   try {
     const link = publicTicketLink(ticket);
     const mail = clientReplyEmail({ displayId: ticket.displayId, subject: ticket.subject, body: bodyText, link });
-    await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+    const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+    console.log(`✅ [supportService] reply sent for ${ticket.displayId} → ${ticket.client.email} (messageId=${sent?.messageId})`);
     ticket.lastClientNotifiedAt = now;
   } catch (err) {
-    console.error(`❌ [supportService] reply email failed for ${ticket.displayId}:`, err.message);
+    console.error(`❌ [supportService] reply email failed for ${ticket.displayId} → ${ticket.client.email}:`, err?.response || err?.message || err);
   }
 
   await ticket.save();
@@ -345,10 +347,11 @@ export async function syncStatusFromTask(taskId, newStatus) {
     try {
       const link = publicTicketLink(ticket);
       const mail = statusUpdateEmail({ displayId: ticket.displayId, status: mapped, link });
-      await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+      const sent = await sendEmail({ to: ticket.client.email, subject: mail.subject, html: mail.html, text: mail.text });
+      console.log(`✅ [supportService] status update sent for ${ticket.displayId} → ${ticket.client.email} (messageId=${sent?.messageId})`);
       ticket.lastClientNotifiedAt = new Date();
     } catch (err) {
-      console.error(`❌ [supportService] status email failed for ${ticket.displayId}:`, err.message);
+      console.error(`❌ [supportService] status email failed for ${ticket.displayId} → ${ticket.client.email}:`, err?.response || err?.message || err);
     }
   }
 
