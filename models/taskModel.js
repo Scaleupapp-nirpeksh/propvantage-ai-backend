@@ -456,13 +456,19 @@ taskSchema.pre('save', async function (next) {
   try {
     // Generate sequential task number for new tasks
     if (this.isNew) {
+      // Only consider tasks that actually have a numeric sequenceNumber — legacy
+      // tasks missing it would otherwise yield NaN/undefined and produce a
+      // non-unique "TASK-undefined", which collides on the unique index.
       const lastTask = await this.constructor
-        .findOne({ organization: this.organization })
+        .findOne({ organization: this.organization, sequenceNumber: { $type: 'number' } })
         .sort({ sequenceNumber: -1 })
-        .select('sequenceNumber');
+        .select('sequenceNumber')
+        .lean();
 
-      this.sequenceNumber = lastTask ? lastTask.sequenceNumber + 1 : 1;
-      this.taskNumber = `TASK-${String(this.sequenceNumber).padStart(3, '0')}`;
+      const nextSeq =
+        lastTask && Number.isFinite(lastTask.sequenceNumber) ? lastTask.sequenceNumber + 1 : 1;
+      this.sequenceNumber = nextSeq;
+      this.taskNumber = `TASK-${String(nextSeq).padStart(3, '0')}`;
 
       // Add creation activity log
       this.activityLog.push({

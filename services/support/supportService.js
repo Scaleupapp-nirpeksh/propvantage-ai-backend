@@ -135,28 +135,35 @@ export async function createTicketFromMessage(orgId, msg) {
 
   // 2. Create the linked internal Task. createdBy is required → fall back to a
   //    system user when there is no assignee.
-  const createdBy = assignee?._id || (await getSystemUser(orgId));
-  const truncatedDesc = (msg.text || '').substring(0, 5000);
-  const task = await Task.create({
-    title: `${displayId}: ${msg.subject || '(no subject)'}`.substring(0, 300),
-    description: truncatedDesc,
-    category: TICKET_TASK_CATEGORY,
-    source: 'support_ticket',
-    organization: orgId,
-    assignedTo: assignee?._id,
-    assignedBy: assignee?._id || createdBy,
-    assignmentType: 'system',
-    createdBy,
-    watchers: assignee ? [assignee._id] : [],
-    linkedEntity: {
-      entityType: 'SupportTicket',
-      entityId: ticket._id,
-      displayLabel: displayId,
-    },
-  });
+  //    Resilient: a failure here must never block the client-facing ticket +
+  //    auto-reply, so it's isolated. The ticket is the source of truth for the
+  //    client; the internal task is secondary and can be reconciled later.
+  try {
+    const createdBy = assignee?._id || (await getSystemUser(orgId));
+    const truncatedDesc = (msg.text || '').substring(0, 5000);
+    const task = await Task.create({
+      title: `${displayId}: ${msg.subject || '(no subject)'}`.substring(0, 300),
+      description: truncatedDesc,
+      category: TICKET_TASK_CATEGORY,
+      source: 'support_ticket',
+      organization: orgId,
+      assignedTo: assignee?._id,
+      assignedBy: assignee?._id || createdBy,
+      assignmentType: 'system',
+      createdBy,
+      watchers: assignee ? [assignee._id] : [],
+      linkedEntity: {
+        entityType: 'SupportTicket',
+        entityId: ticket._id,
+        displayLabel: displayId,
+      },
+    });
 
-  ticket.linkedTask = task._id;
-  await ticket.save();
+    ticket.linkedTask = task._id;
+    await ticket.save();
+  } catch (err) {
+    console.error(`❌ [supportService] linked task creation failed for ${displayId}:`, err?.message || err);
+  }
 
   // 3. Notify the assignee (best-effort).
   if (assignee) {
