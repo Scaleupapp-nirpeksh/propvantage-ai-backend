@@ -46,9 +46,12 @@ function normalizeRecipient(addr) {
  * @access  Admin / owner
  */
 export const ingestTest = asyncHandler(async (req, res) => {
-  if (!req.isOwner && !(req.userPermissions || []).includes('support:configure')) {
+  // Owner, an org department-head/management tier (roleLevel <= 3), or an explicit
+  // support:configure permission may use this seed/test endpoint.
+  const isManagement = (req.userRoleLevel ?? 100) <= 3;
+  if (!req.isOwner && !isManagement && !(req.userPermissions || []).includes('support:configure')) {
     res.status(403);
-    throw new Error('Only an admin or owner may use the test ingestion endpoint');
+    throw new Error('Only an admin or department head may use the test ingestion endpoint');
   }
 
   const { from, fromName, subject, text, html } = req.body;
