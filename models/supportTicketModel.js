@@ -40,6 +40,7 @@ const messageSchema = new mongoose.Schema(
     from: { type: String, trim: true },
     body: { type: String },
     html: { type: String },
+    messageId: { type: String }, // provider Message-Id, for threading + dedup
     at: { type: Date, default: Date.now },
     authorUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     attachments: { type: [mongoose.Schema.Types.Mixed], default: [] },

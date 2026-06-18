@@ -28,6 +28,20 @@ const TICKET_TASK_CATEGORY = 'Customer Service';
 
 const KNOWN_CATEGORIES = ['sales', 'legal', 'crm', 'finance'];
 
+// ─── PUBLIC STATUS LINK ──────────────────────────────────────────
+
+/**
+ * Build the client-facing public status link for a ticket: `<base>/t/<token>`.
+ * base = PUBLIC_TICKET_BASE_URL, else the first CLIENT_URL origin, else ''.
+ */
+function publicTicketLink(ticket) {
+  const base =
+    process.env.PUBLIC_TICKET_BASE_URL ||
+    (process.env.CLIENT_URL || '').split(',')[0] ||
+    '';
+  return ticket?.publicToken ? `${base}/t/${ticket.publicToken}` : '';
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────
 
 /**
@@ -163,11 +177,12 @@ export async function createTicketFromMessage(orgId, msg) {
 
   // 4. Auto-reply to the client (best-effort — never fail ticket creation).
   try {
+    const link = publicTicketLink(ticket);
     await sendEmail({
       to: msg.from,
       subject: `Re: ${msg.subject || 'your request'} [${displayId}]`,
-      html: autoReplyHtml(displayId, msg.subject),
-      text: autoReplyText(displayId, msg.subject),
+      html: autoReplyHtml(displayId, msg.subject, link),
+      text: autoReplyText(displayId, msg.subject, link),
     });
     ticket.lastClientNotifiedAt = new Date();
     await ticket.save();
@@ -203,11 +218,12 @@ export async function replyToClient(ticketId, userId, bodyText) {
   ticket.status = 'waiting_on_client';
 
   try {
+    const link = publicTicketLink(ticket);
     await sendEmail({
       to: ticket.client.email,
       subject: `Re: ${ticket.subject || 'your request'} [${ticket.displayId}]`,
-      html: clientReplyHtml(ticket.displayId, bodyText),
-      text: clientReplyText(ticket.displayId, bodyText),
+      html: clientReplyHtml(ticket.displayId, bodyText, link),
+      text: clientReplyText(ticket.displayId, bodyText, link),
     });
     ticket.lastClientNotifiedAt = now;
   } catch (err) {
@@ -234,6 +250,70 @@ export async function addInternalNote(ticketId, userId, bodyText) {
     body: bodyText,
     at: new Date(),
   });
+  await ticket.save();
+  return ticket;
+}
+
+// ─── INBOUND REPLY (client emailed back on an existing ticket) ────
+
+/**
+ * Append an inbound client reply to an existing ticket. Reopens a resolved/closed
+ * ticket to in_progress, stores the messageId, and notifies the assignee.
+ * Dedups on messageId so a provider re-delivery is a no-op.
+ * @returns {Promise<SupportTicket|null>} the ticket (null if not found)
+ */
+export async function appendInboundReply(ticketId, msg) {
+  const ticket = await SupportTicket.findById(ticketId);
+  if (!ticket) return null;
+
+  // Dedup: a re-delivered reply with a known messageId is a no-op.
+  if (msg.messageId) {
+    const seen =
+      ticket.lastInboundMessageId === msg.messageId ||
+      ticket.originalMessageId === msg.messageId ||
+      (ticket.messages || []).some((m) => m.messageId && m.messageId === msg.messageId);
+    if (seen) return ticket;
+  }
+
+  const now = new Date();
+  ticket.messages.push({
+    direction: 'inbound',
+    visibility: 'public',
+    from: msg.from,
+    body: msg.text,
+    html: msg.html,
+    messageId: msg.messageId,
+    at: now,
+  });
+  ticket.lastInboundMessageId = msg.messageId;
+
+  // A client reply reopens a resolved/closed ticket.
+  if (ticket.status === 'resolved' || ticket.status === 'closed') {
+    ticket.status = 'in_progress';
+    ticket.closedAt = undefined;
+  }
+
+  // Notify the assignee (best-effort).
+  if (ticket.assignee) {
+    try {
+      await createNotification({
+        organization: ticket.organization,
+        recipient: ticket.assignee,
+        type: 'ticket_client_reply',
+        title: `Client replied on ${ticket.displayId}`,
+        message: ticket.subject || '(no subject)',
+        relatedEntity: {
+          entityType: 'SupportTicket',
+          entityId: ticket._id,
+          displayLabel: ticket.displayId,
+        },
+        priority: 'high',
+      });
+    } catch (err) {
+      console.error(`❌ [supportService] notify reply failed for ${ticket.displayId}:`, err.message);
+    }
+  }
+
   await ticket.save();
   return ticket;
 }
@@ -267,11 +347,12 @@ export async function syncStatusFromTask(taskId, newStatus) {
   const last = ticket.lastClientNotifiedAt ? ticket.lastClientNotifiedAt.getTime() : 0;
   if (now - last >= 30 * 1000) {
     try {
+      const link = publicTicketLink(ticket);
       await sendEmail({
         to: ticket.client.email,
         subject: `Update on ${ticket.displayId}`,
-        html: statusUpdateHtml(ticket.displayId, mapped),
-        text: statusUpdateText(ticket.displayId, mapped),
+        html: statusUpdateHtml(ticket.displayId, mapped, link),
+        text: statusUpdateText(ticket.displayId, mapped, link),
       });
       ticket.lastClientNotifiedAt = new Date();
     } catch (err) {
@@ -283,50 +364,68 @@ export async function syncStatusFromTask(taskId, newStatus) {
   return ticket;
 }
 
-// ─── EMAIL TEMPLATES (Phase 1 — plain, no public link yet) ───────
+// ─── EMAIL TEMPLATES (now include the public status link) ────────
 
-function autoReplyText(displayId, subject) {
+function trackLineText(displayId, link) {
+  return link
+    ? `You can track this ticket with reference ${displayId}: ${link}`
+    : `You can track this ticket with reference ${displayId}.`;
+}
+
+function trackLineHtml(displayId, link) {
+  return link
+    ? `You can track this ticket with reference <strong>${displayId}</strong>: <a href="${link}">${link}</a>`
+    : `You can track this ticket with reference <strong>${displayId}</strong>.`;
+}
+
+function autoReplyText(displayId, subject, link) {
   return `Hi,
 
 We've received your request${subject ? ` regarding "${subject}"` : ''}.
 
-You can track this ticket with reference ${displayId}.
+${trackLineText(displayId, link)}
 
 Our team will get back to you shortly.
 
 — Support`;
 }
 
-function autoReplyHtml(displayId, subject) {
+function autoReplyHtml(displayId, subject, link) {
   return `<p>Hi,</p>
 <p>We've received your request${subject ? ` regarding "<strong>${subject}</strong>"` : ''}.</p>
-<p>You can track this ticket with reference <strong>${displayId}</strong>.</p>
+<p>${trackLineHtml(displayId, link)}</p>
 <p>Our team will get back to you shortly.</p>
 <p>— Support</p>`;
 }
 
-function clientReplyText(displayId, body) {
+function clientReplyText(displayId, body, link) {
   return `${body}
 
-— Support (ref ${displayId})`;
-}
-
-function clientReplyHtml(displayId, body) {
-  return `<p>${(body || '').replace(/\n/g, '<br/>')}</p>
-<p>— Support (ref ${displayId})</p>`;
-}
-
-function statusUpdateText(displayId, status) {
-  return `Hi,
-
-The status of your ticket ${displayId} is now: ${status}.
+${trackLineText(displayId, link)}
 
 — Support`;
 }
 
-function statusUpdateHtml(displayId, status) {
+function clientReplyHtml(displayId, body, link) {
+  return `<p>${(body || '').replace(/\n/g, '<br/>')}</p>
+<p>${trackLineHtml(displayId, link)}</p>
+<p>— Support</p>`;
+}
+
+function statusUpdateText(displayId, status, link) {
+  return `Hi,
+
+The status of your ticket ${displayId} is now: ${status}.
+
+${trackLineText(displayId, link)}
+
+— Support`;
+}
+
+function statusUpdateHtml(displayId, status, link) {
   return `<p>Hi,</p>
 <p>The status of your ticket <strong>${displayId}</strong> is now: <strong>${status}</strong>.</p>
+<p>${trackLineHtml(displayId, link)}</p>
 <p>— Support</p>`;
 }
 
