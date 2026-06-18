@@ -90,6 +90,17 @@ const registerUser = asyncHandler(async (req, res) => {
       : {}),
   });
 
+  // 5b. Auto-provision a helpdesk inbox for developer orgs (best-effort; never
+  //     blocks registration). Channel-partner orgs don't get one.
+  if (organization && type !== 'channel_partner') {
+    try {
+      const { provisionSupportInbox } = await import('../services/support/supportInboxService.js');
+      await provisionSupportInbox(organization._id, organization.name);
+    } catch (e) {
+      console.warn('⚠️ [auth] helpdesk inbox provision failed (non-blocking):', e.message);
+    }
+  }
+
   // 6. If organization is created, create the user
   if (organization) {
     const user = await User.create({

@@ -13,6 +13,7 @@ import {
   addInternalNote as addInternalNoteSvc,
   appendInboundReply,
 } from '../services/support/supportService.js';
+import { getOrgInbox, regenerateOrgInbox } from '../services/support/supportInboxService.js';
 import * as testAdapter from '../services/support/inbound/test.js';
 import * as sesAdapter from '../services/support/inbound/ses.js';
 import * as mailgunAdapter from '../services/support/inbound/mailgun.js';
@@ -307,4 +308,33 @@ export const addNote = asyncHandler(async (req, res) => {
 
   const ticket = await addInternalNoteSvc(req.params.id, req.user._id, body);
   res.json({ success: true, data: ticket });
+});
+
+// =============================================================================
+// HELPDESK INBOX (the org's public helpdesk address; auto-provisioned)
+// =============================================================================
+
+/**
+ * @desc    Get the org's helpdesk address (provisions on first read)
+ * @route   GET /api/support/inbox
+ * @access  Authenticated (any org member — the address is shareable, not secret)
+ */
+export const getInbox = asyncHandler(async (req, res) => {
+  const inbox = await getOrgInbox(req.user.organization);
+  res.json({ success: true, data: { address: inbox.address, active: inbox.active } });
+});
+
+/**
+ * @desc    Regenerate the org's helpdesk address (optionally from a slug)
+ * @route   POST /api/support/inbox/regenerate
+ * @access  Owner / department-head (roleLevel <= 3)
+ */
+export const regenerateInbox = asyncHandler(async (req, res) => {
+  const isManagement = (req.userRoleLevel ?? 100) <= 3;
+  if (!req.isOwner && !isManagement) {
+    res.status(403);
+    throw new Error('Only an admin or department head may change the helpdesk address');
+  }
+  const inbox = await regenerateOrgInbox(req.user.organization, req.body?.slug || null);
+  res.json({ success: true, data: { address: inbox.address, active: inbox.active } });
 });

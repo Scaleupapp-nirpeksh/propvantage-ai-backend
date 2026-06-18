@@ -15,6 +15,8 @@ import {
   getTicket,
   replyToClient,
   addNote,
+  getInbox,
+  regenerateInbox,
 } from '../controllers/supportController.js';
 
 const router = express.Router();
@@ -49,6 +51,10 @@ router.use(protect);
 
 // Stands in for the provider webhook (Phase 2) — admin/owner only (enforced in controller).
 router.post('/ingest-test', ingestTest);
+
+// Helpdesk inbox (org's public address) — must precede the /:id route.
+router.get('/inbox', getInbox);
+router.post('/inbox/regenerate', regenerateInbox);
 
 router.get('/', listTickets);
 router.get('/:id', getTicket);
