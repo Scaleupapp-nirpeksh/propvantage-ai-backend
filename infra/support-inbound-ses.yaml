@@ -77,7 +77,7 @@ Resources:
           # under the SNS size limit; the app parses it with mailparser.
           - SNSAction:
               TopicArn: !Ref InboundTopic
-              Encoding: BASE64
+              Encoding: Base64
 
   # DNS: route helpdesk subdomain mail to SES, plus SPF/DMARC for deliverability.
   HelpdeskMx:
