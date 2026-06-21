@@ -125,13 +125,19 @@ function applyRoleScope(filter, user, entityType) {
  * Resolve a project by ID or by name search within the org
  */
 async function resolveProject(orgId, projectId, projectName) {
-  if (projectId) {
-    return Project.findOne({ _id: projectId, organization: orgId }).lean();
+  // A valid ObjectId → direct lookup.
+  if (projectId && mongoose.isValidObjectId(projectId)) {
+    const byId = await Project.findOne({ _id: projectId, organization: orgId }).lean();
+    if (byId) return byId;
   }
-  if (projectName) {
+  // Otherwise treat a name — including a name the model wrongly passed as the id
+  // (which would have thrown a CastError on the _id lookup above).
+  const name = projectName || (projectId && !mongoose.isValidObjectId(projectId) ? projectId : null);
+  if (name) {
+    const esc = String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return Project.findOne({
       organization: orgId,
-      name: { $regex: projectName, $options: 'i' },
+      name: { $regex: esc, $options: 'i' },
     }).lean();
   }
   return null;
@@ -827,13 +833,15 @@ const functionImplementations = {
     const filter = applyRoleScope({}, user, 'sale');
     filter.status = { $ne: 'Cancelled' };
 
-    if (params.project_id) {
-      if (!isProjectAccessible(accessibleProjectIds, params.project_id)) return { error: 'You do not have access to this project' };
-      filter.project = new mongoose.Types.ObjectId(params.project_id);
+    if (params.project_id || params.project_name) {
+      const project = await resolveProject(user.organization, params.project_id, params.project_name);
+      if (!project) return { error: 'Project not found' };
+      if (!isProjectAccessible(accessibleProjectIds, project._id)) return { error: 'You do not have access to this project' };
+      filter.project = project._id;
     } else {
       filter.project = getProjectScopeFilter(accessibleProjectIds);
     }
-    if (params.salesperson_id) filter.salesPerson = new mongoose.Types.ObjectId(params.salesperson_id);
+    if (params.salesperson_id && mongoose.isValidObjectId(params.salesperson_id)) filter.salesPerson = new mongoose.Types.ObjectId(params.salesperson_id);
 
     if (params.period || params.start_date) {
       const { start, end } = getDateRange(params.period || 'this_month', params.start_date, params.end_date);
