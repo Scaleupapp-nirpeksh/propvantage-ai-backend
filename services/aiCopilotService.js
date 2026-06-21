@@ -121,6 +121,7 @@ You MUST respond with a valid JSON object matching this exact structure:
 }
 
 Include only relevant fields in each card based on its type.
+For every metric "value" (and numeric table cell), output a RAW JSON number only — e.g. 5002600000 or 12.5 — never a string with commas, currency symbols, units, or words like "Cr"/"Lakh". The UI formats and adds ₹/% itself.
 If the answer is simple text with no structured data, use type "text" and omit cards.
 Always include 2-3 followUpQuestions to guide the user to explore further.
 Always include sources listing which data categories were queried.

@@ -1629,23 +1629,49 @@ const functionImplementations = {
   // ---- 4.7 Comparison & Analytics Functions ----
 
   compare_projects: async (params, user, accessibleProjectIds) => {
-    let projectIds = [];
+    const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rawIds = Array.isArray(params.project_ids) ? params.project_ids : [];
 
-    if (params.project_ids && params.project_ids.length > 0) {
-      projectIds = params.project_ids.map(id => new mongoose.Types.ObjectId(id));
-    } else if (params.project_names && params.project_names.length > 0) {
+    // Only cast values that are genuinely valid ObjectIds — the model sometimes
+    // passes project NAMES or placeholders here, which would throw a BSON error.
+    let projectIds = rawIds
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    // Resolve names — including any non-ObjectId values mistakenly sent as ids.
+    const names = [
+      ...(Array.isArray(params.project_names) ? params.project_names : []),
+      ...rawIds.filter((id) => !mongoose.isValidObjectId(id)),
+    ].filter(Boolean);
+    if (names.length > 0) {
       const projects = await Project.find({
         organization: user.organization,
-        name: { $in: params.project_names.map(n => new RegExp(n, 'i')) },
-      }).lean();
-      projectIds = projects.map(p => p._id);
+        name: { $in: names.map((n) => new RegExp(escapeRegex(n), 'i')) },
+      }).select('_id').lean();
+      projectIds.push(...projects.map((p) => p._id));
     }
 
+    // Nothing usable was specified → compare ALL projects the user can see
+    // ("revenue trends for each project" / "these projects").
+    if (projectIds.length === 0) {
+      const all = await Project.find({
+        organization: user.organization,
+        ...(accessibleProjectIds && accessibleProjectIds.length > 0
+          ? { _id: { $in: accessibleProjectIds.map((id) => new mongoose.Types.ObjectId(id)) } }
+          : {}),
+      }).select('_id').lean();
+      projectIds = all.map((p) => p._id);
+    }
+
+    // Scope to accessible projects (null = full access, e.g. Org Owner).
     if (accessibleProjectIds && accessibleProjectIds.length > 0) {
-      projectIds = projectIds.filter(pid => accessibleProjectIds.includes(pid.toString()));
+      projectIds = projectIds.filter((pid) => accessibleProjectIds.includes(pid.toString()));
     }
 
-    if (projectIds.length === 0) return { error: 'No projects found to compare' };
+    // De-duplicate.
+    projectIds = [...new Map(projectIds.map((p) => [p.toString(), p])).values()];
+
+    if (projectIds.length === 0) return { error: 'No matching projects found to compare.' };
 
     const comparison = [];
 
@@ -2174,8 +2200,15 @@ const functionImplementations = {
   get_support_tickets: async (params, user) => {
     // Org-scoped, read-only. SupportTicket has no project field.
     const filter = { organization: user.organization };
-    if (params.status) filter.status = params.status;
-    if (params.category) filter.category = params.category;
+    if (params.status) {
+      // Normalize aliases — the model often asks for "open"/"unresolved", which
+      // aren't real statuses (new/assigned/in_progress/waiting_on_client/
+      // resolved/closed). Map them to "everything not resolved or closed".
+      const s = String(params.status).toLowerCase().replace(/[\s-]+/g, '_');
+      const OPEN_ALIASES = ['open', 'unresolved', 'active', 'pending', 'unanswered', 'not_resolved', 'ongoing'];
+      filter.status = OPEN_ALIASES.includes(s) ? { $nin: ['resolved', 'closed'] } : s;
+    }
+    if (params.category) filter.category = String(params.category).toLowerCase();
 
     const limit = params.limit || 5;
     const totalCount = await SupportTicket.countDocuments(filter);
