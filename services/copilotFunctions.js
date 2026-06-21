@@ -2428,6 +2428,12 @@ export const executeCopilotFunction = async (functionName, params, user, accessi
 
   try {
     const result = await fn(params, user, accessibleProjectIds);
+    const summary = !result || typeof result !== 'object'
+      ? String(result)
+      : result.error
+        ? `ERR: ${result.error}`
+        : Object.entries(result).map(([k, v]) => (Array.isArray(v) ? `${k}[${v.length}]` : k)).join(',');
+    console.log(`🤖 [copilot] ${functionName}(${JSON.stringify(params).slice(0, 160)}) → ${summary}`);
     return result;
   } catch (error) {
     console.error(`❌ Copilot function ${functionName} failed:`, error.message);
