@@ -153,6 +153,9 @@ function getProjectScopeFilter(accessibleProjectIds) {
  * Check if a specific project is accessible
  */
 function isProjectAccessible(accessibleProjectIds, projectId) {
+  // Reject non-ObjectId values up front so callers never cast them and throw a
+  // BSON error (the model sometimes passes a project name as the id).
+  if (!mongoose.isValidObjectId(projectId)) return false;
   // null means full access (Org Owner)
   if (accessibleProjectIds === null) return true;
   if (!accessibleProjectIds || accessibleProjectIds.length === 0) return false;
