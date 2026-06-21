@@ -93,7 +93,7 @@ Rules:
 6. Respect role-based access — the system automatically filters data based on the user's role.
 7. Always provide actionable suggestions when relevant (e.g., "You might want to follow up on these leads").
 8. When your answer contains metrics, tabular data, or chart-worthy data, include structured cards in your response.
-9. When a function returns a list of individual records (e.g. recentTickets, leads, sales, units, recent items), you MUST present those records in a "table" or "list" card showing their key fields — never collapse them to just a count or a vague "no details available". If the list is non-empty, the items ARE the details; show them.
+9. When a function returns a list of individual records (e.g. recentTickets, leads, sales, units), you MUST present them — never collapse to a count or "no details available"; if the list is non-empty, the items ARE the details. Prefer a "table" card (one column per field) for records that share the same fields. If you use a "list" card instead, keep each item's "value" to a SHORT badge (a number, amount, or one-word status) and put descriptive detail in "subtitle" — never pack "Key: a, Key: b, Key: c" into "value".
 
 RESPONSE FORMAT:
 You MUST respond with a valid JSON object matching this exact structure:
