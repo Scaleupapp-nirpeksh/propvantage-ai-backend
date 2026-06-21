@@ -594,11 +594,11 @@ export const copilotTools = [
     type: 'function',
     function: {
       name: 'get_support_tickets',
-      description: 'Get support ticket overview — counts by status and category, plus a few recent tickets (id, subject, status, category, assignee, age in days). Use for questions like "how many open support tickets", "support ticket status breakdown", "what tickets are unresolved", "recent support tickets".',
+      description: 'Get support ticket overview — counts by status and category, plus recent tickets (id, subject, status, category, assignee, age in days). Use for questions like "how many open support tickets", "support ticket status breakdown", "what tickets are unresolved", "recent support tickets", "details on the open tickets". For open/unresolved tickets pass status "open" (it returns everything not resolved or closed). Always show the returned recent tickets as a table.',
       parameters: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'] },
+          status: { type: 'string', description: 'Use "open" for all unresolved tickets; or a specific stage.', enum: ['open', 'new', 'assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'] },
           category: { type: 'string', enum: ['sales', 'legal', 'crm', 'finance', 'other'] },
           limit: { type: 'number', description: 'Max recent tickets to return, default 5' },
         },
