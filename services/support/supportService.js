@@ -309,8 +309,10 @@ export async function appendInboundReply(ticketId, msg) {
   });
   ticket.lastInboundMessageId = msg.messageId;
 
-  // A client reply reopens a resolved/closed ticket.
-  if (ticket.status === 'resolved' || ticket.status === 'closed') {
+  // A client reply reopens a RESOLVED ticket (soft close). A CLOSED ticket is
+  // final — the message is still recorded + the assignee notified, but it stays
+  // closed.
+  if (ticket.status === 'resolved') {
     ticket.status = 'in_progress';
     ticket.closedAt = undefined;
   }
@@ -390,10 +392,11 @@ export async function syncStatusFromTask(taskId, newStatus) {
 // machine state). Ticket status the client sees is the source of truth.
 const MANUAL_STATUSES = ['assigned', 'in_progress', 'waiting_on_client', 'resolved', 'closed'];
 const TICKET_STATUS_TO_TASK = {
+  assigned: 'Open',
   in_progress: 'In Progress',
-  waiting_on_client: 'In Progress',
-  resolved: 'Completed',
-  closed: 'Cancelled',
+  waiting_on_client: 'On Hold', // team is blocked on the client → leaves the active queue
+  resolved: 'Completed', // soft close — the work was done
+  closed: 'Completed', // hard close — also done (use Cancelled only for an explicit cancel)
 };
 
 /**
@@ -472,11 +475,11 @@ export async function addPublicClientReply(token, bodyText) {
     body: body.substring(0, 5000),
     at: now,
   });
-  if (ticket.status === 'resolved' || ticket.status === 'closed') {
+  // Move back into the active queue on a client reply — except a CLOSED ticket,
+  // which is final and stays closed (message recorded + assignee notified).
+  if (ticket.status !== 'closed' && ticket.status !== 'new') {
     ticket.status = 'in_progress';
     ticket.closedAt = undefined;
-  } else if (ticket.status !== 'new') {
-    ticket.status = 'in_progress';
   }
 
   if (ticket.assignee) {

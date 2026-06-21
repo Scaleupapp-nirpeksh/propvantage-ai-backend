@@ -324,6 +324,23 @@ describe('updateTicketStatus', () => {
     expect(task.save).toHaveBeenCalled();
   });
 
+  test.each([
+    ['resolved', 'Completed'],
+    ['closed', 'Completed'],
+    ['waiting_on_client', 'On Hold'],
+    ['in_progress', 'In Progress'],
+  ])('maps ticket %s → task %s', async (ticketStatus, taskStatus) => {
+    const ticket = makeTicket({ status: 'assigned', linkedTask: new mongoose.Types.ObjectId() });
+    mockTicketFindById.mockResolvedValueOnce(ticket);
+    mockSendEmail.mockResolvedValue({ success: true });
+    const task = { status: 'Open', save: jest.fn().mockResolvedValue(undefined) };
+    mockTaskFindById.mockResolvedValueOnce(task);
+
+    await updateTicketStatus(ticket._id, new mongoose.Types.ObjectId(), ticketStatus);
+
+    expect(task.status).toBe(taskStatus);
+  });
+
   test('no-ops when the status is unchanged', async () => {
     const ticket = makeTicket({ status: 'in_progress' });
     mockTicketFindById.mockResolvedValueOnce(ticket);
@@ -335,25 +352,27 @@ describe('updateTicketStatus', () => {
 
 // ─── addPublicClientReply ────────────────────────────────────────────────────
 describe('addPublicClientReply', () => {
-  test('appends a public inbound message, reopens a closed ticket, notifies assignee', async () => {
-    const assignee = new mongoose.Types.ObjectId();
-    const ticket = {
-      _id: new mongoose.Types.ObjectId(),
-      displayId: 'TKT-000011',
-      organization: ORG,
-      status: 'closed',
-      assignee,
-      client: { email: 'buyer@example.com' },
-      messages: [],
-      save: jest.fn().mockResolvedValue(undefined),
-    };
+  const publicTicket = (overrides = {}) => ({
+    _id: new mongoose.Types.ObjectId(),
+    displayId: 'TKT-000011',
+    organization: ORG,
+    status: 'resolved',
+    assignee: new mongoose.Types.ObjectId(),
+    client: { email: 'buyer@example.com' },
+    messages: [],
+    save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  });
+
+  test('appends a public inbound message, reopens a RESOLVED ticket, notifies assignee', async () => {
+    const ticket = publicTicket({ status: 'resolved' });
     mockTicketFindOne.mockResolvedValueOnce(ticket);
     mockCreateNotification.mockResolvedValue({});
 
     const result = await addPublicClientReply('tok_123', '  Any update?  ');
 
     expect(result).toBe(ticket);
-    expect(ticket.status).toBe('in_progress'); // reopened
+    expect(ticket.status).toBe('in_progress'); // resolved reopens
     expect(ticket.messages).toHaveLength(1);
     expect(ticket.messages[0]).toMatchObject({
       direction: 'inbound',
@@ -362,8 +381,20 @@ describe('addPublicClientReply', () => {
       body: 'Any update?',
     });
     expect(mockCreateNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'ticket_client_reply', recipient: assignee })
+      expect.objectContaining({ type: 'ticket_client_reply', recipient: ticket.assignee })
     );
+  });
+
+  test('a CLOSED ticket stays closed on reply (final) but records the message', async () => {
+    const ticket = publicTicket({ status: 'closed' });
+    mockTicketFindOne.mockResolvedValueOnce(ticket);
+    mockCreateNotification.mockResolvedValue({});
+
+    await addPublicClientReply('tok_123', 'One more thing');
+
+    expect(ticket.status).toBe('closed'); // final — not reopened
+    expect(ticket.messages).toHaveLength(1);
+    expect(mockCreateNotification).toHaveBeenCalled();
   });
 
   test('rejects an empty message', async () => {
