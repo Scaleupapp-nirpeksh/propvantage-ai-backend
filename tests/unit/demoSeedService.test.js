@@ -424,6 +424,8 @@ describe('demo-activity seeding', () => {
       return null;
     });
     await seedDemoPeopleData(ORG, { weeks: 1 });
+    // At least one sale must have been created for the sales-capable member
+    expect(mockSaleCreate).toHaveBeenCalled();
     for (const [doc] of mockSaleCreate.mock.calls) {
       expect(doc.salesPerson.toString()).toBe(USER_2.toString());
     }
