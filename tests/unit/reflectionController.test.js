@@ -180,7 +180,7 @@ describe('getReflection', () => {
     const doc = { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W25', status: 'submitted' };
     mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve(doc) });
 
-    const req = { user: USER, query: { isoWeek: '2026-W25' } };
+    const req = { user: USER, params: {}, query: { isoWeek: '2026-W25' } };
     const res = mockRes();
     await getReflection(req, res, mockNext);
 
@@ -190,7 +190,7 @@ describe('getReflection', () => {
   test('calls next with 404 when not found', async () => {
     mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve(null) });
 
-    const req = { user: USER, query: { isoWeek: '2026-W25' } };
+    const req = { user: USER, params: {}, query: { isoWeek: '2026-W25' } };
     const res = mockRes();
     await getReflection(req, res, mockNext);
 
@@ -202,7 +202,7 @@ describe('getReflection', () => {
     const doc = { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W26', status: 'none' };
     mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve(doc) });
 
-    const req = { user: USER, query: {} };
+    const req = { user: USER, params: {}, query: {} };
     const res = mockRes();
     await getReflection(req, res, mockNext);
 
@@ -210,6 +210,26 @@ describe('getReflection', () => {
     expect(mockFindOne).toHaveBeenCalledWith(
       expect.objectContaining({ isoWeek: '2026-W26' })
     );
+  });
+
+  test('uses req.params.isoWeek to fetch a historical week (not current)', async () => {
+    // The bug: getReflection previously only read req.query.isoWeek so a
+    // request to GET /reflections/2026-W20 would silently return the current
+    // week. This asserts the fix — param takes precedence.
+    const doc = { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W20', status: 'submitted' };
+    mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve(doc) });
+
+    const req = { user: USER, params: { isoWeek: '2026-W20' }, query: {} };
+    const res = mockRes();
+    await getReflection(req, res, mockNext);
+
+    // Must query for 2026-W20, NOT for the current week ('2026-W26' from mock)
+    expect(mockFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({ isoWeek: '2026-W20' })
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: doc });
+    // isoWeekOf should NOT have been called because the param was provided
+    expect(mockIsoWeekOf).not.toHaveBeenCalled();
   });
 });
 

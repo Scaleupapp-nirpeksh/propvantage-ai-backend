@@ -293,4 +293,44 @@ describe('computeAttainment', () => {
     expect(result.salesCount.actual).toBe(0);
     expect(result.salesCount.pct).toBe(0);
   });
+
+  // ── Key-drift fix: performanceSignalsService emits 'leadsConverted' ──────────
+  // but the target model stores the target under 'conversions'.
+  // Before the fix, metrics['conversions'] was always undefined → actual=0 → pct=0.
+  test('maps leadsConverted metric to the conversions attainment target', () => {
+    // Matches the bug scenario exactly:
+    // target has conversions:5, signals service emitted leadsConverted:3 (not conversions:3)
+    const metrics = { leadsConverted: 3 };
+    const target = { targets: { conversions: 5 } };
+
+    const result = computeAttainment(metrics, target);
+
+    expect(result.conversions).toEqual({ actual: 3, target: 5, pct: 0.6 });
+  });
+
+  test('conversions attainment is not 0 when leadsConverted is provided without a conversions key', () => {
+    const metrics = {
+      salesCount: 2,
+      salesValue: 500_000,
+      leadsWorked: 20,
+      leadsConverted: 4,   // key emitted by signals service
+      taskSlaRate: 0.9,
+    };
+    const target = {
+      targets: {
+        salesCount: 4,
+        salesValue: 1_000_000,
+        leadsWorked: 40,
+        conversions: 8,    // target stored under 'conversions'
+        taskSlaRate: 1,
+      },
+    };
+
+    const result = computeAttainment(metrics, target);
+
+    // Must NOT be 0 — actual should be 4 (from leadsConverted)
+    expect(result.conversions.actual).toBe(4);
+    expect(result.conversions.target).toBe(8);
+    expect(result.conversions.pct).toBeCloseTo(0.5);
+  });
 });

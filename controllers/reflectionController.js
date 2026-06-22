@@ -59,14 +59,15 @@ export const getCurrent = asyncHandler(async (req, res) => {
 // =============================================================================
 
 /**
- * @desc    Get a specific week's reflection document (by isoWeek query param).
- *          Returns the caller's own reflection. Managers may be added by the
- *          routing layer later.
+ * @desc    Get a specific week's reflection document.
+ *          Accepts the isoWeek via route param (:isoWeek) or query string
+ *          (?isoWeek=) — param takes precedence. Falls back to current week.
+ * @route   GET /api/people/reflections/:isoWeek
  * @route   GET /api/people/reflections?isoWeek=YYYY-Www
  * @access  Authenticated
  */
 export const getReflection = asyncHandler(async (req, res) => {
-  const isoWeek = req.query.isoWeek || isoWeekOf(new Date());
+  const isoWeek = req.params.isoWeek || req.query.isoWeek || isoWeekOf(new Date());
 
   const doc = await WeeklyReflection.findOne({
     organization: req.user.organization,

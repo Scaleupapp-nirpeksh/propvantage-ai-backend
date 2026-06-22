@@ -162,7 +162,11 @@ export function computeAttainment(metrics, target) {
 
   return Object.fromEntries(
     ATTAINMENT_KEYS.map((key) => {
-      const actual = m[key] ?? 0;
+      // The performanceSignalsService emits converted-leads as 'leadsConverted'
+      // but the target document stores the target under 'conversions'.
+      // Map the metric read so the two stay in sync without renaming either.
+      const metricKey = key === 'conversions' ? 'leadsConverted' : key;
+      const actual = m[metricKey] ?? m[key] ?? 0;
       const targetVal = t[key];
 
       const hasTarget =
