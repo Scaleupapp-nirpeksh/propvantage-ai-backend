@@ -292,6 +292,16 @@ describe('getTeam', () => {
     expect(mockGetTeamDashboard).toHaveBeenCalledWith(HEAD_USER, expect.any(Object));
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
+
+  test('plain member (scope=self) gets 403', async () => {
+    mockGetSubtree.mockResolvedValue({ scope: 'self', userIds: [MEMBER_ID] });
+    const req = { user: MEMBER_USER, query: {} };
+    const res = mockRes();
+
+    await expect(call(getTeam, req, res)).rejects.toThrow(/team dashboard/i);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockGetTeamDashboard).not.toHaveBeenCalled();
+  });
 });
 
 // =============================================================================
@@ -464,6 +474,17 @@ describe('getMoraleTeam', () => {
     await call(getMoraleTeam, req, res);
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  test('Owner with invalid ?headId gets 400', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    mockGetSubtree.mockResolvedValue({ scope: 'org', userIds: [] });
+    const req = { user: OWNER_USER, query: { headId: 'not-a-valid-objectid' } };
+    const res = mockRes();
+
+    await expect(call(getMoraleTeam, req, res)).rejects.toThrow(/invalid headId/i);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockMoraleFindOne).not.toHaveBeenCalled();
   });
 });
 

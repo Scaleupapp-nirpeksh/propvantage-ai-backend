@@ -115,7 +115,12 @@ export const getMember = asyncHandler(async (req, res) => {
  * @access  Head or Owner
  */
 export const getTeam = asyncHandler(async (req, res) => {
-  // Any non-member can reach this; if they have no team it returns an empty roster.
+  // Members (scope === 'self') have no team — guard per spec §12.
+  const subtree = await getSubtree(req.user);
+  if (subtree.scope === 'self') {
+    res.status(403);
+    throw new Error('Team dashboard is only available to Heads and the Owner');
+  }
   const range = parseRange(req.query);
   const data  = await getTeamDashboard(req.user, range);
   res.json({ success: true, data });
@@ -205,6 +210,10 @@ export const getMoraleTeam = asyncHandler(async (req, res) => {
   // Optional ?headId= lets the Owner query any head's morale summary
   let headId = req.user._id;
   if (req.query.headId && isOwnerLevel(req.user)) {
+    if (!mongoose.isValidObjectId(req.query.headId)) {
+      res.status(400);
+      throw new Error('Invalid headId: must be a valid ObjectId');
+    }
     headId = new mongoose.Types.ObjectId(req.query.headId);
   }
 
