@@ -198,6 +198,32 @@ describe('saveDraft', () => {
     await saveDraft(req, res, mockNext);
     expect(mockNext).toHaveBeenCalledWith(err);
   });
+
+  test('strips unknown fields from body before calling upsertDraft', async () => {
+    const doc = { _id: new mongoose.Types.ObjectId(), status: 'draft' };
+    mockUpsertDraft.mockResolvedValueOnce(doc);
+
+    const req = {
+      user:   USER,
+      params: { isoWeek: '2026-W26' },
+      body:   {
+        wins:           'good wins',
+        areasToImprove: 'some area',
+        __proto__leak:  'ignored',
+        adminFlag:      true,
+        extraKey:       'should not pass through',
+      },
+    };
+    const res = mockRes();
+    await saveDraft(req, res, mockNext);
+
+    // upsertDraft should receive ONLY the known answer fields
+    const calledWith = mockUpsertDraft.mock.calls[0][2];
+    expect(calledWith).toEqual({ wins: 'good wins', areasToImprove: 'some area' });
+    expect(calledWith).not.toHaveProperty('adminFlag');
+    expect(calledWith).not.toHaveProperty('extraKey');
+    expect(calledWith).not.toHaveProperty('__proto__leak');
+  });
 });
 
 // =============================================================================

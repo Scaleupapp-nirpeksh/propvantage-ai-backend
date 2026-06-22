@@ -188,6 +188,8 @@ describe('weekEndOf', () => {
 describe('upsertDraft', () => {
   test('calls findOneAndUpdate with the correct filter + set', async () => {
     const savedDoc = makeDoc();
+    // findOne returns null → no existing doc (brand-new draft)
+    mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve(null) });
     mockFindOneAndUpdate.mockResolvedValueOnce(savedDoc);
 
     const result = await upsertDraft(USER, '2026-W26', { wins: 'something' });
@@ -200,8 +202,31 @@ describe('upsertDraft', () => {
     expect(result).toBe(savedDoc);
   });
 
+  test('succeeds when existing doc is a draft', async () => {
+    const savedDoc = makeDoc({ status: 'draft' });
+    // findOne returns a draft doc
+    mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve({ status: 'draft' }) });
+    mockFindOneAndUpdate.mockResolvedValueOnce(savedDoc);
+
+    const result = await upsertDraft(USER, '2026-W26', { wins: 'updated' });
+    expect(result).toBe(savedDoc);
+    expect(mockFindOneAndUpdate).toHaveBeenCalled();
+  });
+
+  test('throws 400 when existing reflection is already submitted', async () => {
+    // findOne returns a submitted doc
+    mockFindOne.mockReturnValueOnce({ lean: () => Promise.resolve({ status: 'submitted' }) });
+
+    const err = await upsertDraft(USER, '2026-W26', { wins: 'override attempt' }).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/already submitted/i);
+    expect(err.statusCode).toBe(400);
+    // Must NOT proceed to write
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   test('throws when weekEnd is in the past', async () => {
-    // 2020-W01 is well in the past
+    // 2020-W01 is well in the past — lock check fires before findOne
     await expect(upsertDraft(USER, '2020-W01', {})).rejects.toThrow('locked');
   });
 });

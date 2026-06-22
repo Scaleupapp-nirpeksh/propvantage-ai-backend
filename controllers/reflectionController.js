@@ -72,9 +72,19 @@ export const getReflection = asyncHandler(async (req, res) => {
  * @route   PUT /api/people/reflections/:isoWeek
  * @access  Authenticated
  */
+const KNOWN_ANSWER_FIELDS = ['wins', 'areasToImprove', 'dislikes', 'achievements', 'plansNextWeek', 'other'];
+
 export const saveDraft = asyncHandler(async (req, res) => {
   const { isoWeek } = req.params;
-  const answers = req.body.answers || req.body;  // accept { answers: {...} } or flat body
+  const raw = req.body.answers || req.body;  // accept { answers: {...} } or flat body
+
+  // Pick only known answer fields — discard any stray top-level keys
+  const answers = {};
+  for (const field of KNOWN_ANSWER_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(raw, field)) {
+      answers[field] = raw[field];
+    }
+  }
 
   const doc = await upsertDraft(req.user, isoWeek, answers);
   res.json({ success: true, data: doc });

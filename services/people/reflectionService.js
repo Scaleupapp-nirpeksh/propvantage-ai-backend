@@ -136,6 +136,19 @@ export async function upsertDraft(user, isoWeek, answers = {}) {
     throw err;
   }
 
+  // Submit-once check: a submitted reflection is final and cannot be edited
+  const existing = await WeeklyReflection.findOne({
+    organization: user.organization,
+    user: user._id,
+    isoWeek,
+  }).lean();
+
+  if (existing && existing.status === 'submitted') {
+    const err = new Error('Reflection already submitted for this week');
+    err.statusCode = 400;
+    throw err;
+  }
+
   // Build the $set payload for answers (only provided keys)
   const answerSet = {};
   for (const [key, value] of Object.entries(answers)) {
