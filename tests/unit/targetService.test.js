@@ -78,51 +78,58 @@ describe('getOrSeedTarget', () => {
     mockPTFindOne.mockResolvedValue(null);
     mockUserWith('Sales Executive');
 
-    const created = { _id: new mongoose.Types.ObjectId(), source: 'template' };
-    mockPTCreate.mockResolvedValue(created);
+    const seeded = { _id: new mongoose.Types.ObjectId(), source: 'template' };
+    mockPTFindOneAndUpdate.mockResolvedValue(seeded);
 
     const result = await getOrSeedTarget(ORG, USER_ID, PERIOD_START);
 
-    expect(result).toBe(created);
-    const arg = mockPTCreate.mock.calls[0][0];
+    expect(result).toBe(seeded);
+    expect(mockPTCreate).not.toHaveBeenCalled();
+    const setOnInsert = mockPTFindOneAndUpdate.mock.calls[0][1].$setOnInsert;
     // Sales Executive template (from config/performanceTargetTemplates.js)
-    expect(arg.targets.salesCount).toBe(4);
-    expect(arg.targets.salesValue).toBe(4_000_000);
-    expect(arg.targets.leadsWorked).toBe(60);
-    expect(arg.targets.conversions).toBe(4);
-    expect(arg.source).toBe('template');
-    expect(arg.setBy).toBeNull();
-    expect(arg.period).toBe('month');
+    expect(setOnInsert.targets.salesCount).toBe(4);
+    expect(setOnInsert.targets.salesValue).toBe(4_000_000);
+    expect(setOnInsert.targets.leadsWorked).toBe(60);
+    expect(setOnInsert.targets.conversions).toBe(4);
+    expect(setOnInsert.source).toBe('template');
+    expect(setOnInsert.setBy).toBeNull();
+    expect(setOnInsert.period).toBe('month');
+    // Must use upsert:true, new:true
+    const opts = mockPTFindOneAndUpdate.mock.calls[0][2];
+    expect(opts.upsert).toBe(true);
+    expect(opts.new).toBe(true);
   });
 
   test('seeds from Sales Manager template for Sales Manager role', async () => {
     mockPTFindOne.mockResolvedValue(null);
     mockUserWith('Sales Manager');
 
-    const created = { _id: new mongoose.Types.ObjectId(), source: 'template' };
-    mockPTCreate.mockResolvedValue(created);
+    const seeded = { _id: new mongoose.Types.ObjectId(), source: 'template' };
+    mockPTFindOneAndUpdate.mockResolvedValue(seeded);
 
     await getOrSeedTarget(ORG, USER_ID, PERIOD_START);
 
-    const arg = mockPTCreate.mock.calls[0][0];
-    expect(arg.targets.salesCount).toBe(8);
-    expect(arg.targets.salesValue).toBe(8_000_000);
-    expect(arg.source).toBe('template');
+    expect(mockPTCreate).not.toHaveBeenCalled();
+    const setOnInsert = mockPTFindOneAndUpdate.mock.calls[0][1].$setOnInsert;
+    expect(setOnInsert.targets.salesCount).toBe(8);
+    expect(setOnInsert.targets.salesValue).toBe(8_000_000);
+    expect(setOnInsert.source).toBe('template');
   });
 
   test('uses generic fallback template for unknown/custom role', async () => {
     mockPTFindOne.mockResolvedValue(null);
     mockUserWith('Custom Role XYZ');
 
-    mockPTCreate.mockResolvedValue({});
+    mockPTFindOneAndUpdate.mockResolvedValue({});
 
     await getOrSeedTarget(ORG, USER_ID, PERIOD_START);
 
-    const arg = mockPTCreate.mock.calls[0][0];
+    expect(mockPTCreate).not.toHaveBeenCalled();
+    const setOnInsert = mockPTFindOneAndUpdate.mock.calls[0][1].$setOnInsert;
     // Generic fallback from getTemplateForRole
-    expect(arg.targets.salesCount).toBe(2);
-    expect(arg.targets.leadsWorked).toBe(20);
-    expect(arg.source).toBe('template');
+    expect(setOnInsert.targets.salesCount).toBe(2);
+    expect(setOnInsert.targets.leadsWorked).toBe(20);
+    expect(setOnInsert.source).toBe('template');
   });
 });
 
@@ -185,6 +192,15 @@ describe('setTarget', () => {
     await expect(setTarget(actor, USER_ID, PERIOD_START, newTargets)).rejects.toMatchObject({
       statusCode: 403,
     });
+    expect(mockPTFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('throws 403 when actor attempts to set their own target (self-targeting)', async () => {
+    // No getSubtree call should be needed — guard fires before it
+    await expect(setTarget(actor, ACTOR_ID, PERIOD_START, newTargets)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(mockGetSubtree).not.toHaveBeenCalled();
     expect(mockPTFindOneAndUpdate).not.toHaveBeenCalled();
   });
 

@@ -48,7 +48,7 @@ export async function getOrSeedTarget(orgId, userId, periodStart) {
   const org = toObjectId(orgId);
   const uid = toObjectId(userId);
 
-  // Fast path: existing target
+  // Fast path: existing target (avoids User lookup on the common case)
   const existing = await PerformanceTarget.findOne({
     organization: org,
     user: uid,
@@ -61,15 +61,23 @@ export async function getOrSeedTarget(orgId, userId, periodStart) {
   const role = targetUser?.role ?? null;
   const templateTargets = getTemplateForRole(role);
 
-  return PerformanceTarget.create({
-    organization: org,
-    user: uid,
-    period: 'month',
-    periodStart,
-    targets: templateTargets,
-    setBy: null,
-    source: 'template',
-  });
+  // Atomic upsert — prevents race conditions when two concurrent first-access
+  // calls arrive simultaneously and both miss the fast path above.
+  return PerformanceTarget.findOneAndUpdate(
+    { organization: org, user: uid, periodStart },
+    {
+      $setOnInsert: {
+        organization: org,
+        user: uid,
+        period: 'month',
+        periodStart,
+        targets: templateTargets,
+        setBy: null,
+        source: 'template',
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 }
 
 // ─── setTarget ───────────────────────────────────────────────────
@@ -89,6 +97,13 @@ export async function getOrSeedTarget(orgId, userId, periodStart) {
 export async function setTarget(actor, userId, periodStart, targets) {
   const uid = toObjectId(userId);
   const actorId = toObjectId(actor._id);
+
+  // Self-targeting guard: a user cannot set their own target
+  if (actorId.equals(uid)) {
+    const err = new Error('Not authorized: actor is not above the target user in the hierarchy');
+    err.statusCode = 403;
+    throw err;
+  }
 
   // Authorization check: actor must be above the target user
   const subtree = await getSubtree(actor);
