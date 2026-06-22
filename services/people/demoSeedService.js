@@ -117,6 +117,18 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * Return a random date within the current calendar month (UTC).
+ * Guarantees the date is not in the future.
+ */
+function randomDateInCurrentMonth() {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const msIntoMonth = now.getTime() - monthStart.getTime();
+  // random point from start-of-month up to (but not including) now
+  return new Date(monthStart.getTime() + Math.floor(Math.random() * Math.max(msIntoMonth, 1)));
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 
 /**
@@ -387,13 +399,14 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
     // Find existing assigned leads
     let userLeads = await Lead.find({ organization: orgId, assignedTo: user._id });
 
-    // If no leads, create demo leads
+    // If no leads, create demo leads — requires a valid project ref
     if (!userLeads || userLeads.length === 0) {
+      if (!project) continue; // cannot create valid Lead docs without a project
       const createdLeads = [];
       for (let i = 0; i < 4; i++) {
         const lead = await Lead.create({
           organization: orgId,
-          project:      project?._id,
+          project:      project._id,
           firstName:    'Demo',
           phone:        `9000000${String(i).padStart(3, '0')}`,
           assignedTo:   user._id,
@@ -455,20 +468,23 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
       status:       'Booked',
     });
     if (!bookedLead) continue;
-
-    const saleProject = await Project.findOne({ organization: orgId });
+    if (!project) continue; // cannot create valid Sale docs without a project
 
     const salesToCreate = Math.min(availableUnits.length, randInt(2, 4));
     const saleStatuses  = ['Booked', 'Agreement Signed'];
 
     for (let i = 0; i < salesToCreate; i++) {
-      const unit        = availableUnits[i];
-      const salePrice   = randInt(2, 30) * 1_00_00_000; // ₹2–30 Cr
-      const bookingDate = randomDateInLastDays(56); // last 8 weeks
-      const saleStatus  = saleStatuses[i % saleStatuses.length];
+      const unit = availableUnits[i];
+      // Bias first sale into the current calendar month so the default monthly
+      // dashboard view is guaranteed to show at least one sale per member.
+      const bookingDate = i === 0
+        ? randomDateInCurrentMonth()
+        : randomDateInLastDays(56); // last 8 weeks for variety
+      const salePrice  = randInt(2, 30) * 1_00_00_000; // ₹2–30 Cr
+      const saleStatus = saleStatuses[i % saleStatuses.length];
 
       await Sale.create({
-        project:           saleProject?._id,
+        project:           project._id,
         unit:              unit._id,
         lead:              bookedLead._id,
         organization:      orgId,

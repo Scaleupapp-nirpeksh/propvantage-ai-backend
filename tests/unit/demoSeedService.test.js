@@ -437,6 +437,15 @@ describe('demo-activity seeding', () => {
     expect(mockSaleCreate).not.toHaveBeenCalled();
   });
 
+  test('no project in org — Lead.create and Sale.create skipped gracefully', async () => {
+    mockProjectFindOne.mockResolvedValue(null); // no project exists
+    // Users have no existing leads (force Lead.create path)
+    mockLeadFind.mockResolvedValue([]);
+    await expect(seedDemoPeopleData(ORG, { weeks: 1 })).resolves.not.toThrow();
+    expect(mockLeadCreate).not.toHaveBeenCalled();
+    expect(mockSaleCreate).not.toHaveBeenCalled();
+  });
+
   test('idempotency — existing demo sales skip sale creation', async () => {
     mockSaleCountDocuments.mockResolvedValue(2); // already has sales
     const result = await seedDemoPeopleData(ORG, { weeks: 1 });
