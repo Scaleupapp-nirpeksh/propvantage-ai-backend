@@ -21,7 +21,7 @@
 //     Roster of Head scorecards + org-level rollup.
 
 import mongoose from 'mongoose';
-import { getSubtree, getTeam, isOwnerLevel } from './hierarchyService.js';
+import { getSubtree, getTeam, isOwnerLevel, HEAD_ROLE_BY_DEPARTMENT } from './hierarchyService.js';
 import { computeMetrics, teamMedians, resolveWindow, METRIC_KEYS } from './performanceSignalsService.js';
 import { getOrSeedTarget, computeAttainment } from './targetService.js';
 import { detectFlags } from './redFlagService.js';
@@ -291,9 +291,23 @@ export async function getTeamDashboard(head, range) {
 // getOrgDashboard
 // =============================================================================
 
+// Rate metrics that must NOT be summed — use median instead
+const RATE_METRIC_KEYS = new Set(['conversionRate', 'taskSlaRate', 'ticketAvgResolutionHrs']);
+
 /**
- * Organization-level dashboard: one scorecard per Head (using their personal
- * metrics) plus an org-wide rollup.
+ * Organization-level dashboard: one scorecard per department Head (users whose
+ * role is one of the head roles, excluding 'Business Head') plus an org-wide
+ * rollup.
+ *
+ * Each head entry includes:
+ *   - user:       the head's basic profile fields
+ *   - metrics:    the head's OWN metrics for the period
+ *   - attainment: computed against the head's target
+ *   - teamSize:   number of members in the head's team
+ *   - teamRollup: aggregate of the team's metrics
+ *
+ * orgRollup sums additive metrics across all teamRollups and uses global
+ * teamMedians (owner as head) for rate metrics.
  *
  * @param {object} owner  - the Owner user doc
  * @param {{ from: Date, to: Date }} range
@@ -308,43 +322,85 @@ export async function getOrgDashboard(owner, range) {
 
   const { from, to } = validateRange(range);
   const { periodStart: monthStart } = resolveWindow('month', from);
+  const orgId = owner.organization;
 
-  // Fetch ALL org members (owner's "team" = everyone)
-  const allMembers = await getTeam(owner); // owner → all members excluding self
+  // ── 1. Fetch department head users ──────────────────────────────
+  const HEAD_ROLES_LIST = Object.values(HEAD_ROLE_BY_DEPARTMENT).filter(
+    (r) => r !== 'Business Head',
+  );
+  const headUsers = await User.find({
+    organization: orgId,
+    role: { $in: HEAD_ROLES_LIST },
+    isActive: true,
+  }).lean();
 
+  // ── 2. Build per-head scorecard (parallel across heads) ──────────
   const heads = await Promise.all(
-    allMembers.map(async (member) => {
-      const [metrics, targetDoc, flags] = await Promise.all([
-        computeMetrics(member, from, to),
-        getOrSeedTarget(member.organization, member._id, monthStart),
-        detectFlags(member.organization, member, new Date()),
+    headUsers.map(async (head) => {
+      // a) Head's own metrics + target
+      const [metrics, targetDoc, teamMembers, medians] = await Promise.all([
+        computeMetrics(head, from, to),
+        getOrSeedTarget(orgId, head._id, monthStart),
+        getTeam(head),
+        teamMedians(orgId, head, 'month', from),
       ]);
 
       const attainment = computeAttainment(metrics, targetDoc);
 
+      // b) Team member metrics (parallel within the head's team)
+      const memberMetrics = await Promise.all(
+        teamMembers.map((member) => computeMetrics(member, from, to)),
+      );
+
+      // c) Build teamRollup — sum additive metrics; use medians for rates
+      const teamRollup = zeroMetrics();
+      for (const mMetrics of memberMetrics) {
+        for (const key of METRIC_KEYS) {
+          if (!RATE_METRIC_KEYS.has(key)) {
+            teamRollup[key] += mMetrics[key] ?? 0;
+          }
+        }
+      }
+      // Replace rate metrics with team medians
+      teamRollup.conversionRate         = medians.conversionRate         ?? 0;
+      teamRollup.taskSlaRate            = medians.taskSlaRate            ?? 0;
+      teamRollup.ticketAvgResolutionHrs = medians.ticketAvgResolutionHrs ?? 0;
+
+      const teamSize = teamMembers.length;
+      teamRollup.teamSize = teamSize;
+
       return {
         user: {
-          _id:          member._id,
-          firstName:    member.firstName,
-          lastName:     member.lastName,
-          email:        member.email,
-          role:         member.role,
-          lastActiveAt: member.lastActiveAt ?? null,
+          _id:          head._id,
+          firstName:    head.firstName,
+          lastName:     head.lastName,
+          email:        head.email,
+          role:         head.role,
+          lastActiveAt: head.lastActiveAt ?? null,
         },
         metrics,
         attainment,
-        flagCount: countFlags(flags),
+        teamSize,
+        teamRollup,
       };
-    })
+    }),
   );
 
-  // Org rollup
+  // ── 3. Build orgRollup ───────────────────────────────────────────
+  // Sum additive metrics from all teamRollups; use global teamMedians for rates.
+  const globalMedians = await teamMedians(orgId, owner, 'month', from);
+
   const orgRollup = zeroMetrics();
-  for (const scorecard of heads) {
+  for (const headEntry of heads) {
     for (const key of METRIC_KEYS) {
-      orgRollup[key] += scorecard.metrics[key] ?? 0;
+      if (!RATE_METRIC_KEYS.has(key)) {
+        orgRollup[key] += headEntry.teamRollup[key] ?? 0;
+      }
     }
   }
+  orgRollup.conversionRate         = globalMedians.conversionRate         ?? 0;
+  orgRollup.taskSlaRate            = globalMedians.taskSlaRate            ?? 0;
+  orgRollup.ticketAvgResolutionHrs = globalMedians.ticketAvgResolutionHrs ?? 0;
 
   return { heads, orgRollup };
 }
