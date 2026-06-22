@@ -11,6 +11,7 @@ import mongoose from 'mongoose';
 // =============================================================================
 
 // WeeklyReflection model
+const mockFind         = jest.fn();
 const mockFindOne      = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 const mockFindById     = jest.fn();
@@ -21,6 +22,7 @@ const findOneReturns = (val) =>
 
 jest.unstable_mockModule('../../models/weeklyReflectionModel.js', () => ({
   default: {
+    find:             mockFind,
     findOne:          mockFindOne,
     findOneAndUpdate: mockFindOneAndUpdate,
     findById:         mockFindById,
@@ -72,6 +74,7 @@ const {
   currentStatus,
   transcribe,
   ack,
+  listForUser,
 } = await import('../../services/people/reflectionService.js');
 
 // =============================================================================
@@ -484,5 +487,60 @@ describe('ack', () => {
 
     const result = await ack(manager, doc._id, '  spaces  ');
     expect(result.managerAck.note).toBe('spaces');
+  });
+});
+
+// =============================================================================
+// listForUser
+// =============================================================================
+
+describe('listForUser', () => {
+  /** Build a chainable mock: find().sort().limit().lean() */
+  const mockFindChain = (resolvedValue) => {
+    const chain = {
+      sort:  jest.fn(),
+      limit: jest.fn(),
+      lean:  jest.fn().mockResolvedValue(resolvedValue),
+    };
+    chain.sort.mockReturnValue(chain);
+    chain.limit.mockReturnValue(chain);
+    mockFind.mockReturnValueOnce(chain);
+    return chain;
+  };
+
+  test('queries by organization and user._id', async () => {
+    const chain = mockFindChain([]);
+    await listForUser(USER);
+    expect(mockFind).toHaveBeenCalledWith({ organization: ORG, user: UID });
+    expect(chain.sort).toHaveBeenCalledWith({ weekStart: -1 });
+  });
+
+  test('sorts descending by weekStart', async () => {
+    const docs = [
+      makeDoc({ weekStart: new Date('2026-06-15T00:00:00Z') }),
+      makeDoc({ weekStart: new Date('2026-06-08T00:00:00Z') }),
+    ];
+    const chain = mockFindChain(docs);
+    const result = await listForUser(USER);
+    expect(chain.sort).toHaveBeenCalledWith({ weekStart: -1 });
+    expect(result).toBe(docs);
+  });
+
+  test('applies the default limit of 12', async () => {
+    const chain = mockFindChain([]);
+    await listForUser(USER);
+    expect(chain.limit).toHaveBeenCalledWith(12);
+  });
+
+  test('applies a custom limit when provided', async () => {
+    const chain = mockFindChain([]);
+    await listForUser(USER, 5);
+    expect(chain.limit).toHaveBeenCalledWith(5);
+  });
+
+  test('returns an empty array when the user has no reflections', async () => {
+    mockFindChain([]);
+    const result = await listForUser(USER);
+    expect(result).toEqual([]);
   });
 });

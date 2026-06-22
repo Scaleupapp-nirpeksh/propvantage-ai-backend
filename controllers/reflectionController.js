@@ -19,7 +19,26 @@ import {
   transcribe,
   ack,
   isoWeekOf,
+  listForUser,
 } from '../services/people/reflectionService.js';
+
+// =============================================================================
+// listMine
+// =============================================================================
+
+/**
+ * @desc    List the authenticated user's own reflections, newest first.
+ *          Accepts an optional ?limit= query param (default 12, max 50).
+ * @route   GET /api/people/reflections
+ * @access  Authenticated
+ */
+export const listMine = asyncHandler(async (req, res) => {
+  const rawLimit = parseInt(req.query.limit, 10);
+  const limit = rawLimit > 0 ? Math.min(rawLimit, 50) : 12;
+
+  const docs = await listForUser(req.user, limit);
+  res.json({ success: true, data: docs });
+});
 
 // =============================================================================
 // getCurrent

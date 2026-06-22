@@ -16,6 +16,7 @@ const mockSubmit        = jest.fn();
 const mockAck           = jest.fn();
 const mockTranscribe    = jest.fn();
 const mockIsoWeekOf     = jest.fn(() => '2026-W26');
+const mockListForUser   = jest.fn();
 
 jest.unstable_mockModule('../../services/people/reflectionService.js', () => ({
   currentStatus: mockCurrentStatus,
@@ -24,6 +25,7 @@ jest.unstable_mockModule('../../services/people/reflectionService.js', () => ({
   ack:           mockAck,
   transcribe:    mockTranscribe,
   isoWeekOf:     mockIsoWeekOf,
+  listForUser:   mockListForUser,
 }));
 
 // WeeklyReflection model
@@ -39,6 +41,7 @@ jest.unstable_mockModule('../../models/weeklyReflectionModel.js', () => ({
 // =============================================================================
 
 const {
+  listMine,
   getCurrent,
   getReflection,
   saveDraft,
@@ -69,6 +72,68 @@ beforeEach(() => {
   mockNext.mockReset();
   // Restore default isoWeekOf after resetAllMocks clears it
   mockIsoWeekOf.mockReturnValue('2026-W26');
+});
+
+// =============================================================================
+// listMine
+// =============================================================================
+
+describe('listMine', () => {
+  test('returns the list for req.user wrapped in { success, data }', async () => {
+    const docs = [
+      { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W26', status: 'submitted' },
+      { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W25', status: 'submitted' },
+    ];
+    mockListForUser.mockResolvedValueOnce(docs);
+
+    const req = { user: USER, query: {} };
+    const res = mockRes();
+    await listMine(req, res, mockNext);
+
+    expect(mockListForUser).toHaveBeenCalledWith(USER, 12);
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: docs });
+  });
+
+  test('passes ?limit= to listForUser (capped at 50)', async () => {
+    mockListForUser.mockResolvedValueOnce([]);
+
+    const req = { user: USER, query: { limit: '5' } };
+    const res = mockRes();
+    await listMine(req, res, mockNext);
+
+    expect(mockListForUser).toHaveBeenCalledWith(USER, 5);
+  });
+
+  test('caps limit at 50 when a larger value is supplied', async () => {
+    mockListForUser.mockResolvedValueOnce([]);
+
+    const req = { user: USER, query: { limit: '100' } };
+    const res = mockRes();
+    await listMine(req, res, mockNext);
+
+    expect(mockListForUser).toHaveBeenCalledWith(USER, 50);
+  });
+
+  test('uses default limit 12 when ?limit= is absent or invalid', async () => {
+    mockListForUser.mockResolvedValueOnce([]);
+
+    const req = { user: USER, query: { limit: 'bad' } };
+    const res = mockRes();
+    await listMine(req, res, mockNext);
+
+    expect(mockListForUser).toHaveBeenCalledWith(USER, 12);
+  });
+
+  test('propagates service errors to next', async () => {
+    const err = new Error('DB error');
+    mockListForUser.mockRejectedValueOnce(err);
+
+    const req = { user: USER, query: {} };
+    const res = mockRes();
+    await listMine(req, res, mockNext);
+
+    expect(mockNext).toHaveBeenCalledWith(err);
+  });
 });
 
 // =============================================================================

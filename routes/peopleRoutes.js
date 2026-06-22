@@ -21,6 +21,7 @@ import {
   getMoraleOrg,
 } from '../controllers/peopleController.js';
 import {
+  listMine,
   getCurrent,
   getReflection,
   saveDraft,
@@ -54,16 +55,21 @@ router.get('/targets/:userId',  getTargets);
 router.put('/targets/:userId',  setTargets);
 
 // ─── REFLECTIONS ──────────────────────────────────────────────────
-// NOTE: /reflections/current must be declared BEFORE /reflections/:isoWeek
-// so Express does not match "current" as an :isoWeek param.
+// NOTE: static paths must be declared BEFORE parameterized routes so Express
+// does not swallow fixed segments as :isoWeek / :id values.
 router.get('/reflections/current',             getCurrent);
 
 // Audio transcription — multipart upload; must come before the :isoWeek routes
 // that also start with /reflections/.  Express matches by declaration order.
 router.post('/reflections/transcribe', audioUpload.single('audio'), transcribeAudio);
 
+// List the caller's own reflections (Reflection History tab).
+// Declared BEFORE /reflections/:isoWeek so "GET /reflections" is not consumed
+// by the parameterised route.
+router.get('/reflections',                     listMine);               // ?limit=
+
 // Standard reflection CRUD (identified by ISO-week string, e.g. '2026-W26')
-router.get('/reflections',                     getReflection);          // ?isoWeek=
+router.get('/reflections/:isoWeek',            getReflection);
 router.put('/reflections/:isoWeek',            saveDraft);
 router.post('/reflections/:isoWeek/submit',    submitReflection);
 

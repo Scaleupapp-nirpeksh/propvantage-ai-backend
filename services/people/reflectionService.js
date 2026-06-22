@@ -318,6 +318,27 @@ export async function transcribe(audioBuffer, mime) {
 }
 
 // =============================================================================
+// listForUser
+// =============================================================================
+
+/**
+ * Return the authenticated user's own reflections, sorted newest-first.
+ *
+ * @param {object} user         — the requesting user (must have ._id and .organization)
+ * @param {number} [limit=12]   — max documents to return
+ * @returns {Promise<object[]>} array of WeeklyReflection lean documents
+ */
+export async function listForUser(user, limit = 12) {
+  return WeeklyReflection.find({
+    organization: user.organization,
+    user: user._id,
+  })
+    .sort({ weekStart: -1 })
+    .limit(limit)
+    .lean();
+}
+
+// =============================================================================
 // ack
 // =============================================================================
 
