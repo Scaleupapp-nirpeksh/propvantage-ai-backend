@@ -452,6 +452,35 @@ describe('demo-activity seeding', () => {
     expect(mockSaleCreate).not.toHaveBeenCalled();
   });
 
+  test('lead-conversion idempotency — leads already Booked with demo_seed note are not converted again', async () => {
+    // Simulate a second run: all leads for every user are already Booked with the demo_seed note
+    const bookedLead1 = {
+      _id:           new mongoose.Types.ObjectId(),
+      status:        'Booked',
+      assignedTo:    USER_1,
+      statusHistory: [{ status: 'Booked', note: 'demo_seed' }],
+    };
+    const bookedLead2 = {
+      _id:           new mongoose.Types.ObjectId(),
+      status:        'Booked',
+      assignedTo:    USER_2,
+      statusHistory: [{ status: 'Booked', note: 'demo_seed' }],
+    };
+    // Lead.find returns already-converted leads for every user
+    mockLeadFind.mockImplementation(async (query) => {
+      const assignedTo = query?.assignedTo;
+      if (assignedTo?.toString() === USER_1.toString()) return [bookedLead1];
+      if (assignedTo?.toString() === USER_2.toString()) return [bookedLead2];
+      return [];
+    });
+
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+
+    // The conversion update must NOT be called for any lead
+    expect(mockLeadFindByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.leadsConverted).toBe(0);
+  });
+
   test('interactions threshold updated to 10/14-day window', async () => {
     mockInteractionCountDocuments.mockResolvedValue(0);
     mockLeadFindOne.mockResolvedValue({ _id: LEAD_ID });

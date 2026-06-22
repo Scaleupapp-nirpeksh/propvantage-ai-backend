@@ -392,6 +392,8 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
 
   // ── Lead conversions ──────────────────────────────────────────────────────
   let leadsConverted = 0;
+  // Running counter so every created demo lead gets a unique phone across all users
+  let leadPhoneCounter = 0;
 
   const project = await Project.findOne({ organization: orgId });
 
@@ -408,10 +410,11 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
           organization: orgId,
           project:      project._id,
           firstName:    'Demo',
-          phone:        `9000000${String(i).padStart(3, '0')}`,
+          phone:        `90${String(leadPhoneCounter).padStart(8, '0')}`,
           assignedTo:   user._id,
           notes:        'demo_seed',
         });
+        leadPhoneCounter++;
         createdLeads.push(lead);
       }
       userLeads = createdLeads;
