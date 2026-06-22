@@ -284,6 +284,34 @@ describe('analyzeReflection', () => {
 
     expect(result.riskSignals).toEqual(['burnout', 'flight-risk']);
   });
+
+  test('returns parsed sentiment object (not null) when doc.save() throws after successful Claude analysis', async () => {
+    const sentimentPayload = {
+      score:       0.55,
+      label:       'positive',
+      themes:      ['great close rate', 'team momentum'],
+      riskSignals: ['workload'],
+    };
+
+    mockMessagesCreate.mockResolvedValueOnce(mockAnthropicResponse(sentimentPayload));
+
+    const doc = makeReflectionDoc({
+      save: jest.fn().mockRejectedValue(new Error('DB write failed')),
+    });
+
+    // Must not throw — save error is swallowed
+    const result = await analyzeReflection(doc);
+
+    // The analysis result must survive the save failure
+    expect(result).not.toBeNull();
+    expect(typeof result.score).toBe('number');
+    expect(result.score).toBeCloseTo(0.55, 2);
+    expect(result.label).toBe('positive');
+    expect(Array.isArray(result.themes)).toBe(true);
+    expect(result.themes).toEqual(expect.arrayContaining(['great close rate']));
+    expect(Array.isArray(result.riskSignals)).toBe(true);
+    expect(result.riskSignals).toEqual(['workload']);
+  });
 });
 
 // =============================================================================
