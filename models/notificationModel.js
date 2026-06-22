@@ -71,6 +71,9 @@ export const NOTIFICATION_TYPES = [
   // People & Performance — red-flag engine (Task 4)
   'perf_redflag_self',         // nudge to member about their own red-flags
   'perf_redflag_digest',       // daily digest to a Head summarising flagged team members
+  // People & Performance — reflections (Task 5)
+  'reflection_due',            // Fri reminder to submit the current week's reflection
+  'reflection_overdue',        // Mon reminder when last week's reflection was not submitted
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
