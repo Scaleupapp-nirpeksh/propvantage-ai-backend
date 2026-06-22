@@ -710,3 +710,191 @@ describe('DEFAULT_THRESHOLDS config', () => {
     expect(DEFAULT_THRESHOLDS.lowActivityWindowDays).toBe(7);
   });
 });
+
+// ─── sendDigests — precomputedFlags path ─────────────────────────────────────
+
+describe('sendDigests — precomputedFlags (4th param)', () => {
+  const member = makeUser();
+  const manager = makeManager();
+
+  // Prebuilt flags representing one stale lead.
+  const flagsWithOneStale = {
+    staleLeads:       { count: 1, items: [String(new mongoose.Types.ObjectId())] },
+    noMovementLeads:  { count: 0, items: [] },
+    overdueFollowUps: { count: 0, items: [] },
+    overdueTasks:     { count: 0, items: [] },
+    agingPipeline:    { count: 0, items: [] },
+    lowActivity:      { count: 0, items: [] },
+  };
+
+  // Prebuilt flags representing zero flags (member is clean).
+  const flagsAllZero = {
+    staleLeads:       { count: 0, items: [] },
+    noMovementLeads:  { count: 0, items: [] },
+    overdueFollowUps: { count: 0, items: [] },
+    overdueTasks:     { count: 0, items: [] },
+    agingPipeline:    { count: 0, items: [] },
+    lowActivity:      { count: 0, items: [] },
+  };
+
+  beforeEach(() => {
+    mockUserFind.mockReturnValue({
+      select: () => ({
+        lean: () =>
+          Promise.resolve([
+            { ...member, isActive: true, invitationStatus: 'accepted' },
+          ]),
+      }),
+    });
+    mockGetManagerChain.mockResolvedValue([manager]);
+  });
+
+  test('detectFlags is NOT called when member flags are in the precomputed map', async () => {
+    const precomputed = new Map([[String(member._id), flagsWithOneStale]]);
+
+    await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    // Lead.find and Task.find should not have been called because detectFlags was skipped.
+    expect(mockLeadFind).not.toHaveBeenCalled();
+    expect(mockTaskFind).not.toHaveBeenCalled();
+    expect(mockInteractionCount).not.toHaveBeenCalled();
+  });
+
+  test('self-nudge fires correctly with precomputed flags (1 stale lead)', async () => {
+    const precomputed = new Map([[String(member._id), flagsWithOneStale]]);
+
+    const result = await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    expect(result.selfNudges).toBe(1);
+    const selfCall = mockCreateNotification.mock.calls.find(
+      ([args]) => args?.type === 'perf_redflag_self'
+    );
+    expect(selfCall).toBeDefined();
+    expect(selfCall[0].recipient.toString()).toBe(member._id.toString());
+  });
+
+  test('manager digest fires correctly with precomputed flags', async () => {
+    const precomputed = new Map([[String(member._id), flagsWithOneStale]]);
+
+    const result = await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    expect(result.digests).toBe(1);
+    const digestCall = mockCreateNotification.mock.calls.find(
+      ([args]) => args?.type === 'perf_redflag_digest'
+    );
+    expect(digestCall).toBeDefined();
+    expect(digestCall[0].recipient.toString()).toBe(manager._id.toString());
+  });
+
+  test('no self-nudge when precomputed flags are all zero', async () => {
+    const precomputed = new Map([[String(member._id), flagsAllZero]]);
+
+    const result = await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    expect(result.selfNudges).toBe(0);
+    expect(mockLeadFind).not.toHaveBeenCalled();
+  });
+
+  test('detectFlags IS called for a member NOT in the precomputed map', async () => {
+    // Pass an empty map — no precomputed entries at all.
+    const precomputed = new Map();
+
+    // Provide a stale lead so detectFlags returns something flagged.
+    let callCount = 0;
+    mockLeadFind.mockImplementation(() => {
+      callCount++;
+      const docs = callCount === 1 ? [{ _id: new mongoose.Types.ObjectId() }] : [];
+      return { select: () => ({ lean: () => Promise.resolve(docs) }) };
+    });
+    mockInteractionCount.mockResolvedValue(10);
+
+    const result = await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    // detectFlags was called (Lead.find was invoked).
+    expect(mockLeadFind).toHaveBeenCalled();
+    expect(result.selfNudges).toBe(1);
+  });
+
+  test('empty map causes detectFlags to be called for all members (same as null)', async () => {
+    const emptyMap = new Map();
+
+    let callCount = 0;
+    mockLeadFind.mockImplementation(() => {
+      callCount++;
+      return { select: () => ({ lean: () => Promise.resolve([]) }) };
+    });
+    mockInteractionCount.mockResolvedValue(10);
+
+    await sendDigests(ORG, AS_OF, {}, emptyMap);
+
+    // Lead queries were issued (detectFlags ran).
+    expect(mockLeadFind).toHaveBeenCalled();
+  });
+
+  test('members with precomputed flags AND members without can coexist in one call', async () => {
+    const member2 = makeUser({ _id: new mongoose.Types.ObjectId(), firstName: 'Carol' });
+
+    // Two members: member has precomputed flags; member2 does not.
+    mockUserFind.mockReturnValue({
+      select: () => ({
+        lean: () =>
+          Promise.resolve([
+            { ...member,  isActive: true, invitationStatus: 'accepted' },
+            { ...member2, isActive: true, invitationStatus: 'accepted' },
+          ]),
+      }),
+    });
+    mockGetManagerChain.mockResolvedValue([manager]);
+
+    // Only member is in the precomputed map with one stale lead.
+    const precomputed = new Map([[String(member._id), flagsWithOneStale]]);
+
+    // member2 has no precomputed flags → detectFlags will be called for it.
+    // Make Lead.find return a stale lead for member2 as well.
+    let leadCallCount = 0;
+    mockLeadFind.mockImplementation(() => {
+      leadCallCount++;
+      const docs = leadCallCount === 1 ? [{ _id: new mongoose.Types.ObjectId() }] : [];
+      return { select: () => ({ lean: () => Promise.resolve(docs) }) };
+    });
+    mockInteractionCount.mockResolvedValue(10);
+
+    const result = await sendDigests(ORG, AS_OF, {}, precomputed);
+
+    // detectFlags ran for member2 (Lead queries were issued).
+    expect(mockLeadFind).toHaveBeenCalled();
+    // Both members had flags → 2 self-nudges.
+    expect(result.selfNudges).toBe(2);
+  });
+
+  test('passing null preserves original behavior (detectFlags called for all members)', async () => {
+    // Explicit null → standard path.
+    let callCount = 0;
+    mockLeadFind.mockImplementation(() => {
+      callCount++;
+      const docs = callCount === 1 ? [{ _id: new mongoose.Types.ObjectId() }] : [];
+      return { select: () => ({ lean: () => Promise.resolve(docs) }) };
+    });
+    mockInteractionCount.mockResolvedValue(10);
+
+    const result = await sendDigests(ORG, AS_OF, {}, null);
+
+    expect(mockLeadFind).toHaveBeenCalled();
+    expect(result.selfNudges).toBe(1);
+  });
+
+  test('passing undefined preserves original behavior (detectFlags called for all members)', async () => {
+    let callCount = 0;
+    mockLeadFind.mockImplementation(() => {
+      callCount++;
+      const docs = callCount === 1 ? [{ _id: new mongoose.Types.ObjectId() }] : [];
+      return { select: () => ({ lean: () => Promise.resolve(docs) }) };
+    });
+    mockInteractionCount.mockResolvedValue(10);
+
+    const result = await sendDigests(ORG, AS_OF, {}, undefined);
+
+    expect(mockLeadFind).toHaveBeenCalled();
+    expect(result.selfNudges).toBe(1);
+  });
+});
