@@ -90,10 +90,10 @@ export function isOwnerLevel(user) {
  *
  * Resolution order:
  *   1. If owner-level (role === 'Business Head' or roleRef.isOwnerRole) → 'Business Head'
+ *      (owner check runs first by design — it short-circuits all other steps)
  *   2. If user.role is in DEPARTMENT_BY_ROLE → that mapped head role
- *   3. If user.role === 'Business Head' already handled above
- *   4. Else if user.roleRef?.department is set → use that value
- *   5. Else → 'unassigned'
+ *   3. Else if user.roleRef?.department is set → use that value
+ *   4. Else → 'unassigned'
  *
  * @param {object} user
  * @returns {string}
@@ -217,6 +217,13 @@ export async function getManagerChain(user) {
  * - Owner/Business Head → scope 'org', all org user ids
  * - Head role          → scope 'department', their team's ids
  * - Member / unassigned → scope 'self', [user._id]
+ *
+ * CONTRACT — scope 'org':
+ *   When scope === 'org', the caller MUST treat access as unrestricted (every org user,
+ *   including the caller). Do NOT rely on `userIds` membership to check if the owner
+ *   themselves are included — the owner's own _id is intentionally excluded from
+ *   `userIds` (they queried with `_id: { $ne: user._id }`). Downstream code that needs
+ *   "all users including self" should use the scope flag, not the array length.
  *
  * @param {object} user
  * @returns {Promise<{ scope: 'org'|'department'|'self', userIds: import('mongoose').Types.ObjectId[] }>}

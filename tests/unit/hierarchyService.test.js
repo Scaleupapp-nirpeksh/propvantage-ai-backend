@@ -187,11 +187,20 @@ describe('getTeam', () => {
     const result = await getTeam(head);
     expect(result).toEqual([member1, member2]);
 
-    // Verify query was org-scoped and excluded the head
+    // Verify query was org-scoped, excluded the head, AND used the Sales department role filter
     expect(mockUserFind).toHaveBeenCalledWith(
       expect.objectContaining({
         organization: ORG,
         _id: expect.objectContaining({ $ne: head._id }),
+        role: expect.objectContaining({
+          $in: expect.arrayContaining([
+            'Sales Manager',
+            'Sales Executive',
+            'Channel Partner Manager',
+            'Channel Partner Admin',
+            'Channel Partner Agent',
+          ]),
+        }),
       })
     );
   });
@@ -263,6 +272,17 @@ describe('getManagerChain', () => {
 
     const chain = await getManagerChain(makeCustomUser(undefined));
     expect(chain).toEqual([businessHead]);
+  });
+
+  test('head role not found in roster → chain terminates gracefully (no hang/throw)', async () => {
+    // Mock User.find to return an empty array (no user holds Sales Head role in this org)
+    mockUserFind.mockReturnValue({ lean: () => Promise.resolve([]) });
+
+    const salesExec = makeUser('Sales Executive');
+    const chain = await getManagerChain(salesExec);
+
+    // Chain must be empty (stopped at first missing head) — must not loop or throw
+    expect(chain).toEqual([]);
   });
 });
 
