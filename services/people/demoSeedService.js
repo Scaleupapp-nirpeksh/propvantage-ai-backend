@@ -395,7 +395,7 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
           organization: orgId,
           project:      project?._id,
           firstName:    'Demo',
-          phone:        `900000000${i}`,
+          phone:        `9000000${String(i).padStart(3, '0')}`,
           assignedTo:   user._id,
           notes:        'demo_seed',
         });
@@ -430,6 +430,7 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
 
   // ── Sales seeding ─────────────────────────────────────────────────────────
   let salesCreated = 0;
+  const usedUnitIds = new Set();
 
   for (const user of members) {
     if (!SALES_CAPABLE_ROLES.has(user.role)) continue;
@@ -441,9 +442,10 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
     });
     if (existingSalesCount > 0) continue;
 
-    // Find available units (up to 4)
-    const allAvailableUnits = await Unit.find({ organization: orgId, status: 'available' });
-    const availableUnits = allAvailableUnits.slice(0, 4);
+    // Find available units (up to 4), excluding already-used ones
+    const availableUnits = (await Unit.find({ organization: orgId, status: 'available' }))
+      .filter(u => !usedUnitIds.has(u._id.toString()))
+      .slice(0, 4);
     if (!availableUnits || availableUnits.length === 0) continue;
 
     // Find a Booked lead for this user
@@ -477,6 +479,7 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
         costSheetSnapshot: {},
       });
       salesCreated++;
+      usedUnitIds.add(unit._id.toString());
 
       // Mark unit as sold
       await Unit.findByIdAndUpdate(unit._id, { $set: { status: 'sold' } });

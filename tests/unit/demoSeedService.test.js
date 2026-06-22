@@ -54,11 +54,13 @@ jest.unstable_mockModule('../../models/interactionModel.js', () => ({
 const mockLeadFind              = jest.fn();
 const mockLeadFindOne           = jest.fn();
 const mockLeadFindByIdAndUpdate = jest.fn();
+const mockLeadCreate            = jest.fn();
 jest.unstable_mockModule('../../models/leadModel.js', () => ({
   default: {
     find:              mockLeadFind,
     findOne:           mockLeadFindOne,
     findByIdAndUpdate: mockLeadFindByIdAndUpdate,
+    create:            mockLeadCreate,
   },
 }));
 
@@ -187,6 +189,7 @@ beforeEach(() => {
   mockTaskCountDocuments.mockResolvedValue(0);
   mockTaskCreate.mockResolvedValue({});
   mockLeadFindByIdAndUpdate.mockResolvedValue({});
+  mockLeadCreate.mockResolvedValue({ _id: new mongoose.Types.ObjectId(), status: 'New' });
   mockSaleCountDocuments.mockResolvedValue(0);
   mockSaleCreate.mockResolvedValue({});
   mockUnitFindByIdAndUpdate.mockResolvedValue({});
@@ -377,6 +380,10 @@ describe('demo-activity seeding', () => {
       'Document & Compliance', 'Customer Service', 'Approval', 'General',
     ];
     const VALID_TASK_STATUSES = ['Open', 'In Progress', 'Completed'];
+    const validUserIds = ACTIVE_USERS.map(u => u._id.toString());
+    const firstCall = mockTaskCreate.mock.calls[0][0];
+    const assignedToStr = firstCall.assignedTo.toString();
+    expect(validUserIds).toContain(assignedToStr);
     for (const [doc] of mockTaskCreate.mock.calls) {
       expect(doc.organization.toString()).toBe(ORG.toString());
       expect(VALID_TASK_CATEGORIES).toContain(doc.category);
