@@ -74,6 +74,8 @@ export const NOTIFICATION_TYPES = [
   // People & Performance — reflections (Task 5)
   'reflection_due',            // Fri reminder to submit the current week's reflection
   'reflection_overdue',        // Mon reminder when last week's reflection was not submitted
+  // People & Performance — morale roll-ups (Task 6)
+  'morale_summary_ready',      // weekly morale roll-up is ready for a Head or Owner
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -89,6 +91,8 @@ export const RELATED_ENTITY_TYPES = [
   'ReportInstance',
   // Email-to-ticket support system
   'SupportTicket',
+  // People & Performance — morale roll-ups (Task 6)
+  'MoraleSummary',
 ];
 
 // =============================================================================

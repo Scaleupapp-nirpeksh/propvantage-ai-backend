@@ -82,6 +82,7 @@ import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
 import { registerNightlyPerformanceSnapshotJob } from './jobs/nightlyPerformanceSnapshot.js';
+import { registerMoraleSummariesJob } from './jobs/generateMoraleSummaries.js';
 
 // Load environment variables
 dotenv.config();
@@ -507,5 +508,10 @@ httpServer.listen(PORT, () => {
     registerNightlyPerformanceSnapshotJob();
   } catch (err) {
     console.error('[people] Failed to register nightly performance snapshot job:', err.message);
+  }
+  try {
+    registerMoraleSummariesJob();
+  } catch (err) {
+    console.error('[people] Failed to register morale summaries job:', err.message);
   }
 });

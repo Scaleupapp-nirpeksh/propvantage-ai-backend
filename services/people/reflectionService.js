@@ -18,6 +18,17 @@ import WeeklyReflection, {
 import { transcribeAudio } from '../openAIService.js';
 import { getManagerChain } from './hierarchyService.js';
 
+// Lazy import to avoid circular deps at module load time.
+// analyzeReflection is fire-and-forget so any error is silently swallowed.
+async function _triggerSentimentAnalysis(reflectionDoc) {
+  try {
+    const { analyzeReflection } = await import('./moraleService.js');
+    await analyzeReflection(reflectionDoc);
+  } catch (err) {
+    console.error('[reflectionService] sentiment fire-and-forget error:', err.message);
+  }
+}
+
 // =============================================================================
 // ISO-WEEK HELPERS
 // =============================================================================
@@ -237,6 +248,10 @@ export async function submit(user, isoWeek) {
   doc.status = 'submitted';
   doc.submittedAt = new Date();
   await doc.save();
+
+  // Fire-and-forget AI sentiment analysis — best-effort, non-blocking.
+  // A Claude outage or parse error must NEVER affect submit latency or UX.
+  _triggerSentimentAnalysis(doc).catch(() => {/* already logged inside */});
 
   return doc;
 }
