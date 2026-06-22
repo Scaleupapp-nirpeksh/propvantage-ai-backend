@@ -1,12 +1,14 @@
 // File: services/people/demoSeedService.js
 // Description: Owner-only demo-data seeder for the People & Performance module.
-//   Creates realistic WeeklyReflections and Interactions for active org members
-//   so demo environments have rich sentiment and morale data to display.
+//   Creates realistic WeeklyReflections, Interactions, Tasks, Leads, and Sales
+//   for demo environments so the performance dashboards show meaningful numbers.
 //
-//   seedDemoPeopleData(orgId, { weeks = 4 }) -> { reflections, interactions, morale }
+//   seedDemoPeopleData(orgId, { weeks = 4 }) -> { reflections, interactions, morale, tasks, leadsConverted, salesCreated, activitySeeded, activitySkipReason }
 //
 //   Idempotent: reflections are skipped if they already exist for that user+week;
-//   interactions are skipped if the member already has >= 3 in the last 7 days.
+//   interactions are skipped if the member already has >= 10 in the last 14 days;
+//   tasks are skipped if the member already has demo_seed tasks;
+//   sales are skipped if the member already has sales recorded.
 //   All AI calls (analyzeReflection, buildTeamMorale, buildOrgMorale) are best-effort
 //   (errors are swallowed so a missing API key does not abort the seed).
 
@@ -14,6 +16,11 @@ import User             from '../../models/userModel.js';
 import WeeklyReflection from '../../models/weeklyReflectionModel.js';
 import Interaction      from '../../models/interactionModel.js';
 import Lead             from '../../models/leadModel.js';
+import Organization     from '../../models/organizationModel.js';
+import Sale             from '../../models/salesModel.js';
+import Unit             from '../../models/unitModel.js';
+import Task             from '../../models/taskModel.js';
+import Project          from '../../models/projectModel.js';
 import {
   analyzeReflection,
   buildTeamMorale,
@@ -67,6 +74,22 @@ const HEAD_ROLES = new Set([
   'CRM Head', 'Marketing Head', 'Project Director',
 ]);
 
+// ─── SALES-CAPABLE ROLES ──────────────────────────────────────────────────────
+const SALES_CAPABLE_ROLES = new Set([
+  'Sales Head', 'Sales Manager', 'Sales Executive', 'Business Head',
+]);
+
+// ─── TASK CATEGORIES ─────────────────────────────────────────────────────────
+const TASK_CATEGORIES = [
+  'Lead & Sales',
+  'Payment & Collection',
+  'Construction',
+  'Document & Compliance',
+  'Customer Service',
+  'Approval',
+  'General',
+];
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 /** Pick a tone bucket based on user index and week offset for variety. */
@@ -83,16 +106,25 @@ async function bestEffort(fn) {
   }
 }
 
+/** Return a random date within the last N days. */
+function randomDateInLastDays(days) {
+  const ms = Math.floor(Math.random() * days * 24 * 60 * 60 * 1000);
+  return new Date(Date.now() - ms);
+}
+
+/** Return a random integer between min and max (inclusive). */
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 
 /**
- * Seed demo People & Performance data for an org. Idempotent:
- *   - reflections are only created if none exist for that user+week
- *   - interactions are only added if the member has < 3 in the past 7 days
+ * Seed demo People & Performance data for an org. Idempotent.
  *
  * @param {import('mongoose').Types.ObjectId|string} orgId
  * @param {{ weeks?: number }} [options]
- * @returns {Promise<{ reflections: number, interactions: number, morale: number }>}
+ * @returns {Promise<{ reflections: number, interactions: number, morale: number, tasks: number, leadsConverted: number, salesCreated: number, activitySeeded: boolean, activitySkipReason: string|null }>}
  */
 export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
   const members = await User.find({
@@ -102,7 +134,16 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
   }).lean();
 
   if (members.length === 0) {
-    return { reflections: 0, interactions: 0, morale: 0 };
+    return {
+      reflections:        0,
+      interactions:       0,
+      morale:             0,
+      tasks:              0,
+      leadsConverted:     0,
+      salesCreated:       0,
+      activitySeeded:     false,
+      activitySkipReason: 'No active members',
+    };
   }
 
   let reflectionsCreated = 0;
@@ -163,7 +204,7 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
   }
 
   // ── Interactions ──────────────────────────────────────────────────────────
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
   for (const user of members) {
     // Look up an assigned lead
@@ -173,19 +214,19 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
     });
     if (!lead) continue; // skip if no assigned lead
 
-    // Idempotency: skip if member already has >= 3 recent interactions
+    // Idempotency: skip if member already has >= 10 recent interactions
     const recentCount = await Interaction.countDocuments({
       organization: orgId,
       user:         user._id,
-      createdAt:    { $gte: sevenDaysAgo },
+      createdAt:    { $gte: fourteenDaysAgo },
     });
-    if (recentCount >= 3) continue;
+    if (recentCount >= 10) continue;
 
-    // Create up to (3 - recentCount) interactions spread over the last ~2 weeks
-    const toCreate = Math.min(3 - recentCount, INTERACTION_COPY.length);
+    // Create up to (12 - recentCount) interactions spread over the last ~14 days
+    const toCreate = Math.min(12 - recentCount, INTERACTION_COPY.length * 2);
     for (let i = 0; i < toCreate; i++) {
       const copy    = INTERACTION_COPY[i % INTERACTION_COPY.length];
-      const daysAgo = (i + 1) * 3; // 3, 6, 9 days ago
+      const daysAgo = (i + 1); // 1..12 days ago
       const createdAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
 
       await Interaction.create({
@@ -218,9 +259,238 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
   const orgResult = await bestEffort(() => buildOrgMorale(orgId, latestWeek));
   if (orgResult) moraleBuilt++;
 
+  // ── Safety gate: only seed operational activity for demo orgs ─────────────
+  const org = await Organization.findById(orgId);
+  if (!org || !/demo/i.test(org.name)) {
+    return {
+      reflections:        reflectionsCreated,
+      interactions:       interactionsCreated,
+      morale:             moraleBuilt,
+      tasks:              0,
+      leadsConverted:     0,
+      salesCreated:       0,
+      activitySeeded:     false,
+      activitySkipReason: org
+        ? `Org name "${org.name}" does not match /demo/i`
+        : `Organization ${orgId} not found`,
+    };
+  }
+
+  // ── Resolve owner (Business Head or first member) ─────────────────────────
+  const owner = members.find((m) => m.role === 'Business Head') ?? members[0];
+
+  // ── Tasks seeding ─────────────────────────────────────────────────────────
+  let tasksCreated = 0;
+
+  for (const user of members) {
+    // Idempotency: skip if this user already has demo_seed tasks
+    const existingTaskCount = await Task.countDocuments({
+      organization: orgId,
+      assignedTo:   user._id,
+      tags:         'demo_seed',
+    });
+    if (existingTaskCount > 0) continue;
+
+    const now = Date.now();
+
+    // Task 1: Completed, on-time (completedAt < dueDate)
+    const completedAt1 = new Date(now - randInt(1, 20) * 24 * 60 * 60 * 1000);
+    const dueDate1     = new Date(completedAt1.getTime() + 2 * 24 * 60 * 60 * 1000); // dueDate after completedAt → on-time
+    await Task.create({
+      organization: orgId,
+      title:        'Follow up with site-visit prospects and update pipeline status',
+      category:     TASK_CATEGORIES[0], // 'Lead & Sales'
+      createdBy:    owner._id,
+      assignedTo:   user._id,
+      status:       'Completed',
+      priority:     'High',
+      dueDate:      dueDate1,
+      completedAt:  completedAt1,
+      sla:          { isOverdue: false },
+      tags:         ['demo_seed'],
+    });
+    tasksCreated++;
+
+    // Task 2: Completed, on-time (completedAt < dueDate)
+    const completedAt2 = new Date(now - randInt(21, 35) * 24 * 60 * 60 * 1000);
+    const dueDate2     = new Date(completedAt2.getTime() + 3 * 24 * 60 * 60 * 1000); // on-time
+    await Task.create({
+      organization: orgId,
+      title:        'Prepare payment collection reminder for overdue instalments',
+      category:     TASK_CATEGORIES[1], // 'Payment & Collection'
+      createdBy:    owner._id,
+      assignedTo:   user._id,
+      status:       'Completed',
+      priority:     'Medium',
+      dueDate:      dueDate2,
+      completedAt:  completedAt2,
+      sla:          { isOverdue: false },
+      tags:         ['demo_seed'],
+    });
+    tasksCreated++;
+
+    // Task 3: Completed, SLA breach (completedAt > dueDate)
+    const dueDate3     = new Date(now - randInt(10, 20) * 24 * 60 * 60 * 1000);
+    const completedAt3 = new Date(dueDate3.getTime() + 2 * 24 * 60 * 60 * 1000); // completedAt after dueDate → breach
+    await Task.create({
+      organization: orgId,
+      title:        'Complete compliance document review and submit to legal',
+      category:     TASK_CATEGORIES[3], // 'Document & Compliance'
+      createdBy:    owner._id,
+      assignedTo:   user._id,
+      status:       'Completed',
+      priority:     'Critical',
+      dueDate:      dueDate3,
+      completedAt:  completedAt3,
+      sla:          { isOverdue: true },
+      tags:         ['demo_seed'],
+    });
+    tasksCreated++;
+
+    // Task 4: Open
+    const dueDate4 = new Date(now + 7 * 24 * 60 * 60 * 1000); // due next week
+    await Task.create({
+      organization: orgId,
+      title:        'Coordinate site visit for new enquiry batch',
+      category:     TASK_CATEGORIES[0], // 'Lead & Sales'
+      createdBy:    owner._id,
+      assignedTo:   user._id,
+      status:       'Open',
+      priority:     'Medium',
+      dueDate:      dueDate4,
+      tags:         ['demo_seed'],
+    });
+    tasksCreated++;
+
+    // Task 5: In Progress
+    const dueDate5 = new Date(now + 3 * 24 * 60 * 60 * 1000); // due in 3 days
+    await Task.create({
+      organization: orgId,
+      title:        'Review and approve updated project floor plan documentation',
+      category:     TASK_CATEGORIES[2], // 'Construction'
+      createdBy:    owner._id,
+      assignedTo:   user._id,
+      status:       'In Progress',
+      priority:     'High',
+      dueDate:      dueDate5,
+      tags:         ['demo_seed'],
+    });
+    tasksCreated++;
+  }
+
+  // ── Lead conversions ──────────────────────────────────────────────────────
+  let leadsConverted = 0;
+
+  const project = await Project.findOne({ organization: orgId });
+
+  for (const user of members) {
+    // Find existing assigned leads
+    let userLeads = await Lead.find({ organization: orgId, assignedTo: user._id });
+
+    // If no leads, create demo leads
+    if (!userLeads || userLeads.length === 0) {
+      const createdLeads = [];
+      for (let i = 0; i < 4; i++) {
+        const lead = await Lead.create({
+          organization: orgId,
+          project:      project?._id,
+          firstName:    'Demo',
+          phone:        `900000000${i}`,
+          assignedTo:   user._id,
+          notes:        'demo_seed',
+        });
+        createdLeads.push(lead);
+      }
+      userLeads = createdLeads;
+    }
+
+    // Idempotency: skip if already has a Booked lead with demo_seed note in statusHistory
+    const alreadyConverted = userLeads.some(
+      (l) =>
+        l.status === 'Booked' &&
+        Array.isArray(l.statusHistory) &&
+        l.statusHistory.some((h) => h.status === 'Booked' && h.note === 'demo_seed'),
+    );
+    if (alreadyConverted) continue;
+
+    // Convert ~35% of leads (at least 1)
+    const openLeads      = userLeads.filter((l) => l.status !== 'Booked');
+    const toConvertCount = Math.max(1, Math.floor(openLeads.length * 0.35));
+    const toConvert      = openLeads.slice(0, toConvertCount);
+
+    for (const lead of toConvert) {
+      const conversionDate = randomDateInLastDays(42); // last 6 weeks
+      await Lead.findByIdAndUpdate(lead._id, {
+        $set:  { status: 'Booked', statusChangedAt: conversionDate },
+        $push: { statusHistory: { status: 'Booked', changedAt: conversionDate, note: 'demo_seed' } },
+      });
+      leadsConverted++;
+    }
+  }
+
+  // ── Sales seeding ─────────────────────────────────────────────────────────
+  let salesCreated = 0;
+
+  for (const user of members) {
+    if (!SALES_CAPABLE_ROLES.has(user.role)) continue;
+
+    // Idempotency: skip if already has sales
+    const existingSalesCount = await Sale.countDocuments({
+      organization: orgId,
+      salesPerson:  user._id,
+    });
+    if (existingSalesCount > 0) continue;
+
+    // Find available units (up to 4)
+    const allAvailableUnits = await Unit.find({ organization: orgId, status: 'available' });
+    const availableUnits = allAvailableUnits.slice(0, 4);
+    if (!availableUnits || availableUnits.length === 0) continue;
+
+    // Find a Booked lead for this user
+    const bookedLead = await Lead.findOne({
+      organization: orgId,
+      assignedTo:   user._id,
+      status:       'Booked',
+    });
+    if (!bookedLead) continue;
+
+    const saleProject = await Project.findOne({ organization: orgId });
+
+    const salesToCreate = Math.min(availableUnits.length, randInt(2, 4));
+    const saleStatuses  = ['Booked', 'Agreement Signed'];
+
+    for (let i = 0; i < salesToCreate; i++) {
+      const unit        = availableUnits[i];
+      const salePrice   = randInt(2, 30) * 1_00_00_000; // ₹2–30 Cr
+      const bookingDate = randomDateInLastDays(56); // last 8 weeks
+      const saleStatus  = saleStatuses[i % saleStatuses.length];
+
+      await Sale.create({
+        project:           saleProject?._id,
+        unit:              unit._id,
+        lead:              bookedLead._id,
+        organization:      orgId,
+        salesPerson:       user._id,
+        salePrice,
+        bookingDate,
+        status:            saleStatus,
+        costSheetSnapshot: {},
+      });
+      salesCreated++;
+
+      // Mark unit as sold
+      await Unit.findByIdAndUpdate(unit._id, { $set: { status: 'sold' } });
+    }
+  }
+
   return {
-    reflections:  reflectionsCreated,
-    interactions: interactionsCreated,
-    morale:       moraleBuilt,
+    reflections:        reflectionsCreated,
+    interactions:       interactionsCreated,
+    morale:             moraleBuilt,
+    tasks:              tasksCreated,
+    leadsConverted:     leadsConverted,
+    salesCreated:       salesCreated,
+    activitySeeded:     true,
+    activitySkipReason: null,
   };
 }
