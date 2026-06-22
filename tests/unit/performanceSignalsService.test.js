@@ -189,6 +189,26 @@ describe('computeMetrics', () => {
     expect(m.taskSlaRate).toBe(0);
   });
 
+  test('task aggregate $match window shape is correct', async () => {
+    await computeMetrics(user, start, end);
+    const pipeline = mockTaskAggregate.mock.calls[0][0];
+    const match = pipeline[0].$match;
+    expect(String(match.assignedTo)).toBe(String(USER));
+    expect(String(match.organization)).toBe(String(ORG));
+  });
+
+  test('task aggregate onTime projection uses $eq[$ifNull, false] (not the inverted form)', async () => {
+    await computeMetrics(user, start, end);
+    const pipeline = mockTaskAggregate.mock.calls[0][0];
+    const projectStage = pipeline[1].$project;
+    // Must be the semantically correct form: onTime = true when NOT overdue.
+    expect(projectStage.onTime).toEqual({
+      $eq: [{ $ifNull: ['$sla.isOverdue', false] }, false],
+    });
+    // Confirm the old inverted form is NOT present.
+    expect(projectStage.onTime).not.toEqual({ $ifNull: ['$sla.isOverdue', false] });
+  });
+
   test('ticketsResolved / ticketAvgResolutionHrs from ticket aggregate', async () => {
     // 3 tickets, 30 total hours → avg 10.
     mockTicketAggregate.mockResolvedValue([

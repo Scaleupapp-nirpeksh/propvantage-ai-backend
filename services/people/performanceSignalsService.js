@@ -274,7 +274,7 @@ export async function computeMetrics(user, periodStart, periodEnd) {
             { $eq: [{ $ifNull: ['$sla.isOverdue', false] }, true] },
           ],
         },
-        onTime: { $ifNull: ['$sla.isOverdue', false] },
+        onTime: { $eq: [{ $ifNull: ['$sla.isOverdue', false] }, false] },
       },
     },
     {
@@ -285,7 +285,7 @@ export async function computeMetrics(user, periodStart, periodEnd) {
         completedOnTime: {
           $sum: {
             $cond: [
-              { $and: ['$completedInWindow', { $eq: ['$onTime', false] }] },
+              { $and: ['$completedInWindow', '$onTime'] },
               1,
               0,
             ],
