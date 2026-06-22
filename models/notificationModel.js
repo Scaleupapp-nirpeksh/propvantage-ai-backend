@@ -68,6 +68,9 @@ export const NOTIFICATION_TYPES = [
   'ticket_assigned',           // a ticket was auto-assigned to a dept head
   'ticket_client_reply',       // the client replied on a ticket
   'ticket_status_changed',     // ticket status changed
+  // People & Performance — red-flag engine (Task 4)
+  'perf_redflag_self',         // nudge to member about their own red-flags
+  'perf_redflag_digest',       // daily digest to a Head summarising flagged team members
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
