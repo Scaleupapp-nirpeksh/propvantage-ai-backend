@@ -85,6 +85,7 @@ import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.j
 import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
 import { registerNightlyPerformanceSnapshotJob } from './jobs/nightlyPerformanceSnapshot.js';
 import { registerMoraleSummariesJob } from './jobs/generateMoraleSummaries.js';
+import { registerReflectionDueReminderJob } from './jobs/reflectionReminders.js';
 
 // Load environment variables
 dotenv.config();
@@ -517,5 +518,10 @@ httpServer.listen(PORT, () => {
     registerMoraleSummariesJob();
   } catch (err) {
     console.error('[people] Failed to register morale summaries job:', err.message);
+  }
+  try {
+    registerReflectionDueReminderJob();
+  } catch (err) {
+    console.error('[people] Failed to register reflection due reminder job:', err.message);
   }
 });
