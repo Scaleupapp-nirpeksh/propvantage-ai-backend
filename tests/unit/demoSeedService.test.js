@@ -50,10 +50,51 @@ jest.unstable_mockModule('../../models/interactionModel.js', () => ({
   },
 }));
 
-// Lead model — findOne to look up an assigned lead
-const mockLeadFindOne = jest.fn();
+// Lead model
+const mockLeadFind              = jest.fn();
+const mockLeadFindOne           = jest.fn();
+const mockLeadFindByIdAndUpdate = jest.fn();
+const mockLeadCreate            = jest.fn();
 jest.unstable_mockModule('../../models/leadModel.js', () => ({
-  default: { findOne: mockLeadFindOne },
+  default: {
+    find:              mockLeadFind,
+    findOne:           mockLeadFindOne,
+    findByIdAndUpdate: mockLeadFindByIdAndUpdate,
+    create:            mockLeadCreate,
+  },
+}));
+
+// Organization
+const mockOrgFindById = jest.fn();
+jest.unstable_mockModule('../../models/organizationModel.js', () => ({
+  default: { findById: mockOrgFindById },
+}));
+
+// Sale
+const mockSaleCountDocuments = jest.fn();
+const mockSaleCreate         = jest.fn();
+jest.unstable_mockModule('../../models/salesModel.js', () => ({
+  default: { countDocuments: mockSaleCountDocuments, create: mockSaleCreate },
+}));
+
+// Unit
+const mockUnitFind              = jest.fn();
+const mockUnitFindByIdAndUpdate = jest.fn();
+jest.unstable_mockModule('../../models/unitModel.js', () => ({
+  default: { find: mockUnitFind, findByIdAndUpdate: mockUnitFindByIdAndUpdate },
+}));
+
+// Task
+const mockTaskCountDocuments = jest.fn();
+const mockTaskCreate         = jest.fn();
+jest.unstable_mockModule('../../models/taskModel.js', () => ({
+  default: { countDocuments: mockTaskCountDocuments, create: mockTaskCreate },
+}));
+
+// Project
+const mockProjectFindOne = jest.fn();
+jest.unstable_mockModule('../../models/projectModel.js', () => ({
+  default: { findOne: mockProjectFindOne },
 }));
 
 // moraleService — best-effort; never throws
@@ -132,6 +173,26 @@ beforeEach(() => {
 
   // Lead exists for all users by default
   mockLeadFindOne.mockResolvedValue({ _id: LEAD_ID });
+
+  // New defaults for activity seeding mocks
+  const LEAD_ID_2 = new mongoose.Types.ObjectId();
+  mockLeadFind.mockResolvedValue([
+    { _id: LEAD_ID, status: 'New', assignedTo: USER_1 },
+    { _id: LEAD_ID_2, status: 'Qualified', assignedTo: USER_1 },
+  ]);
+  mockOrgFindById.mockResolvedValue({ _id: ORG, name: 'PropVantage Demo Org' });
+  mockProjectFindOne.mockResolvedValue({ _id: new mongoose.Types.ObjectId() });
+  mockUnitFind.mockResolvedValue([
+    { _id: new mongoose.Types.ObjectId(), status: 'available' },
+    { _id: new mongoose.Types.ObjectId(), status: 'available' },
+  ]);
+  mockTaskCountDocuments.mockResolvedValue(0);
+  mockTaskCreate.mockResolvedValue({});
+  mockLeadFindByIdAndUpdate.mockResolvedValue({});
+  mockLeadCreate.mockResolvedValue({ _id: new mongoose.Types.ObjectId(), status: 'New' });
+  mockSaleCountDocuments.mockResolvedValue(0);
+  mockSaleCreate.mockResolvedValue({});
+  mockUnitFindByIdAndUpdate.mockResolvedValue({});
 
   // Morale calls succeed
   mockAnalyzeReflection.mockResolvedValue({
@@ -229,8 +290,8 @@ describe('seedDemoPeopleData', () => {
     expect(result.interactions).toBeGreaterThan(0);
   });
 
-  test('SKIPS interactions when user already has >= 3 recent interactions (idempotency)', async () => {
-    mockInteractionCountDocuments.mockResolvedValue(3); // at threshold → skip
+  test('SKIPS interactions when user already has >= 10 recent interactions (idempotency)', async () => {
+    mockInteractionCountDocuments.mockResolvedValue(10); // at threshold → skip
     const result = await seedDemoPeopleData(ORG, { weeks: 2 });
     expect(mockInteractionCreate).not.toHaveBeenCalled();
     expect(result.interactions).toBe(0);
@@ -261,7 +322,7 @@ describe('seedDemoPeopleData', () => {
   test('works when org has no active members', async () => {
     mockUserFind.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
     const result = await seedDemoPeopleData(ORG, { weeks: 4 });
-    expect(result).toEqual({ reflections: 0, interactions: 0, morale: 0 });
+    expect(result).toMatchObject({ reflections: 0, interactions: 0, morale: 0 });
   });
 
   test('each created reflection has status=submitted and submittedAt set', async () => {
@@ -287,5 +348,153 @@ describe('seedDemoPeopleData', () => {
     const winsValues = mockReflectionCreate.mock.calls.map(([doc]) => doc.answers.wins);
     const unique = new Set(winsValues);
     expect(unique.size).toBeGreaterThan(1);
+  });
+});
+
+// =============================================================================
+// DEMO-ACTIVITY SEEDING TESTS
+// =============================================================================
+
+describe('demo-activity seeding', () => {
+  test('safety gate — non-demo org skips activity seeding but reflections still run', async () => {
+    mockOrgFindById.mockResolvedValue({ name: 'Prestige Realty' }); // no "demo" in name
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(result.activitySeeded).toBe(false);
+    expect(mockReflectionCreate).toHaveBeenCalled();
+    expect(mockTaskCreate).not.toHaveBeenCalled();
+    expect(mockSaleCreate).not.toHaveBeenCalled();
+  });
+
+  test('safety gate — demo org proceeds with activity seeding', async () => {
+    mockOrgFindById.mockResolvedValue({ name: 'Demo PropVantage' });
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(result.activitySeeded).toBe(true);
+    expect(mockTaskCreate).toHaveBeenCalled();
+  });
+
+  test('tasks created for all active members with valid shape', async () => {
+    await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(mockTaskCreate.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const VALID_TASK_CATEGORIES = [
+      'Lead & Sales', 'Payment & Collection', 'Construction',
+      'Document & Compliance', 'Customer Service', 'Approval', 'General',
+    ];
+    const VALID_TASK_STATUSES = ['Open', 'In Progress', 'Completed'];
+    const validUserIds = ACTIVE_USERS.map(u => u._id.toString());
+    const firstCall = mockTaskCreate.mock.calls[0][0];
+    const assignedToStr = firstCall.assignedTo.toString();
+    expect(validUserIds).toContain(assignedToStr);
+    for (const [doc] of mockTaskCreate.mock.calls) {
+      expect(doc.organization.toString()).toBe(ORG.toString());
+      expect(VALID_TASK_CATEGORIES).toContain(doc.category);
+      expect(VALID_TASK_STATUSES).toContain(doc.status);
+      expect(doc.tags).toContain('demo_seed');
+    }
+  });
+
+  test('idempotency — existing demo tasks skip task creation', async () => {
+    mockTaskCountDocuments.mockResolvedValue(3); // already has demo tasks
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(mockTaskCreate).not.toHaveBeenCalled();
+  });
+
+  test('lead conversions happen (Booked statusHistory entry pushed)', async () => {
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    const updateCalls = mockLeadFindByIdAndUpdate.mock.calls;
+    expect(updateCalls.length).toBeGreaterThan(0);
+    const pushArg = updateCalls[0][1].$push;
+    expect(pushArg).toBeDefined();
+    expect(pushArg.statusHistory).toMatchObject({ status: 'Booked' });
+    expect(result.leadsConverted).toBeGreaterThan(0);
+  });
+
+  test('sales only for sales-capable roles', async () => {
+    // Override ACTIVE_USERS: USER_1 = non-sales, USER_2 = sales
+    mockUserFind.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { _id: USER_1, organization: ORG, role: 'Finance Executive' },
+        { _id: USER_2, organization: ORG, role: 'Sales Manager' },
+      ]),
+    });
+    // USER_2 has a booked lead
+    mockLeadFindOne.mockImplementation(async (query) => {
+      if (query.assignedTo?.toString() === USER_2.toString()) {
+        return { _id: LEAD_ID, status: 'Booked' };
+      }
+      return null;
+    });
+    await seedDemoPeopleData(ORG, { weeks: 1 });
+    // At least one sale must have been created for the sales-capable member
+    expect(mockSaleCreate).toHaveBeenCalled();
+    for (const [doc] of mockSaleCreate.mock.calls) {
+      expect(doc.salesPerson.toString()).toBe(USER_2.toString());
+    }
+  });
+
+  test('unit shortage — creates fewer sales, no crash', async () => {
+    mockUnitFind.mockResolvedValue([]); // no available units
+    await expect(seedDemoPeopleData(ORG, { weeks: 1 })).resolves.not.toThrow();
+    expect(mockSaleCreate).not.toHaveBeenCalled();
+  });
+
+  test('no project in org — Lead.create and Sale.create skipped gracefully', async () => {
+    mockProjectFindOne.mockResolvedValue(null); // no project exists
+    // Users have no existing leads (force Lead.create path)
+    mockLeadFind.mockResolvedValue([]);
+    await expect(seedDemoPeopleData(ORG, { weeks: 1 })).resolves.not.toThrow();
+    expect(mockLeadCreate).not.toHaveBeenCalled();
+    expect(mockSaleCreate).not.toHaveBeenCalled();
+  });
+
+  test('idempotency — existing demo sales skip sale creation', async () => {
+    mockSaleCountDocuments.mockResolvedValue(2); // already has sales
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(mockSaleCreate).not.toHaveBeenCalled();
+  });
+
+  test('lead-conversion idempotency — leads already Booked with demo_seed note are not converted again', async () => {
+    // Simulate a second run: all leads for every user are already Booked with the demo_seed note
+    const bookedLead1 = {
+      _id:           new mongoose.Types.ObjectId(),
+      status:        'Booked',
+      assignedTo:    USER_1,
+      statusHistory: [{ status: 'Booked', note: 'demo_seed' }],
+    };
+    const bookedLead2 = {
+      _id:           new mongoose.Types.ObjectId(),
+      status:        'Booked',
+      assignedTo:    USER_2,
+      statusHistory: [{ status: 'Booked', note: 'demo_seed' }],
+    };
+    // Lead.find returns already-converted leads for every user
+    mockLeadFind.mockImplementation(async (query) => {
+      const assignedTo = query?.assignedTo;
+      if (assignedTo?.toString() === USER_1.toString()) return [bookedLead1];
+      if (assignedTo?.toString() === USER_2.toString()) return [bookedLead2];
+      return [];
+    });
+
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+
+    // The conversion update must NOT be called for any lead
+    expect(mockLeadFindByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.leadsConverted).toBe(0);
+  });
+
+  test('interactions threshold updated to 10/14-day window', async () => {
+    mockInteractionCountDocuments.mockResolvedValue(0);
+    mockLeadFindOne.mockResolvedValue({ _id: LEAD_ID });
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    // With new threshold of 12 interactions over 14 days, should create more than 3
+    expect(mockInteractionCreate.mock.calls.length).toBeGreaterThan(3);
+  });
+
+  test('summary object contains new fields', async () => {
+    const result = await seedDemoPeopleData(ORG, { weeks: 1 });
+    expect(result).toHaveProperty('tasks');
+    expect(result).toHaveProperty('leadsConverted');
+    expect(result).toHaveProperty('salesCreated');
+    expect(result).toHaveProperty('activitySeeded');
+    expect(result).toHaveProperty('activitySkipReason');
   });
 });
