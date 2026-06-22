@@ -403,7 +403,38 @@ export async function getOrgDashboard(owner, range) {
   orgRollup.taskSlaRate            = globalMedians.taskSlaRate            ?? 0;
   orgRollup.ticketAvgResolutionHrs = globalMedians.ticketAvgResolutionHrs ?? 0;
 
-  return { heads, orgRollup };
+  // ── 4. Build flat members roster (all active org members) ────────
+  const allActiveMembers = await User.find({
+    organization: orgId,
+    isActive:     true,
+    invitationStatus: 'accepted',
+  }).lean();
+
+  const members = await Promise.all(
+    allActiveMembers.map(async (member) => {
+      const [metrics, targetDoc, flags] = await Promise.all([
+        computeMetrics(member, from, to),
+        getOrSeedTarget(orgId, member._id, monthStart),
+        detectFlags(orgId, member, new Date()),
+      ]);
+      const attainment = computeAttainment(metrics, targetDoc);
+      return {
+        user: {
+          _id:          member._id,
+          firstName:    member.firstName,
+          lastName:     member.lastName,
+          email:        member.email,
+          role:         member.role,
+          lastActiveAt: member.lastActiveAt ?? null,
+        },
+        metrics,
+        attainment,
+        flagCount: countFlags(flags),
+      };
+    }),
+  );
+
+  return { heads, orgRollup, members };
 }
 
 export default { assertCanView, getMemberDashboard, getTeamDashboard, getOrgDashboard };

@@ -75,6 +75,7 @@ const {
   transcribe,
   ack,
   listForUser,
+  listForUserId,
 } = await import('../../services/people/reflectionService.js');
 
 // =============================================================================
@@ -542,5 +543,48 @@ describe('listForUser', () => {
     mockFindChain([]);
     const result = await listForUser(USER);
     expect(result).toEqual([]);
+  });
+});
+
+// =============================================================================
+// listForUserId
+// =============================================================================
+
+describe('listForUserId', () => {
+  test('queries WeeklyReflection by the given orgId and userId', async () => {
+    const targetUserId = new mongoose.Types.ObjectId();
+    const docs = [
+      { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W25', status: 'submitted' },
+    ];
+
+    mockFind.mockReturnValueOnce({
+      sort:  jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean:  jest.fn().mockResolvedValue(docs),
+    });
+
+    const result = await listForUserId(ORG, targetUserId, 12);
+
+    expect(mockFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organization: ORG,
+        user: targetUserId,
+      }),
+    );
+    expect(result).toEqual(docs);
+  });
+
+  test('applies the limit parameter', async () => {
+    const targetUserId = new mongoose.Types.ObjectId();
+    const sortMock  = jest.fn().mockReturnThis();
+    const limitMock = jest.fn().mockReturnThis();
+    mockFind.mockReturnValueOnce({
+      sort:  sortMock,
+      limit: limitMock,
+      lean:  jest.fn().mockResolvedValue([]),
+    });
+
+    await listForUserId(ORG, targetUserId, 5);
+    expect(limitMock).toHaveBeenCalledWith(5);
   });
 });

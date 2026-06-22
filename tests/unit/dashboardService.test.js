@@ -505,4 +505,41 @@ describe('getOrgDashboard', () => {
     expect(result.heads).toHaveLength(0);
     expect(result.orgRollup).toBeDefined();
   });
+
+  test('returns members[] flat roster of all active org members', async () => {
+    const allOrgMembers = [salesHead, teamMemberDoc, nonHeadMember];
+
+    // First call: User.find for head-role users (heads query)
+    // Second call: User.find for all active members
+    mockUserFind
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue([salesHead]) })   // heads query
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(allOrgMembers) }); // members query
+
+    const result = await getOrgDashboard(OWNER, RANGE);
+
+    expect(result.members).toBeDefined();
+    expect(result.members).toHaveLength(3);
+    // Each entry has the expected shape
+    for (const entry of result.members) {
+      expect(entry.user).toMatchObject({
+        _id: expect.anything(),
+        firstName: expect.any(String),
+        lastName:  expect.any(String),
+        email:     expect.any(String),
+        role:      expect.any(String),
+      });
+      expect(entry.metrics).toBeDefined();
+      expect(entry.attainment).toBeDefined();
+      expect(typeof entry.flagCount).toBe('number');
+    }
+  });
+
+  test('members[] is empty when no active org members exist', async () => {
+    mockUserFind
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue([]) })  // heads query → empty
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue([]) }); // members query → empty
+
+    const result = await getOrgDashboard(OWNER, RANGE);
+    expect(result.members).toHaveLength(0);
+  });
 });

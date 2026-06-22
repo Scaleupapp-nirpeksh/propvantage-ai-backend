@@ -256,6 +256,29 @@ export async function listForUser(user, limit = 12) {
 }
 
 // =============================================================================
+// listForUserId
+// =============================================================================
+
+/**
+ * Return reflections for a specific user (by id), sorted newest-first.
+ * Caller is responsible for access-control before calling this function.
+ *
+ * @param {mongoose.Types.ObjectId|string} orgId
+ * @param {mongoose.Types.ObjectId|string} userId
+ * @param {number} [limit=12]
+ * @returns {Promise<object[]>} array of WeeklyReflection lean documents
+ */
+export async function listForUserId(orgId, userId, limit = 12) {
+  return WeeklyReflection.find({
+    organization: orgId,
+    user: userId,
+  })
+    .sort({ weekStart: -1 })
+    .limit(limit)
+    .lean();
+}
+
+// =============================================================================
 // ack
 // =============================================================================
 

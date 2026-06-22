@@ -94,12 +94,20 @@ jest.unstable_mockModule('../../models/moraleSummaryModel.js', () => ({
 
 // User model
 const mockUserFindById = jest.fn();
+const mockUserFind     = jest.fn();
 jest.unstable_mockModule('../../models/userModel.js', () => ({
   default: {
     findById: mockUserFindById,
-    find:     jest.fn(),
+    find:     mockUserFind,
     updateOne: jest.fn(),
   },
+}));
+
+// reflectionService (for getMemberReflections)
+const mockListForUserId = jest.fn();
+jest.unstable_mockModule('../../services/people/reflectionService.js', () => ({
+  listForUserId: mockListForUserId,
+  currentStatus: jest.fn(),
 }));
 
 // backfillService
@@ -130,6 +138,7 @@ const {
   getMoraleOrg,
   runBackfill,
   seedDemo,
+  getMemberReflections,
 } = await import('../../controllers/peopleController.js');
 
 // =============================================================================
@@ -179,6 +188,9 @@ beforeEach(() => {
   mockGetOrgDashboard.mockResolvedValue({ heads: [], orgRollup: {} });
   mockBackfillSnapshots.mockResolvedValue({ built: 40, users: 5 });
   mockSeedDemoPeopleData.mockResolvedValue({ reflections: 20, interactions: 10, morale: 3 });
+  // Default: User.find returns empty list (hydration no-ops by default)
+  mockUserFind.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([]) });
+  mockListForUserId.mockResolvedValue([]);
 });
 
 // =============================================================================
@@ -530,6 +542,148 @@ describe('getMoraleOrg', () => {
 
 // Extra: STRANGER_ID used in one scope
 const STRANGER_ID = new mongoose.Types.ObjectId();
+
+// =============================================================================
+// getMoraleTeam — hydration tests
+// =============================================================================
+describe('getMoraleTeam — hydration', () => {
+  test('peopleToCheckIn[].user is hydrated to { _id, firstName, lastName } object', async () => {
+    const checkInUserId = new mongoose.Types.ObjectId();
+    mockGetSubtree.mockResolvedValue({ scope: 'department', userIds: [MEMBER_ID] });
+    mockMoraleFindOne.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        moraleScore: 70,
+        peopleToCheckIn: [{ user: checkInUserId, reason: 'Burnout signals' }],
+      }),
+    });
+    // User.find called for hydration
+    mockUserFind.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { _id: checkInUserId, firstName: 'Alice', lastName: 'Smith' },
+      ]),
+    });
+
+    const req = { user: HEAD_USER, query: {} };
+    const res = mockRes();
+    await call(getMoraleTeam, req, res);
+
+    const payload = res._json.data;
+    expect(payload.peopleToCheckIn).toHaveLength(1);
+    expect(payload.peopleToCheckIn[0].user).toMatchObject({
+      firstName: 'Alice',
+      lastName: 'Smith',
+    });
+    expect(typeof payload.peopleToCheckIn[0].user).toBe('object');
+  });
+});
+
+// =============================================================================
+// getMoraleOrg — hydration tests
+// =============================================================================
+describe('getMoraleOrg — hydration', () => {
+  test('peopleToCheckIn[].user is hydrated to { _id, firstName, lastName } object (org scope)', async () => {
+    const checkInUserId = new mongoose.Types.ObjectId();
+    mockIsOwnerLevel.mockReturnValue(true);
+    mockMoraleFindOne.mockReturnValue({
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue({
+        moraleScore: 55,
+        peopleToCheckIn: [{ user: checkInUserId, reason: 'Flight risk' }],
+      }),
+    });
+    mockUserFind.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([
+        { _id: checkInUserId, firstName: 'Bob', lastName: 'Jones' },
+      ]),
+    });
+
+    const req = { user: OWNER_USER, query: {} };
+    const res = mockRes();
+    await call(getMoraleOrg, req, res);
+
+    const payload = res._json.data;
+    expect(payload.peopleToCheckIn).toHaveLength(1);
+    expect(payload.peopleToCheckIn[0].user).toMatchObject({
+      firstName: 'Bob',
+      lastName: 'Jones',
+    });
+  });
+});
+
+// =============================================================================
+// getMemberReflections
+// =============================================================================
+describe('getMemberReflections', () => {
+  const TARGET_USER_ID = new mongoose.Types.ObjectId();
+
+  test('owner can read any member reflections', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    mockAssertCanView.mockResolvedValue(undefined);
+    const fakeReflections = [
+      { _id: new mongoose.Types.ObjectId(), isoWeek: '2026-W25', status: 'submitted' },
+    ];
+    mockListForUserId.mockResolvedValue(fakeReflections);
+
+    const req = { user: OWNER_USER, params: { userId: TARGET_USER_ID.toString() } };
+    const res = mockRes();
+
+    await call(getMemberReflections, req, res);
+
+    expect(mockAssertCanView).toHaveBeenCalledWith(OWNER_USER, TARGET_USER_ID.toString());
+    expect(mockListForUserId).toHaveBeenCalledWith(
+      OWNER_USER.organization,
+      TARGET_USER_ID.toString(),
+      12,
+    );
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: fakeReflections,
+    });
+  });
+
+  test('member requesting a user outside their subtree gets 403', async () => {
+    const denied = new Error('Access denied: user is not in your subtree');
+    denied.statusCode = 403;
+    mockAssertCanView.mockRejectedValueOnce(denied);
+
+    const req = { user: MEMBER_USER, params: { userId: STRANGER_ID.toString() } };
+    const res = mockRes();
+
+    await expect(call(getMemberReflections, req, res)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockListForUserId).not.toHaveBeenCalled();
+  });
+
+  test('returns empty array when no reflections exist for target user', async () => {
+    mockAssertCanView.mockResolvedValue(undefined);
+    mockListForUserId.mockResolvedValue([]);
+
+    const req = { user: HEAD_USER, params: { userId: MEMBER_ID.toString() } };
+    const res = mockRes();
+
+    await call(getMemberReflections, req, res);
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: [] });
+  });
+
+  test('returned list is scoped to the target user (listForUserId called with correct userId)', async () => {
+    mockAssertCanView.mockResolvedValue(undefined);
+    mockListForUserId.mockResolvedValue([]);
+
+    const req = { user: HEAD_USER, params: { userId: MEMBER_ID.toString() } };
+    const res = mockRes();
+
+    await call(getMemberReflections, req, res);
+
+    expect(mockListForUserId).toHaveBeenCalledWith(
+      HEAD_USER.organization,
+      MEMBER_ID.toString(),
+      12,
+    );
+  });
+});
 
 // =============================================================================
 // runBackfill
