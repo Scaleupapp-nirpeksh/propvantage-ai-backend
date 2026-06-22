@@ -44,7 +44,7 @@ describe('isoWeekOf', () => {
     expect(isoWeekOf(utc(2026, 6, 22))).toBe('2026-W26');
   });
 
-  test('Jan 1 2015 falls in week 53 of 2014 (year boundary)', () => {
+  test('Jan 1 2015 is W01 of 2015 (Thursday, same ISO year)', () => {
     // 2015-01-01 is a Thursday and belongs to week 1 of 2015
     // Actually, Jan 1 2015 is Thursday: it IS week 1 of 2015
     expect(isoWeekOf(utc(2015, 1, 1))).toBe('2015-W01');

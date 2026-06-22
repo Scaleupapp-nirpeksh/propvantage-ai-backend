@@ -332,6 +332,7 @@ export async function getOrgDashboard(owner, range) {
     organization: orgId,
     role: { $in: HEAD_ROLES_LIST },
     isActive: true,
+    invitationStatus: 'accepted',
   }).lean();
 
   // ── 2. Build per-head scorecard (parallel across heads) ──────────

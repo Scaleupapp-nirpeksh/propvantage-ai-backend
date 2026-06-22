@@ -14,7 +14,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import WeeklyReflection from '../../models/weeklyReflectionModel.js';
 import MoraleSummary from '../../models/moraleSummaryModel.js';
 import { getTeam } from './hierarchyService.js';
-import { boundsFromIsoWeek, previousIsoWeek } from '../../utils/isoWeek.js';
+import { previousIsoWeek } from '../../utils/isoWeek.js';
 
 // =============================================================================
 // CLIENT
