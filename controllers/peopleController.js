@@ -23,6 +23,7 @@
 
 import asyncHandler from 'express-async-handler';
 import mongoose from 'mongoose';
+import { listForUserId } from '../services/people/reflectionService.js';
 import {
   getMemberDashboard,
   getTeamDashboard,
@@ -199,6 +200,29 @@ export const setTargets = asyncHandler(async (req, res) => {
   res.json({ success: true, data: target });
 });
 
+// ─── MORALE HYDRATION HELPER ─────────────────────────────────────
+
+/**
+ * Hydrate peopleToCheckIn[].user from ObjectId to { _id, firstName, lastName }.
+ * Best-effort: missing user docs are left as the original id value.
+ *
+ * @param {Array<{user: *, reason: string}>} rawList
+ * @returns {Promise<Array<{user: {_id, firstName, lastName}|*, reason: string}>>}
+ */
+async function hydrateCheckIn(rawList) {
+  if (!rawList || rawList.length === 0) return [];
+  const ids = rawList.map((p) => p.user);
+  const userDocs = await User.find({ _id: { $in: ids } }).select('firstName lastName').lean();
+  const byId = Object.fromEntries(userDocs.map((u) => [String(u._id), u]));
+  return rawList.map((p) => {
+    const doc = byId[String(p.user)];
+    return {
+      user:   doc ? { _id: doc._id, firstName: doc.firstName, lastName: doc.lastName } : p.user,
+      reason: p.reason,
+    };
+  });
+}
+
 /**
  * @desc    Return the latest MoraleSummary for the caller's team.
  *          Requires the caller to be a Head (or Owner viewing any team).
@@ -231,7 +255,11 @@ export const getMoraleTeam = asyncHandler(async (req, res) => {
     .sort({ isoWeek: -1 })
     .lean();
 
-  res.json({ success: true, data: summary || null });
+  if (!summary) {
+    return res.json({ success: true, data: null });
+  }
+  const peopleToCheckIn = await hydrateCheckIn(summary.peopleToCheckIn);
+  res.json({ success: true, data: { ...summary, peopleToCheckIn } });
 });
 
 /**
@@ -252,7 +280,23 @@ export const getMoraleOrg = asyncHandler(async (req, res) => {
     .sort({ isoWeek: -1 })
     .lean();
 
-  res.json({ success: true, data: summary || null });
+  if (!summary) {
+    return res.json({ success: true, data: null });
+  }
+  const peopleToCheckIn = await hydrateCheckIn(summary.peopleToCheckIn);
+  res.json({ success: true, data: { ...summary, peopleToCheckIn } });
+});
+
+/**
+ * @desc    Return a member's reflections (newest-first, limit 12). Subtree-guarded.
+ * @route   GET /api/people/member/:userId/reflections
+ * @access  Owner (anyone), Head (own team), or self
+ */
+export const getMemberReflections = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  await assertCanView(req.user, userId);
+  const reflections = await listForUserId(req.user.organization, userId, 12);
+  res.json({ success: true, data: reflections });
 });
 
 // ─── ADMIN HANDLERS ───────────────────────────────────────────────
