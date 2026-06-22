@@ -19,6 +19,7 @@ import {
   setTargets,
   getMoraleTeam,
   getMoraleOrg,
+  getMemberReflections,
   runBackfill,
   seedDemo,
 } from '../controllers/peopleController.js';
@@ -46,8 +47,9 @@ const audioUpload = multer({
 router.use(protect);
 
 // ─── DASHBOARD ENDPOINTS ──────────────────────────────────────────
-router.get('/me',               getMe);
-router.get('/member/:userId',   getMember);
+router.get('/me',                              getMe);
+router.get('/member/:userId/reflections',      getMemberReflections);  // NOTE: must be before /member/:userId
+router.get('/member/:userId',                  getMember);
 router.get('/team',             getTeam);
 router.get('/org',              getOrg);
 router.get('/flags',            getFlags);
