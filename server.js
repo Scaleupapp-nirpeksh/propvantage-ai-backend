@@ -81,6 +81,7 @@ import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
+import { registerNightlyPerformanceSnapshotJob } from './jobs/nightlyPerformanceSnapshot.js';
 
 // Load environment variables
 dotenv.config();
@@ -501,5 +502,10 @@ httpServer.listen(PORT, () => {
     registerScheduledReportJobs();
   } catch (err) {
     console.error('[reports] Failed to register scheduled report jobs:', err.message);
+  }
+  try {
+    registerNightlyPerformanceSnapshotJob();
+  } catch (err) {
+    console.error('[people] Failed to register nightly performance snapshot job:', err.message);
   }
 });
