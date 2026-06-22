@@ -25,3 +25,4 @@ coverage/
 
 # Stray debug screenshots at repo root (test reports under tests/ remain tracked)
 /*.png
+.superpowers/
