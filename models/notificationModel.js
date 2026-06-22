@@ -68,6 +68,14 @@ export const NOTIFICATION_TYPES = [
   'ticket_assigned',           // a ticket was auto-assigned to a dept head
   'ticket_client_reply',       // the client replied on a ticket
   'ticket_status_changed',     // ticket status changed
+  // People & Performance — red-flag engine (Task 4)
+  'perf_redflag_self',         // nudge to member about their own red-flags
+  'perf_redflag_digest',       // daily digest to a Head summarising flagged team members
+  // People & Performance — reflections (Task 5)
+  'reflection_due',            // Fri reminder to submit the current week's reflection
+  'reflection_overdue',        // Mon reminder when last week's reflection was not submitted
+  // People & Performance — morale roll-ups (Task 6)
+  'morale_summary_ready',      // weekly morale roll-up is ready for a Head or Owner
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -83,6 +91,8 @@ export const RELATED_ENTITY_TYPES = [
   'ReportInstance',
   // Email-to-ticket support system
   'SupportTicket',
+  // People & Performance — morale roll-ups (Task 6)
+  'MoraleSummary',
 ];
 
 // =============================================================================

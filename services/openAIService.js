@@ -58,4 +58,46 @@ const getSalesInsightsForLead = async (leadData) => {
   }
 };
 
-export { getSalesInsightsForLead };
+/**
+ * Transcribe an audio buffer using Whisper.
+ * Best-effort: if the API call fails, returns null rather than throwing.
+ *
+ * @param {Buffer} audioBuffer  - Raw audio bytes
+ * @param {string} mimeType     - MIME type such as 'audio/webm', 'audio/mp4', etc.
+ * @returns {Promise<string|null>} Transcript text, or null on failure.
+ */
+const transcribeAudio = async (audioBuffer, mimeType) => {
+  try {
+    // Map common MIME types to file extensions Whisper accepts
+    const EXT_BY_MIME = {
+      'audio/webm':  'webm',
+      'audio/ogg':   'ogg',
+      'audio/mp4':   'mp4',
+      'audio/mpeg':  'mp3',
+      'audio/mp3':   'mp3',
+      'audio/wav':   'wav',
+      'audio/x-wav': 'wav',
+      'audio/flac':  'flac',
+      'audio/m4a':   'm4a',
+      'audio/x-m4a': 'm4a',
+    };
+    const ext = EXT_BY_MIME[mimeType] || 'webm';
+    const filename = `audio.${ext}`;
+
+    // openai SDK v4 accepts a File-like object; toFile converts a Buffer.
+    const { toFile } = await import('openai');
+    const file = await toFile(audioBuffer, filename, { type: mimeType });
+
+    const response = await openai.audio.transcriptions.create({
+      model: 'whisper-1',
+      file,
+    });
+
+    return response.text ?? null;
+  } catch (error) {
+    console.error('[openAIService] transcribeAudio failed (best-effort):', error.message);
+    return null;
+  }
+};
+
+export { getSalesInsightsForLead, transcribeAudio };

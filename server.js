@@ -78,9 +78,14 @@ import cpCopilotRoutes from './routes/cpCopilotRoutes.js';
 // SP5+ — commission invoices (CP→Dev billing)
 import cpCommissionInvoiceRoutes from './routes/cpCommissionInvoiceRoutes.js';
 import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
+// People & Performance — member/team/org dashboards, reflections, morale
+import peopleRoutes from './routes/peopleRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
+import { registerNightlyPerformanceSnapshotJob } from './jobs/nightlyPerformanceSnapshot.js';
+import { registerMoraleSummariesJob } from './jobs/generateMoraleSummaries.js';
+import { registerReflectionDueReminderJob } from './jobs/reflectionReminders.js';
 
 // Load environment variables
 dotenv.config();
@@ -199,6 +204,8 @@ app.use('/api/leadership', leadershipDashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/workspace', workspaceRoutes);
 app.use('/api/support', supportRoutes);
+// People & Performance — protect is applied inside peopleRoutes (router.use(protect))
+app.use('/api/people', peopleRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/public/reports', publicReportRoutes);
 app.use('/api/public/tickets', publicTicketRoutes);
@@ -501,5 +508,20 @@ httpServer.listen(PORT, () => {
     registerScheduledReportJobs();
   } catch (err) {
     console.error('[reports] Failed to register scheduled report jobs:', err.message);
+  }
+  try {
+    registerNightlyPerformanceSnapshotJob();
+  } catch (err) {
+    console.error('[people] Failed to register nightly performance snapshot job:', err.message);
+  }
+  try {
+    registerMoraleSummariesJob();
+  } catch (err) {
+    console.error('[people] Failed to register morale summaries job:', err.message);
+  }
+  try {
+    registerReflectionDueReminderJob();
+  } catch (err) {
+    console.error('[people] Failed to register reflection due reminder job:', err.message);
   }
 });
