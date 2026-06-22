@@ -51,6 +51,9 @@ export async function runNightlySnapshots(now = new Date()) {
     .lean();
 
   const seenOrgs = new Set();
+  // Collect precomputed flags per org to avoid double-running detectFlags in sendDigests.
+  // orgFlags: Map<orgId string → Map<userId string → flags>>
+  const orgFlags = new Map();
 
   for (const user of activeUsers) {
     if (!user.organization) continue;
@@ -82,6 +85,11 @@ export async function runNightlySnapshots(now = new Date()) {
     // here must not abort the rest of the job.
     try {
       const flags = await detectFlags(user.organization, user, previousDay);
+
+      // Store flags so sendDigests can reuse them without re-querying the DB.
+      const orgIdStr = String(user.organization);
+      if (!orgFlags.has(orgIdStr)) orgFlags.set(orgIdStr, new Map());
+      orgFlags.get(orgIdStr).set(String(user._id), flags);
 
       // Resolve the day snapshot's periodStart so we can target the exact row.
       const { periodStart: dayStart } = resolveWindow('day', previousDay);
@@ -120,9 +128,11 @@ export async function runNightlySnapshots(now = new Date()) {
 
   // ── Send self-nudges + manager digests per org ──────────────────────
   // Done once per org after all user snapshots are written.
+  // Pass the precomputed flags so sendDigests skips re-running detectFlags
+  // for every member (avoids the double-compute described in spec §15).
   for (const orgId of seenOrgs) {
     try {
-      const result = await sendDigests(orgId, previousDay);
+      const result = await sendDigests(orgId, previousDay, {}, orgFlags.get(orgId) ?? null);
       summary.digests[orgId] = result;
     } catch (err) {
       summary.failed.push({ org: orgId, period: 'digests', error: err.message });

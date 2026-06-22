@@ -200,9 +200,14 @@ export async function detectFlags(orgId, user, asOf, thresholdOverrides = {}) {
  * @param {mongoose.Types.ObjectId|string} orgId
  * @param {Date} asOf - reference "now"
  * @param {object} [thresholdOverrides] - optional partial threshold overrides
+ * @param {Map<string, object>|null} [precomputedFlags] - optional Map of userId
+ *   string → flags object (same shape as detectFlags return value). When provided,
+ *   members whose id is in the map skip a detectFlags DB call; members not in the
+ *   map still call detectFlags normally. Pass null/undefined for the original
+ *   behavior (all members call detectFlags).
  * @returns {Promise<{ selfNudges: number, digests: number }>}
  */
-export async function sendDigests(orgId, asOf, thresholdOverrides = {}) {
+export async function sendDigests(orgId, asOf, thresholdOverrides = {}, precomputedFlags = null) {
   const org = toObjectId(orgId);
   const now = asOf instanceof Date ? asOf : new Date(asOf);
 
@@ -218,13 +223,19 @@ export async function sendDigests(orgId, asOf, thresholdOverrides = {}) {
   if (members.length === 0) return { selfNudges: 0, digests: 0 };
 
   // Detect flags for every member in parallel.
+  // When precomputedFlags is provided, reuse the precomputed value for any member
+  // already in the map; only call detectFlags for members not in the map.
   const flagResults = await Promise.all(
-    members.map((member) =>
-      detectFlags(org, member, now, thresholdOverrides).then((flags) => ({
+    members.map((member) => {
+      const memberIdStr = String(member._id);
+      if (precomputedFlags instanceof Map && precomputedFlags.has(memberIdStr)) {
+        return Promise.resolve({ member, flags: precomputedFlags.get(memberIdStr) });
+      }
+      return detectFlags(org, member, now, thresholdOverrides).then((flags) => ({
         member,
         flags,
-      }))
-    )
+      }));
+    })
   );
 
   // Split into flagged vs unflagged.

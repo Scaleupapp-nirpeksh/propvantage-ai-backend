@@ -14,6 +14,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import WeeklyReflection from '../../models/weeklyReflectionModel.js';
 import MoraleSummary from '../../models/moraleSummaryModel.js';
 import { getTeam } from './hierarchyService.js';
+import { previousIsoWeek } from '../../utils/isoWeek.js';
 
 // =============================================================================
 // CLIENT
@@ -312,52 +313,6 @@ async function buildMoraleSummary({ orgId, scope, headUser, isoWeek, reflections
   );
 
   return doc;
-}
-
-// =============================================================================
-// BOUNDS HELPER (re-implemented to avoid circular dep on reflectionService)
-// =============================================================================
-
-/**
- * Derive weekStart from an isoWeek string.
- * @param {string} isoWeek  e.g. '2026-W25'
- * @returns {{ weekStart: Date }}
- */
-function boundsFromIsoWeek(isoWeek) {
-  const m = isoWeek.match(/^(\d{4})-W(\d{2})$/);
-  if (!m) throw new Error(`Invalid isoWeek: ${isoWeek}`);
-  const year = parseInt(m[1], 10);
-  const week = parseInt(m[2], 10);
-
-  // Jan 4 is always in ISO week 1
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const jan4dow = jan4.getUTCDay() || 7;
-  const week1Mon = new Date(jan4.getTime() - (jan4dow - 1) * 86400000);
-  const weekStart = new Date(week1Mon.getTime() + (week - 1) * 7 * 86400000);
-  return { weekStart };
-}
-
-/**
- * Return the isoWeek string for the week prior to `isoWeek`.
- */
-function previousIsoWeek(isoWeek) {
-  const { weekStart } = boundsFromIsoWeek(isoWeek);
-  const dayInPrevWeek = new Date(weekStart.getTime() - 86400000);
-  // Compute isoWeek inline to avoid circular dep
-  return isoWeekOfDate(dayInPrevWeek);
-}
-
-function isoWeekOfDate(date) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dow = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dow);
-  const year = d.getUTCFullYear();
-  const jan1 = new Date(Date.UTC(year, 0, 1));
-  const jan1dow = jan1.getUTCDay() || 7;
-  const firstThursday = new Date(Date.UTC(year, 0, 1 + (4 - jan1dow + 7) % 7));
-  const diff = d - firstThursday;
-  const weekNum = Math.round(diff / (7 * 86400000)) + 1;
-  return `${year}-W${String(weekNum).padStart(2, '0')}`;
 }
 
 // =============================================================================

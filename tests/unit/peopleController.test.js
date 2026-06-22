@@ -102,6 +102,18 @@ jest.unstable_mockModule('../../models/userModel.js', () => ({
   },
 }));
 
+// backfillService
+const mockBackfillSnapshots = jest.fn();
+jest.unstable_mockModule('../../services/people/backfillService.js', () => ({
+  backfillSnapshots: mockBackfillSnapshots,
+}));
+
+// demoSeedService
+const mockSeedDemoPeopleData = jest.fn();
+jest.unstable_mockModule('../../services/people/demoSeedService.js', () => ({
+  seedDemoPeopleData: mockSeedDemoPeopleData,
+}));
+
 // =============================================================================
 // IMPORT SUT + parseRange (after mocks registered)
 // =============================================================================
@@ -116,6 +128,8 @@ const {
   setTargets,
   getMoraleTeam,
   getMoraleOrg,
+  runBackfill,
+  seedDemo,
 } = await import('../../controllers/peopleController.js');
 
 // =============================================================================
@@ -163,6 +177,8 @@ beforeEach(() => {
   mockGetMemberDashboard.mockResolvedValue({ user: { _id: MEMBER_ID }, metrics: {} });
   mockGetTeamDashboard.mockResolvedValue({ members: [], rollup: {}, medians: {} });
   mockGetOrgDashboard.mockResolvedValue({ heads: [], orgRollup: {} });
+  mockBackfillSnapshots.mockResolvedValue({ built: 40, users: 5 });
+  mockSeedDemoPeopleData.mockResolvedValue({ reflections: 20, interactions: 10, morale: 3 });
 });
 
 // =============================================================================
@@ -514,3 +530,111 @@ describe('getMoraleOrg', () => {
 
 // Extra: STRANGER_ID used in one scope
 const STRANGER_ID = new mongoose.Types.ObjectId();
+
+// =============================================================================
+// runBackfill
+// =============================================================================
+describe('runBackfill', () => {
+  test('returns 403 when caller is not owner level', async () => {
+    mockIsOwnerLevel.mockReturnValue(false);
+    const req = { user: MEMBER_USER, query: {} };
+    const res = mockRes();
+    await expect(call(runBackfill, req, res)).rejects.toMatchObject({ message: expect.stringContaining('owner') });
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('owner can run backfill — returns { success: true, data }', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: {} };
+    const res = mockRes();
+    await call(runBackfill, req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { built: 40, users: 5 },
+    });
+  });
+
+  test('passes ?weeks query param to backfillSnapshots', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: { weeks: '12' } };
+    const res = mockRes();
+    await call(runBackfill, req, res);
+    expect(mockBackfillSnapshots).toHaveBeenCalledWith(
+      OWNER_USER.organization,
+      { weeks: 12 },
+    );
+  });
+
+  test('uses default weeks=8 when ?weeks is absent', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: {} };
+    const res = mockRes();
+    await call(runBackfill, req, res);
+    expect(mockBackfillSnapshots).toHaveBeenCalledWith(
+      OWNER_USER.organization,
+      { weeks: 8 },
+    );
+  });
+});
+
+// =============================================================================
+// seedDemo
+// =============================================================================
+describe('seedDemo', () => {
+  test('returns 403 when caller is not owner level', async () => {
+    mockIsOwnerLevel.mockReturnValue(false);
+    const req = { user: MEMBER_USER, query: { confirm: 'true' } };
+    const res = mockRes();
+    await expect(call(seedDemo, req, res)).rejects.toMatchObject({ message: expect.stringContaining('owner') });
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('returns 400 when ?confirm=true is missing', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: {} };
+    const res = mockRes();
+    await expect(call(seedDemo, req, res)).rejects.toMatchObject({ message: expect.stringContaining('confirm') });
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('returns 400 when ?confirm is not the string "true"', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: { confirm: 'yes' } };
+    const res = mockRes();
+    await expect(call(seedDemo, req, res)).rejects.toMatchObject({ message: expect.stringContaining('confirm') });
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('owner with confirm=true calls seedDemoPeopleData and returns { success, data }', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: { confirm: 'true' } };
+    const res = mockRes();
+    await call(seedDemo, req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: { reflections: 20, interactions: 10, morale: 3 },
+    });
+  });
+
+  test('passes ?weeks to seedDemoPeopleData', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: { confirm: 'true', weeks: '6' } };
+    const res = mockRes();
+    await call(seedDemo, req, res);
+    expect(mockSeedDemoPeopleData).toHaveBeenCalledWith(
+      OWNER_USER.organization,
+      { weeks: 6 },
+    );
+  });
+
+  test('uses default weeks=4 when ?weeks is absent', async () => {
+    mockIsOwnerLevel.mockReturnValue(true);
+    const req = { user: OWNER_USER, query: { confirm: 'true' } };
+    const res = mockRes();
+    await call(seedDemo, req, res);
+    expect(mockSeedDemoPeopleData).toHaveBeenCalledWith(
+      OWNER_USER.organization,
+      { weeks: 4 },
+    );
+  });
+});
