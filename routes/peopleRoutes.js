@@ -19,6 +19,8 @@ import {
   setTargets,
   getMoraleTeam,
   getMoraleOrg,
+  runBackfill,
+  seedDemo,
 } from '../controllers/peopleController.js';
 import {
   listMine,
@@ -79,5 +81,12 @@ router.post('/reflections/:id/ack',            ackReflection);
 // ─── MORALE ───────────────────────────────────────────────────────
 router.get('/morale/team', getMoraleTeam);
 router.get('/morale/org',  getMoraleOrg);
+
+// ─── ADMIN (owner-only) ───────────────────────────────────────────
+// Both handlers enforce isOwnerLevel internally.
+// POST /admin/backfill   — backfill historical performance snapshots
+// POST /admin/seed-demo  — seed demo reflections + interactions + morale
+router.post('/admin/backfill',  runBackfill);
+router.post('/admin/seed-demo', seedDemo);
 
 export default router;

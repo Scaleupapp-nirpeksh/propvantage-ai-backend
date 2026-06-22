@@ -8,6 +8,10 @@
 //   GET  /member/:userId  → getMember
 //   GET  /team            → getTeam
 //   GET  /org             → getOrg
+//
+//   Admin (owner-only):
+//   POST /admin/backfill   → runBackfill
+//   POST /admin/seed-demo  → seedDemo
 //   GET  /flags           → getFlags
 //   GET  /targets/:userId → getTargets
 //   PUT  /targets/:userId → setTargets
@@ -31,6 +35,8 @@ import { isOwnerLevel, getSubtree } from '../services/people/hierarchyService.js
 import { resolveWindow }       from '../services/people/performanceSignalsService.js';
 import MoraleSummary           from '../models/moraleSummaryModel.js';
 import User                    from '../models/userModel.js';
+import { backfillSnapshots }   from '../services/people/backfillService.js';
+import { seedDemoPeopleData }  from '../services/people/demoSeedService.js';
 
 // ─── RANGE PARSING ───────────────────────────────────────────────
 
@@ -247,4 +253,51 @@ export const getMoraleOrg = asyncHandler(async (req, res) => {
     .lean();
 
   res.json({ success: true, data: summary || null });
+});
+
+// ─── ADMIN HANDLERS ───────────────────────────────────────────────
+
+/**
+ * @desc    Backfill historical performance snapshots for all active org members.
+ *          Safe to re-run; buildSnapshot upserts on unique {org,user,period,periodStart} key.
+ * @route   POST /api/people/admin/backfill
+ * @access  Owner only
+ * @query   ?weeks=8   Number of prior ISO weeks to build (default 8)
+ */
+export const runBackfill = asyncHandler(async (req, res) => {
+  if (!isOwnerLevel(req.user)) {
+    res.status(403);
+    throw new Error('Only the org owner may run the snapshot backfill');
+  }
+
+  const weeks = req.query.weeks ? parseInt(req.query.weeks, 10) : 8;
+  const data  = await backfillSnapshots(req.user.organization, { weeks });
+  res.json({ success: true, data });
+});
+
+/**
+ * @desc    Seed demo-quality People & Performance data (reflections + interactions + morale).
+ *          Idempotent: skips existing reflections and members with sufficient recent activity.
+ * @route   POST /api/people/admin/seed-demo
+ * @access  Owner only
+ * @query   ?confirm=true  Required safety gate — prevents accidental invocation
+ *          ?weeks=4       Number of prior ISO weeks to seed (default 4)
+ */
+export const seedDemo = asyncHandler(async (req, res) => {
+  if (!isOwnerLevel(req.user)) {
+    res.status(403);
+    throw new Error('Only the org owner may seed demo data');
+  }
+
+  if (req.query.confirm !== 'true') {
+    res.status(400);
+    throw new Error(
+      'Pass ?confirm=true to confirm seeding demo People & Performance data. ' +
+      'This operation creates WeeklyReflections and Interactions for all active members.'
+    );
+  }
+
+  const weeks = req.query.weeks ? parseInt(req.query.weeks, 10) : 4;
+  const data  = await seedDemoPeopleData(req.user.organization, { weeks });
+  res.json({ success: true, data });
 });
