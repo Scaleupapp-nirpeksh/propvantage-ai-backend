@@ -86,6 +86,8 @@ export async function runNightlySnapshots(now = new Date()) {
       // Resolve the day snapshot's periodStart so we can target the exact row.
       const { periodStart: dayStart } = resolveWindow('day', previousDay);
 
+      // upsert: false — red-flags only attach to an already-built snapshot; if the snapshot build
+      // failed for this user the no-op is acceptable (the failure is already recorded).
       await PerformanceSnapshot.findOneAndUpdate(
         {
           organization: user.organization,
@@ -103,7 +105,7 @@ export async function runNightlySnapshots(now = new Date()) {
             'redFlags.lowActivity':      flags.lowActivity.count,
           },
         },
-        { new: true }
+        { new: true, upsert: false }
       );
     } catch (err) {
       summary.failed.push({

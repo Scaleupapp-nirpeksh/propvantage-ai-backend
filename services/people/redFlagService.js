@@ -33,10 +33,9 @@ import { DEFAULT_THRESHOLDS } from '../../config/redFlagThresholds.js';
  * Terminal lead statuses — leads in these states are NOT "open".
  * Derived from the Lead schema enum: ['pending','New','Qualified',
  * 'Site Visit Completed','Negotiating','Booked','Lost','Revived'].
- * Terminal = Booked, Lost.  'pending' is the CP intake queue — also
- * excluded from "open" because it hasn't been accepted into the pipeline yet.
+ * Terminal = Booked, Lost.
  */
-const TERMINAL_LEAD_STATUSES = ['Booked', 'Lost', 'pending'];
+const TERMINAL_LEAD_STATUSES = ['Booked', 'Lost'];
 
 /** Task statuses that mean the task is done / cancelled (not overdue). */
 const TASK_DONE_STATUSES = ['Completed', 'Cancelled'];

@@ -142,6 +142,18 @@ describe('staleLeads threshold boundary (default 7 days)', () => {
 
     const result = await detectFlags(ORG, makeUser(), AS_OF);
     expect(result.staleLeads.count).toBe(0);
+
+    // Also verify the $lt cutoff passed to the stale-leads query equals asOf − 7×24h.
+    // This catches any regression in the default cutoff arithmetic.
+    const staleLeadsCall = mockLeadFind.mock.calls.find(
+      (args) => args[0]?.$or?.some((c) => c['engagementMetrics.lastInteractionDate']?.$lt)
+    );
+    expect(staleLeadsCall).toBeDefined();
+    const ltClause = staleLeadsCall[0].$or.find(
+      (c) => c['engagementMetrics.lastInteractionDate']?.$lt
+    );
+    expect(ltClause['engagementMetrics.lastInteractionDate'].$lt.getTime())
+      .toBe(daysAgo(7).getTime());
   });
 
   test('lead interacted exactly 8 days ago IS stale (count=1)', async () => {
@@ -194,6 +206,35 @@ describe('staleLeads threshold boundary (default 7 days)', () => {
     const ltClause = firstCall.$or.find((c) => c['engagementMetrics.lastInteractionDate']?.$lt);
     expect(ltClause['engagementMetrics.lastInteractionDate'].$lt.getTime())
       .toBe(expectedCutoff.getTime());
+  });
+});
+
+// ─── TERMINAL_LEAD_STATUSES spec alignment ────────────────────────────────────
+// Terminal = Booked, Lost only. 'pending' is "open" and subject to flags.
+
+describe('TERMINAL_LEAD_STATUSES — spec alignment (Booked, Lost only)', () => {
+  test('open-lead filter excludes Booked and Lost', () => {
+    leadFindReturns([]);
+    detectFlags(ORG, makeUser(), AS_OF);
+    // The stale-leads query (first Lead.find call) carries the $nin filter.
+    const staleCall = mockLeadFind.mock.calls.find(
+      (args) => args[0]?.$or?.some((c) => c['engagementMetrics.lastInteractionDate']?.$lt)
+    );
+    expect(staleCall).toBeDefined();
+    const nin = staleCall[0].status.$nin;
+    expect(nin).toContain('Booked');
+    expect(nin).toContain('Lost');
+  });
+
+  test('open-lead filter does NOT exclude pending (pending leads are open)', () => {
+    leadFindReturns([]);
+    detectFlags(ORG, makeUser(), AS_OF);
+    const staleCall = mockLeadFind.mock.calls.find(
+      (args) => args[0]?.$or?.some((c) => c['engagementMetrics.lastInteractionDate']?.$lt)
+    );
+    expect(staleCall).toBeDefined();
+    const nin = staleCall[0].status.$nin;
+    expect(nin).not.toContain('pending');
   });
 });
 
