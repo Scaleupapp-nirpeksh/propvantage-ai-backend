@@ -56,6 +56,14 @@ const roleSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Optional department tag for custom roles — used by hierarchyService
+    // to roll a custom roleRef user up to the correct Head.
+    // E.g. set to 'Sales Head' to make this custom role report to the Sales Head.
+    department: {
+      type: String,
+      default: null,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
