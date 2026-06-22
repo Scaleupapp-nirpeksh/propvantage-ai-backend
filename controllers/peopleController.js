@@ -264,13 +264,20 @@ export const getMoraleOrg = asyncHandler(async (req, res) => {
  * @access  Owner only
  * @query   ?weeks=8   Number of prior ISO weeks to build (default 8)
  */
+// Parse a `?weeks=` param into a sane bounded integer (guards NaN + runaway values).
+const clampWeeks = (raw, fallback, max) => {
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, max);
+};
+
 export const runBackfill = asyncHandler(async (req, res) => {
   if (!isOwnerLevel(req.user)) {
     res.status(403);
     throw new Error('Only the org owner may run the snapshot backfill');
   }
 
-  const weeks = req.query.weeks ? parseInt(req.query.weeks, 10) : 8;
+  const weeks = clampWeeks(req.query.weeks, 8, 52);
   const data  = await backfillSnapshots(req.user.organization, { weeks });
   res.json({ success: true, data });
 });
@@ -297,7 +304,7 @@ export const seedDemo = asyncHandler(async (req, res) => {
     );
   }
 
-  const weeks = req.query.weeks ? parseInt(req.query.weeks, 10) : 4;
+  const weeks = clampWeeks(req.query.weeks, 4, 12);
   const data  = await seedDemoPeopleData(req.user.organization, { weeks });
   res.json({ success: true, data });
 });

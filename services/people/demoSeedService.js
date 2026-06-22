@@ -109,7 +109,6 @@ export async function seedDemoPeopleData(orgId, { weeks = 4 } = {}) {
   let interactionsCreated = 0;
 
   // Build the ordered list of ISO weeks to seed (oldest → newest)
-  const isoWeeks = [];
   let w = isoWeekOf(new Date());
   // Collect `weeks` prior weeks in reverse order, then reverse so oldest is first
   const weekList = [];
