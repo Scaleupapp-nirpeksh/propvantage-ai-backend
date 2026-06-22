@@ -78,6 +78,8 @@ import cpCopilotRoutes from './routes/cpCopilotRoutes.js';
 // SP5+ — commission invoices (CP→Dev billing)
 import cpCommissionInvoiceRoutes from './routes/cpCommissionInvoiceRoutes.js';
 import devCommissionInvoiceRoutes from './routes/devCommissionInvoiceRoutes.js';
+// People & Performance — member/team/org dashboards, reflections, morale
+import peopleRoutes from './routes/peopleRoutes.js';
 // SP5 — scheduled weekly + monthly digest cron
 import { registerScheduledInsightJobs } from './jobs/generateScheduledInsights.js';
 import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js';
@@ -201,6 +203,8 @@ app.use('/api/leadership', leadershipDashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/workspace', workspaceRoutes);
 app.use('/api/support', supportRoutes);
+// People & Performance — protect is applied inside peopleRoutes (router.use(protect))
+app.use('/api/people', peopleRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/public/reports', publicReportRoutes);
 app.use('/api/public/tickets', publicTicketRoutes);

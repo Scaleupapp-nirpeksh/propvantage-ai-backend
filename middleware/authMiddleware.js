@@ -40,6 +40,22 @@ const protect = asyncHandler(async (req, res, next) => {
       req.userRoleLevel = req.user.roleRef?.level ?? 100;
       req.isOwner = req.user.roleRef?.isOwnerRole || false;
 
+      // Throttled lastActiveAt bump — write at most once per hour per user.
+      // Best-effort: never blocks or fails the request on error.
+      try {
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        const lastActive = req.user.lastActiveAt;
+        if (!lastActive || (Date.now() - new Date(lastActive).getTime()) > ONE_HOUR_MS) {
+          User.updateOne(
+            {
+              _id: req.user._id,
+              $or: [{ lastActiveAt: { $lt: new Date(Date.now() - ONE_HOUR_MS) } }, { lastActiveAt: null }],
+            },
+            { $set: { lastActiveAt: new Date() } }
+          ).catch(() => {});
+        }
+      } catch (_e) { /* best-effort — must not block the request */ }
+
       // Load project-level access (which projects this user can see)
       // Org Owner bypasses project access — they can see all projects
       if (req.isOwner) {

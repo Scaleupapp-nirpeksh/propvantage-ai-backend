@@ -205,6 +205,17 @@ const userSchema = new mongoose.Schema(
     },
     
     // =============================================================================
+    // ACTIVITY TRACKING
+    // =============================================================================
+
+    // Bumped (throttled ~1/hour) by authMiddleware after a successful authenticate.
+    // Used by performance dashboards to display "last active" for team members.
+    lastActiveAt: {
+      type: Date,
+      default: null,
+    },
+
+    // =============================================================================
     // SECURITY AND AUDIT FIELDS
     // =============================================================================
     
