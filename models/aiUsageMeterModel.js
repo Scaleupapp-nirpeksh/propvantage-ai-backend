@@ -38,6 +38,8 @@ const aiUsageMeterSchema = new mongoose.Schema(
     scheduledGenerations: { type: Number, default: 0, min: 0 },
     onDemandGenerations:  { type: Number, default: 0, min: 0 },
     copilotMessages:      { type: Number, default: 0, min: 0 },
+    voiceCalls:           { type: Number, default: 0, min: 0 },
+    voiceMinutes:         { type: Number, default: 0, min: 0 },
 
     totalTokensUsed: { type: Number, default: 0, min: 0 },
     totalCostUsd:    { type: Number, default: 0, min: 0 },

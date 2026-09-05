@@ -80,6 +80,29 @@ const organizationSchema = new mongoose.Schema(
     invoicePolicy: {
       commissionInvoiceTriggerPct: { type: Number, default: 0.20, min: 0, max: 1 },
     },
+    // Voice agent (AI calling) — per-org configuration. The provider assistant
+    // is created lazily from this config and re-synced when its hash changes.
+    voiceAgent: {
+      enabled: { type: Boolean, default: false },
+      autoCallNewLeads: { type: Boolean, default: false },
+      agentName: { type: String, default: 'Aanya', trim: true },
+      hindiSwitching: { type: Boolean, default: true },
+      callingHours: {
+        start: { type: String, default: '09:00' }, // IST, HH:mm
+        end: { type: String, default: '21:00' },
+      },
+      voice: {
+        provider: { type: String, default: 'cartesia' },
+        voiceId: { type: String, default: '95d51f79-c397-46f9-b49a-23763d3eaa2d' },
+        model: { type: String, default: 'sonic-3' },
+        language: { type: String, default: 'hi' },
+      },
+      monthlyMinuteBudget: { type: Number, default: 300, min: 0 },
+      vapiAssistantId: { type: String, default: null },
+      assistantConfigHash: { type: String, default: null },
+      phoneNumberId: { type: String, default: null },
+      phoneNumber: { type: String, default: null },
+    },
   },
   {
     timestamps: true, // Automatically adds createdAt and updatedAt fields

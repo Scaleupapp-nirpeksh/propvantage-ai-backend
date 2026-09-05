@@ -15,6 +15,7 @@ import {
   projectAccessFilter,
 } from '../utils/projectAccessHelper.js';
 import { runLeadEnrichment, hasEnrichmentSources } from '../services/leadEnrichmentService.js';
+import { maybeAutoCallNewLead } from '../services/voice/callService.js';
 import { createNotification, notifyUsersWithPermission } from '../services/notificationService.js';
 import { partnerAccessScope } from '../utils/partnerAccessHelper.js';
 import { assertTransition } from '../utils/leadStatusMachine.js';
@@ -212,6 +213,9 @@ const createLead = asyncHandler(async (req, res) => {
   if (hasSources) {
     setImmediate(() => runLeadEnrichment(createdLead._id, req.user._id));
   }
+
+  // AI voice agent: auto-call the new lead if the org has it switched on (fire-and-forget).
+  setImmediate(() => maybeAutoCallNewLead(createdLead._id).catch(() => {}));
 
   res.status(201).json({
     success: true,

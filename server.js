@@ -55,6 +55,7 @@ import publicReportRoutes from './routes/publicReportRoutes.js';
 import publicTicketRoutes from './routes/publicTicketRoutes.js';
 import workspaceRoutes from './routes/workspaceRoutes.js';
 import supportRoutes from './routes/supportRoutes.js';
+import voiceRoutes from './routes/voiceRoutes.js';
 import homeRoutes from './routes/homeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import projectAccessRoutes from './routes/projectAccessRoutes.js';
@@ -204,6 +205,8 @@ app.use('/api/leadership', leadershipDashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/workspace', workspaceRoutes);
 app.use('/api/support', supportRoutes);
+// AI voice agent — provider webhook is unauthenticated (secret-verified) inside the router.
+app.use('/api/voice', voiceRoutes);
 // People & Performance — protect is applied inside peopleRoutes (router.use(protect))
 app.use('/api/people', peopleRoutes);
 app.use('/api/home', homeRoutes);

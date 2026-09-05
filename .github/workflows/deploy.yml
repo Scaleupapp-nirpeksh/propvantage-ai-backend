@@ -66,8 +66,15 @@ jobs:
           fi
           # Sync managed secrets into .env (idempotent upsert), then reload env on restart.
           # GitHub substitutes the ${{ secrets.* }} value into this script before it is sent.
-          if [ -f .env ]; then grep -v '^ANTHROPIC_API_KEY=' .env > .env.tmp && mv .env.tmp .env; fi
+          if [ -f .env ]; then grep -v -E '^(ANTHROPIC_API_KEY|VAPI_API_KEY|VAPI_WEBHOOK_SECRET|TWILIO_ACCOUNT_SID|TWILIO_AUTH_TOKEN|TWILIO_PHONE_NUMBER|VOICE_PUBLIC_BASE_URL)=' .env > .env.tmp && mv .env.tmp .env; fi
           echo "ANTHROPIC_API_KEY='${{ secrets.ANTHROPIC_API_KEY }}'" >> .env
+          # AI voice agent (Vapi + Twilio). Empty secrets write empty values, which the app treats as "not configured".
+          echo "VAPI_API_KEY='${{ secrets.VAPI_API_KEY }}'" >> .env
+          echo "VAPI_WEBHOOK_SECRET='${{ secrets.VAPI_WEBHOOK_SECRET }}'" >> .env
+          echo "TWILIO_ACCOUNT_SID='${{ secrets.TWILIO_ACCOUNT_SID }}'" >> .env
+          echo "TWILIO_AUTH_TOKEN='${{ secrets.TWILIO_AUTH_TOKEN }}'" >> .env
+          echo "TWILIO_PHONE_NUMBER='${{ secrets.TWILIO_PHONE_NUMBER }}'" >> .env
+          echo "VOICE_PUBLIC_BASE_URL='https://api.prop-vantage.com'" >> .env
           # Diagnostic (key redacted): reveals the written line's quote structure so a malformed
           # secret is visible in the Actions log. Expect: ANTHROPIC_API_KEY='sk-ant-REDACTED'
           echo "ENV_CHECK: $(grep '^ANTHROPIC_API_KEY=' .env | sed -E 's/sk-ant-[A-Za-z0-9_-]+/sk-ant-REDACTED/')"

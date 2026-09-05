@@ -280,6 +280,9 @@ const leadSchema = new mongoose.Schema(
       specialRequirements: { type: String } // Any special requirements
     },
     
+    // Set when the buyer asks not to be called (via the AI voice agent or manually).
+    doNotCall: { type: Boolean, default: false },
+
     // Qualification status
     qualificationStatus: {
       type: String,

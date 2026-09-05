@@ -47,8 +47,8 @@ export function nextMidnightIst(now = new Date()) {
  * actual LLM-spending requests count against the hourly burst cap.
  *
  * @param {string|ObjectId} cpOrgId
- * @param {'scheduled'|'on_demand'|'copilot'|'rate_limit_hit'} kind
- * @param {{ total?: number, costUsd?: number }} [tokenUsage]
+ * @param {'scheduled'|'on_demand'|'copilot'|'rate_limit_hit'|'voice'} kind
+ * @param {{ total?: number, costUsd?: number, minutes?: number }} [tokenUsage]
  * @returns {Promise<Object>} the updated meter
  */
 export async function incrementMeter(cpOrgId, kind, tokenUsage) {
@@ -59,6 +59,7 @@ export async function incrementMeter(cpOrgId, kind, tokenUsage) {
   else if (kind === 'on_demand') incOps.onDemandGenerations  = 1;
   else if (kind === 'copilot')   incOps.copilotMessages      = 1;
   else if (kind === 'rate_limit_hit') incOps.rateLimitHits   = 1;
+  else if (kind === 'voice') { incOps.voiceCalls = 1; if (tokenUsage?.minutes) incOps.voiceMinutes = tokenUsage.minutes; }
   if (tokenUsage?.total)   incOps.totalTokensUsed = tokenUsage.total;
   if (tokenUsage?.costUsd) incOps.totalCostUsd    = tokenUsage.costUsd;
 

@@ -75,7 +75,9 @@ export const NOTIFICATION_TYPES = [
   'reflection_due',            // Fri reminder to submit the current week's reflection
   'reflection_overdue',        // Mon reminder when last week's reflection was not submitted
   // People & Performance — morale roll-ups (Task 6)
-  'morale_summary_ready',      // weekly morale roll-up is ready for a Head or Owner
+  'morale_summary_ready',
+  // Voice agent
+  'voice_call_completed',      // weekly morale roll-up is ready for a Head or Owner
 ];
 
 export const NOTIFICATION_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
