@@ -30,8 +30,8 @@ function webhookSecret() {
   return (process.env.VAPI_WEBHOOK_SECRET || '').trim();
 }
 
-import { istClock, withinCallingHours, normalizePhone } from './helpers.js';
-export { istClock, withinCallingHours, normalizePhone };
+import { istClock, withinCallingHours, normalizePhone, nowIst, timeOfDayIst } from './helpers.js';
+export { istClock, withinCallingHours, normalizePhone, nowIst, timeOfDayIst };
 
 async function systemUserId(orgId) {
   const u = await User.findOne({ organization: orgId, isActive: true }).populate('roleRef', 'level isOwnerRole').sort({ 'roleRef.level': 1 }).select('_id');
@@ -155,6 +155,8 @@ async function buildVariableValues({ org, lead, session, callReason }) {
     inventorySummary: await inventorySummary(org._id, project?._id || lead.project),
     callReason: callReason || 'They recently enquired about the project; understand their requirement and offer a site visit.',
     todayIST: todayIst(),
+    nowIST: nowIst(),
+    timeOfDay: timeOfDayIst(),
   };
 }
 

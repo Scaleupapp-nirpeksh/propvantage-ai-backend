@@ -1,6 +1,6 @@
 // tests/unit/voiceAgentActionsPure.test.js — DB-free helpers of the voice tool set
 import { normalizeTimeline, normalizeFloorPreference, formatInr, parseAgentDatetime, resultToSpeakable } from '../../services/voice/agentActions.js';
-import { normalizePhone, withinCallingHours } from '../../services/voice/helpers.js';
+import { normalizePhone, withinCallingHours, timeOfDayIst } from '../../services/voice/helpers.js';
 
 describe('voice agent pure helpers', () => {
   it('normalizes timelines from enum values and free text', () => {
@@ -45,6 +45,12 @@ describe('voice agent pure helpers', () => {
     expect(normalizePhone('+91 88002 37144')).toBe('+918800237144');
     expect(normalizePhone('919876543210')).toBe('+919876543210');
     expect(normalizePhone('12345')).toBeNull();
+  });
+
+  it('derives the IST time of day for greetings', () => {
+    expect(timeOfDayIst(new Date('2026-09-05T03:30:00Z'))).toBe('morning');   // 09:00 IST
+    expect(timeOfDayIst(new Date('2026-09-05T08:30:00Z'))).toBe('afternoon'); // 14:00 IST
+    expect(timeOfDayIst(new Date('2026-09-05T15:30:00Z'))).toBe('evening');   // 21:00 IST
   });
 
   it('checks calling hours in IST', () => {

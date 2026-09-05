@@ -26,3 +26,16 @@ export function normalizePhone(raw) {
   if (/^91\d{10}$/.test(s)) return `+${s}`;
   return null;
 }
+
+/** "9:05 pm" in IST. */
+export function nowIst(now = new Date()) {
+  return new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }).format(now);
+}
+
+/** "morning" | "afternoon" | "evening" from the IST clock (evening from 5 PM, incl. night). */
+export function timeOfDayIst(now = new Date()) {
+  const h = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }).format(now));
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  return 'evening';
+}

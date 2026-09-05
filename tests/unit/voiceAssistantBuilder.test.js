@@ -31,12 +31,23 @@ describe('buildAssistantConfig', () => {
   it('templates per-call variables into the prompt and first message, never hardcoding a lead', () => {
     const dto = buildAssistantConfig({ org, baseUrl: 'https://x', secret: 's' });
     const sys = dto.model.messages[0].content;
-    for (const v of ['{{leadFirstName}}', '{{projectName}}', '{{execName}}', '{{inventorySummary}}', '{{knownDetails}}']) {
+    for (const v of ['{{leadFirstName}}', '{{projectName}}', '{{execName}}', '{{inventorySummary}}', '{{knownDetails}}', '{{nowIST}}', '{{timeOfDay}}']) {
       expect(sys).toContain(v);
     }
     expect(dto.firstMessage).toContain('{{leadFirstName}}');
     expect(dto.firstMessage).toContain('Aanya');
     expect(sys).toMatch(/never claim to be \{\{execName\}\}/);
+  });
+
+  it('keeps tool fillers in English regardless of the Hindi-switching setting', () => {
+    for (const hindiSwitching of [true, false]) {
+      const dto = buildAssistantConfig({ org: { ...org, voiceAgent: { hindiSwitching } }, baseUrl: 'https://x', secret: 's' });
+      const fillers = dto.model.tools.filter((t) => t.messages?.length).map((t) => t.messages[0].content);
+      expect(fillers.length).toBeGreaterThan(0);
+      for (const f of fillers) expect(f).toMatch(/^(One moment|Booking that)/);
+    }
+    const sys = buildSystemPrompt({ hindiSwitching: true });
+    expect(sys).toMatch(/Do not use any Hindi words or phrases unless the CALLER has already spoken Hindi/);
   });
 
   it('drops the Hindi instruction when switching is disabled and hashes deterministically', () => {
@@ -45,6 +56,7 @@ describe('buildAssistantConfig', () => {
     expect(assistantConfigHash(a)).toBe(assistantConfigHash(b));
     const noHindi = buildAssistantConfig({ org: { ...org, voiceAgent: { hindiSwitching: false } }, baseUrl: 'https://x', secret: 's' });
     expect(assistantConfigHash(noHindi)).not.toBe(assistantConfigHash(a));
-    expect(buildSystemPrompt({ hindiSwitching: false })).not.toMatch(/Hinglish/);
+    expect(buildSystemPrompt({ hindiSwitching: false })).not.toMatch(/switch and continue in natural Hinglish/);
+    expect(buildSystemPrompt({ hindiSwitching: false })).toMatch(/Stay in English for the whole call/);
   });
 });

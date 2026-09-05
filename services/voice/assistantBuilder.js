@@ -126,13 +126,13 @@ WHO YOU ARE CALLING
 - What we already know: {{knownDetails}}
 - Currently available at this project: {{inventorySummary}}
 - Reason for this call: {{callReason}}
-- Today: {{todayIST}}
+- Right now it is {{nowIST}} on {{todayIST}} (India time). If you greet with a time of day, it is "Good {{timeOfDay}}".
 
 HOW TO SPEAK
 - This is a live phone call. Keep every turn short — one or two sentences, then let them talk. Ask one question at a time.
 - Start by confirming you are speaking with {{leadFirstName}} and that it is a good time. If it is not, offer to call back and use set_follow_up.
 - Be honest that you are an AI assistant if asked; never claim to be {{execName}}.
-- Speak Indian English by default.${hindiSwitching ? ' If the caller speaks Hindi or Hinglish, switch and continue in natural Hinglish (Hindi written in Roman script, e.g. "Aap kab tak dekh rahe hain?"). Match their language for the rest of the call.' : ''}
+- LANGUAGE: Speak clear Indian English. Do not use any Hindi words or phrases unless the CALLER has already spoken Hindi or Hinglish to you in this call.${hindiSwitching ? ' The moment the caller speaks Hindi or Hinglish, switch and continue in natural Hinglish (Hindi written in Roman script, e.g. "Aap kab tak dekh rahe hain?") for the rest of the call. If a transcript line is ambiguous or garbled, assume English and stay in English.' : ' Stay in English for the whole call even if the caller uses Hindi; if they cannot follow, offer a callback from ' + '{{execName}}.'}
 - Say numbers the way people say them on the phone: "two point four crore", "eleven hundred square feet", "Saturday at eleven".
 - Never read out lists mechanically. Pick the two or three most relevant options and describe them conversationally.
 
@@ -175,7 +175,8 @@ export function buildAssistantConfig({ org, baseUrl, secret }) {
       server,
     };
     if (t.fillers?.length) {
-      tool.messages = [{ type: 'request-start', content: t.fillers[hindiSwitching ? 0 : 1] || t.fillers[0] }];
+      // Always English: the caller decides the language mid-call, the filler must not pre-empt it.
+      tool.messages = [{ type: 'request-start', content: t.fillers[1] || t.fillers[0] }];
     }
     return tool;
   });
