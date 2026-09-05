@@ -87,6 +87,7 @@ import { registerScheduledReportJobs } from './jobs/generateScheduledReports.js'
 import { registerNightlyPerformanceSnapshotJob } from './jobs/nightlyPerformanceSnapshot.js';
 import { registerMoraleSummariesJob } from './jobs/generateMoraleSummaries.js';
 import { registerReflectionDueReminderJob } from './jobs/reflectionReminders.js';
+import { registerVoicePlaybookJobs } from './jobs/voicePlaybooks.js';
 
 // Load environment variables
 dotenv.config();
@@ -511,6 +512,11 @@ httpServer.listen(PORT, () => {
     registerScheduledReportJobs();
   } catch (err) {
     console.error('[reports] Failed to register scheduled report jobs:', err.message);
+  }
+  try {
+    registerVoicePlaybookJobs();
+  } catch (err) {
+    console.error('[voicePlaybooks] Failed to register playbook jobs:', err.message);
   }
   try {
     registerNightlyPerformanceSnapshotJob();

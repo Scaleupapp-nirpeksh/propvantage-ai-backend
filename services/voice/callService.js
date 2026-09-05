@@ -16,6 +16,9 @@ import { vapiClient } from './vapiClient.js';
 import { buildAssistantConfig, assistantConfigHash } from './assistantBuilder.js';
 import { executeVoiceAction, resultToSpeakable, formatInr } from './agentActions.js';
 import { normalizeToolCalls, normalizeEndOfCall, mapProviderStatus, outcomeFromEndedReason } from './normalize.js';
+import { buildMissionVariables, isToolAllowed, effectiveWindow, retryAt } from './playbooks/mission.js';
+import CallPlaybook from '../../models/callPlaybookModel.js';
+import CallJob from '../../models/callJobModel.js';
 import { createNotification } from '../notificationService.js';
 import { incrementMeter } from '../ai/aiUsageMeterService.js';
 import { addLeadScoreUpdateJob } from '../backgroundJobService.js';
@@ -134,12 +137,12 @@ function todayIst() {
   return new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date());
 }
 
-async function buildVariableValues({ org, lead, session, callReason }) {
+async function buildVariableValues({ org, lead, session, callReason, playbook = null, extraVars = {} }) {
   const exec = lead.assignedTo && typeof lead.assignedTo === 'object' ? lead.assignedTo : null;
   const project = lead.project && typeof lead.project === 'object' ? lead.project : null;
   const loc = project?.location;
   const locStr = loc ? [loc.area, loc.city].filter(Boolean).join(', ') || (typeof loc === 'string' ? loc : '') : '';
-  return {
+  const base = {
     callSessionId: String(session._id),
     leadId: String(lead._id),
     orgId: String(org._id),
@@ -157,7 +160,10 @@ async function buildVariableValues({ org, lead, session, callReason }) {
     todayIST: todayIst(),
     nowIST: nowIst(),
     timeOfDay: timeOfDayIst(),
+    ...extraVars,
   };
+  const mission = buildMissionVariables(playbook, base);
+  return { ...base, ...mission };
 }
 
 // ─── Start a call ─────────────────────────────────────────────────────────
@@ -167,7 +173,7 @@ async function buildVariableValues({ org, lead, session, callReason }) {
  * @param {{ orgId, leadId, initiatedBy?, trigger?: 'manual'|'auto_new_lead'|'test', useCase?, callReason?, force?: boolean }} p
  * @returns {Promise<CallSession>}
  */
-export async function startOutboundCall({ orgId, leadId, initiatedBy = null, trigger = 'manual', useCase = 'lead_qualification', callReason, force = false }) {
+export async function startOutboundCall({ orgId, leadId, initiatedBy = null, trigger = 'manual', useCase = 'lead_qualification', callReason, force = false, playbook = null, playbookId = null, callJob = null, extraVars = {} }) {
   if (!vapiClient.isConfigured()) throw new Error('Voice calling is not configured on the server (VAPI_API_KEY missing).');
   const org = await Organization.findById(orgId);
   if (!org) throw new Error('Organization not found');
@@ -195,6 +201,11 @@ export async function startOutboundCall({ orgId, leadId, initiatedBy = null, tri
     if ((agg?.sec || 0) / 60 >= budget) throw new Error(`Monthly voice budget of ${budget} minutes reached.`);
   }
 
+  if (!playbook && playbookId) {
+    playbook = await CallPlaybook.findOne({ _id: playbookId, organization: orgId });
+    if (!playbook) throw new Error('Playbook not found');
+  }
+
   const assistantId = await ensureAssistant(org);
   const phoneNumberId = await ensurePhoneNumber(org);
 
@@ -210,9 +221,11 @@ export async function startOutboundCall({ orgId, leadId, initiatedBy = null, tri
     trigger,
     customerNumber: number,
     status: 'queued',
+    playbook: playbook?._id || undefined,
+    callJob: callJob?._id || undefined,
   });
 
-  const variableValues = await buildVariableValues({ org, lead, session, callReason });
+  const variableValues = await buildVariableValues({ org, lead, session, callReason, playbook, extraVars });
   session.variableValues = variableValues;
 
   try {
@@ -244,6 +257,14 @@ export async function startOutboundCall({ orgId, leadId, initiatedBy = null, tri
  */
 export async function maybeAutoCallNewLead(leadId) {
   try {
+    // Playbooks take precedence over the legacy org toggle.
+    const { enqueueForEvent, hasLeadCreatedPlaybook } = await import('./playbooks/triggerScanner.js');
+    const leadForOrg = await Lead.findById(leadId).select('organization');
+    if (leadForOrg && (await hasLeadCreatedPlaybook(leadForOrg.organization))) {
+      const n = await enqueueForEvent('lead.created', { _id: leadId });
+      if (n) console.log(`📞 [voice] lead ${leadId}: ${n} playbook job(s) enqueued`);
+      return;
+    }
     const lead = await Lead.findById(leadId).select('organization phone doNotCall');
     if (!lead || !lead.phone || lead.doNotCall) return;
     const org = await Organization.findById(lead.organization).select('voiceAgent');
@@ -294,8 +315,14 @@ export async function handleToolCalls(message) {
   };
   if (session.status !== 'in-progress') session.status = 'in-progress';
 
+  const playbook = session.playbook ? await CallPlaybook.findById(session.playbook).select('tools name') : null;
   const results = [];
   for (const c of calls) {
+    if (playbook && !isToolAllowed(playbook, c.name)) {
+      results.push({ toolCallId: c.id, name: c.name, result: 'That action is not available on this call. Offer a callback from the executive instead.' });
+      session.actionsTaken.push({ tool: c.name, args: c.args, result: 'blocked by playbook', ok: false });
+      continue;
+    }
     const r = await executeVoiceAction(c.name, c.args, ctx);
     results.push({ toolCallId: c.id, name: c.name, result: resultToSpeakable(r) });
   }
@@ -370,6 +397,7 @@ export async function handleEndOfCall(message) {
           organization: session.organization,
           type: 'Call',
           direction: 'Outbound',
+          aiGenerated: true,
           content: `[AI call · ${minutes} min · ${session.outcome}] ${summaryText}`,
           outcome: session.outcome,
           nextAction: lead.followUpSchedule?.notes || undefined,
@@ -423,6 +451,48 @@ export async function handleEndOfCall(message) {
     }
   }
 
+  // Playbook job bookkeeping: completed / retry / no_answer, plus role handover notifications.
+  if (session.callJob) {
+    try {
+      const job = await CallJob.findById(session.callJob);
+      const playbook = session.playbook ? await CallPlaybook.findById(session.playbook) : null;
+      if (job) {
+        const reached = session.durationSec > 15 && !/No answer|voicemail|Call failed/i.test(session.outcome || '');
+        job.lastSession = session._id;
+        job.outcome = session.outcome;
+        if (reached) {
+          job.status = 'completed';
+        } else if (job.attempts < (job.maxAttempts || 1)) {
+          job.status = 'scheduled';
+          const orgDoc = await Organization.findById(session.organization).select('voiceAgent');
+          job.scheduledFor = retryAt(playbook?.timing?.retry?.afterHours || 4, effectiveWindow(playbook, orgDoc));
+          job.reason = `retry after ${session.outcome || 'no answer'}`;
+        } else {
+          job.status = 'no_answer';
+        }
+        await job.save();
+      }
+      if (playbook && session.handoffRequested && playbook.handover?.notifyRoles?.length && lead) {
+        const recipients = await User.find({ organization: session.organization, isActive: true, role: { $in: playbook.handover.notifyRoles } }).select('_id');
+        for (const r of recipients) {
+          await createNotification({
+            organization: session.organization,
+            recipient: r._id,
+            type: 'voice_call_completed',
+            title: `Handover from AI call · ${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+            message: (session.summary || 'The caller needs a person to follow up.').slice(0, 400),
+            actionUrl: `/leads/${lead._id}`,
+            relatedEntity: { entityType: 'Lead', entityId: lead._id, displayLabel: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() },
+            priority: 'high',
+            metadata: { callSessionId: String(session._id), playbook: playbook.name },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [voice] playbook job update failed:', err.message);
+    }
+  }
+
   try {
     await incrementMeter(session.organization, 'voice', { costUsd: session.costUsd, minutes: Math.round((session.durationSec / 60) * 100) / 100 });
   } catch (err) {
@@ -464,8 +534,9 @@ export async function listRecentCalls(orgId, limit = 25) {
   return CallSession.find({ organization: orgId })
     .sort({ createdAt: -1 })
     .limit(Math.min(Number(limit) || 25, 100))
-    .select('lead status outcome trigger durationSec costUsd createdAt endedAt handoffRequested summary recordingUrl')
+    .select('lead playbook status outcome trigger durationSec costUsd createdAt endedAt handoffRequested summary recordingUrl')
     .populate('lead', 'firstName lastName phone')
+    .populate('playbook', 'name')
     .lean();
 }
 
@@ -489,7 +560,7 @@ export async function getCall(orgId, id) {
 /**
  * Find-or-create a test lead for a phone number, then call it.
  */
-export async function placeTestCall({ orgId, userId, phone, projectId }) {
+export async function placeTestCall({ orgId, userId, phone, projectId, playbook = null }) {
   const number = normalizePhone(phone);
   if (!number) throw new Error('Enter the number in international format, e.g. +919876543210');
   const org = await Organization.findById(orgId);
@@ -517,5 +588,6 @@ export async function placeTestCall({ orgId, userId, phone, projectId }) {
   } else if (lead.doNotCall) {
     lead.doNotCall = false; await lead.save();
   }
-  return startOutboundCall({ orgId, leadId: lead._id, initiatedBy: userId, trigger: 'test', useCase: 'test', force: true });
+  const extraVars = playbook ? { visitWhen: 'tomorrow at 11 AM', installmentLabel: '#3', installmentAmount: '₹18 L', installmentDue: 'the 15th', followUpWas: 'last Tuesday' } : {};
+  return startOutboundCall({ orgId, leadId: lead._id, initiatedBy: userId, trigger: 'test', useCase: 'test', force: true, playbook, extraVars });
 }

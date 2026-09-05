@@ -271,9 +271,12 @@ export const PERMISSIONS = {
   PORTFOLIO: {
     MANAGE: 'portfolio:manage',
   },
+  // ─── VOICE AGENT ─────────────────────────────────────
+  VOICE: {
+    MANAGE_PLAYBOOKS: 'voice:manage_playbooks',
+  },
 };
 
-// Flat array of all permission strings for validation
 export const ALL_PERMISSIONS = Object.values(PERMISSIONS).flatMap((group) =>
   Object.values(group)
 );

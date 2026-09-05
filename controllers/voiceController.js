@@ -52,12 +52,12 @@ export const providerWebhook = asyncHandler(async (req, res) => {
 
 /** @route POST /api/voice/calls  body: { leadId, callReason? } */
 export const createCall = asyncHandler(async (req, res) => {
-  const { leadId, callReason } = req.body || {};
+  const { leadId, callReason, playbookId } = req.body || {};
   if (!leadId) { res.status(400); throw new Error('leadId is required'); }
   const lead = await Lead.findOne({ _id: leadId, organization: req.user.organization }).select('_id project');
   if (!lead) { res.status(404); throw new Error('Lead not found'); }
   try {
-    const session = await startOutboundCall({ orgId: req.user.organization, leadId, initiatedBy: req.user._id, trigger: 'manual', callReason });
+    const session = await startOutboundCall({ orgId: req.user.organization, leadId, initiatedBy: req.user._id, trigger: 'manual', callReason, playbookId: playbookId || null });
     res.status(201).json({ success: true, data: session });
   } catch (err) {
     res.status(400);

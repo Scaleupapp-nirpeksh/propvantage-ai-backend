@@ -34,8 +34,9 @@ describe('buildAssistantConfig', () => {
     for (const v of ['{{leadFirstName}}', '{{projectName}}', '{{execName}}', '{{inventorySummary}}', '{{knownDetails}}', '{{nowIST}}', '{{timeOfDay}}']) {
       expect(sys).toContain(v);
     }
-    expect(dto.firstMessage).toContain('{{leadFirstName}}');
-    expect(dto.firstMessage).toContain('Aanya');
+    expect(dto.firstMessage).toBe('{{openingLine}}');
+    expect(sys).toContain('{{callMission}}');
+    expect(sys).toContain('{{playbookName}}');
     expect(sys).toMatch(/never claim to be \{\{execName\}\}/);
   });
 

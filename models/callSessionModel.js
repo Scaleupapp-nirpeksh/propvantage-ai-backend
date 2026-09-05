@@ -39,7 +39,7 @@ const callSessionSchema = new mongoose.Schema(
     providerAssistantId: { type: String },
     direction: { type: String, enum: ['outbound', 'inbound'], default: 'outbound' },
     useCase: { type: String, enum: ['lead_qualification', 'follow_up', 'test'], default: 'lead_qualification' },
-    trigger: { type: String, enum: ['manual', 'auto_new_lead', 'test'], default: 'manual' },
+    trigger: { type: String, enum: ['manual', 'auto_new_lead', 'test', 'playbook'], default: 'manual' },
 
     status: {
       type: String,
@@ -68,6 +68,8 @@ const callSessionSchema = new mongoose.Schema(
     handoffRequested: { type: Boolean, default: false },
     doNotCall: { type: Boolean, default: false },
     interaction: { type: mongoose.Schema.Types.ObjectId, ref: 'Interaction' },
+    playbook: { type: mongoose.Schema.Types.ObjectId, ref: 'CallPlaybook', index: true },
+    callJob: { type: mongoose.Schema.Types.ObjectId, ref: 'CallJob' },
     variableValues: { type: mongoose.Schema.Types.Mixed },
   },
   { timestamps: true }

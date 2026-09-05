@@ -46,6 +46,8 @@ const interactionSchema = new mongoose.Schema(
       trim: true,
       // Description of the next planned action
     },
+    // True for interactions written by the AI voice agent (excluded from 'human contact' checks).
+    aiGenerated: { type: Boolean, default: false },
     scheduledAt: {
       type: Date,
       // If a next action is scheduled for a specific time

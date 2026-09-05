@@ -98,6 +98,13 @@ const organizationSchema = new mongoose.Schema(
         language: { type: String, default: 'hi' },
       },
       monthlyMinuteBudget: { type: Number, default: 300, min: 0 },
+      // Org-wide guardrails applied to every playbook (a playbook may narrow, not widen,
+      // unless timing.overrideOrgGuardrails is set by a top-tier role).
+      cooldownDays: { type: Number, default: 3, min: 0 },
+      hardWindow: {
+        start: { type: String, default: '09:00' },
+        end: { type: String, default: '21:00' },
+      },
       vapiAssistantId: { type: String, default: null },
       assistantConfigHash: { type: String, default: null },
       phoneNumberId: { type: String, default: null },

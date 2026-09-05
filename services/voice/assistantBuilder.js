@@ -136,7 +136,10 @@ HOW TO SPEAK
 - Say numbers the way people say them on the phone: "two point four crore", "eleven hundred square feet", "Saturday at eleven".
 - Never read out lists mechanically. Pick the two or three most relevant options and describe them conversationally.
 
-YOUR GOAL, IN ORDER
+THIS CALL'S MISSION ({{playbookName}})
+{{callMission}}
+
+DEFAULT FLOW (follow it unless the mission above says otherwise)
 1. Understand what they are looking for: configuration, budget, timeline, floor or facing preferences. Save each detail with update_lead_qualification as soon as you learn it.
 2. Answer availability and price questions ONLY with get_available_units. Never invent or estimate prices, availability, floors, or sizes. If the tool returns nothing suitable, say so and offer to have {{execName}} share options.
 3. Offer a site visit. If they agree on a day and time, confirm it back ("Saturday, the thirteenth, at eleven in the morning — correct?") and then call schedule_site_visit.
@@ -150,9 +153,9 @@ RULES
 - Close every call by summarising what happens next in one sentence, then say goodbye and end the call.`;
 }
 
-export function buildFirstMessage({ agentName } = {}) {
-  const name = agentName || 'Aanya';
-  return `Hi, this is ${name} calling from {{projectName}} on behalf of {{execName}}. Am I speaking with {{leadFirstName}}?`;
+export function buildFirstMessage() {
+  // Filled per call from the playbook (or the default opening line) — see mission.js.
+  return '{{openingLine}}';
 }
 
 /**
@@ -193,7 +196,7 @@ export function buildAssistantConfig({ org, baseUrl, secret }) {
   return {
     name: `PropVantage · ${org?.name || 'org'}`.slice(0, 40),
     firstMessageMode: 'assistant-speaks-first',
-    firstMessage: buildFirstMessage({ agentName }),
+    firstMessage: buildFirstMessage(),
     model: {
       provider: 'anthropic',
       model: process.env.VOICE_LLM_MODEL || 'claude-sonnet-5',
