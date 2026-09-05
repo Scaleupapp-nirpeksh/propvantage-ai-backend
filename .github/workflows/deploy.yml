@@ -88,7 +88,9 @@ jobs:
           export PATH="$PATH:/snap/bin:/usr/local/bin"
           echo "=== CERT: before ==="; echo | openssl s_client -connect 127.0.0.1:443 -servername api.prop-vantage.com 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true
           if command -v certbot >/dev/null 2>&1; then
-            certbot renew --non-interactive --deploy-hook "nginx -s reload" 2>&1 | tail -12 || echo "CERT_RENEW_FAILED"
+            timeout 150 certbot renew --non-interactive --no-random-sleep-on-renew --deploy-hook "nginx -s reload" 2>&1 | tail -12 || echo "CERT_RENEW_FAILED_OR_TIMED_OUT"
+            # The renewal timer was found inactive on 2026-09-05 (cert had lapsed) — keep it on.
+            systemctl enable --now certbot.timer >/dev/null 2>&1 || true
             systemctl is-active certbot.timer 2>/dev/null | sed 's/^/certbot.timer: /' || true
           else
             echo "CERT: certbot not found on PATH"
@@ -130,9 +132,13 @@ jobs:
           set -e
           CMD_ID="${{ steps.ssm.outputs.command_id }}"
           # AWS CLI ships a built-in waiter for command execution
-          aws ssm wait command-executed \
-            --command-id "$CMD_ID" \
-            --instance-id "$INSTANCE_ID" || true
+          # Poll up to ~9 minutes (the built-in waiter gives up after ~100s, which is
+          # shorter than a deploy that also renews the TLS certificate).
+          for i in $(seq 1 54); do
+            S=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo "Pending")
+            case "$S" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 10
+          done
           # Always fetch the invocation to surface output and final status
           aws ssm get-command-invocation \
             --command-id "$CMD_ID" \
