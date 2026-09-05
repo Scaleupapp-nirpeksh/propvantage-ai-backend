@@ -81,6 +81,19 @@ jobs:
           pm2 restart "$PM2_APP" --update-env
           pm2 save
           echo "Deployed $AFTER"
+          echo "NODE_VERSION: $(node -v)"
+          # TLS certificate upkeep. The Let's Encrypt cert for api.prop-vantage.com is renewed by
+          # certbot; if its timer ever stops, the API keeps running but every browser and webhook
+          # fails TLS. Renew here (no-op when not due) and reload nginx on success. Never fatal.
+          export PATH="$PATH:/snap/bin:/usr/local/bin"
+          echo "=== CERT: before ==="; echo | openssl s_client -connect 127.0.0.1:443 -servername api.prop-vantage.com 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true
+          if command -v certbot >/dev/null 2>&1; then
+            certbot renew --non-interactive --deploy-hook "nginx -s reload" 2>&1 | tail -12 || echo "CERT_RENEW_FAILED"
+            systemctl is-active certbot.timer 2>/dev/null | sed 's/^/certbot.timer: /' || true
+          else
+            echo "CERT: certbot not found on PATH"
+          fi
+          echo "=== CERT: after ==="; echo | openssl s_client -connect 127.0.0.1:443 -servername api.prop-vantage.com 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true
           # Long agent turns (~40-90s) exceed nginx's default 60s proxy timeout. Apply a
           # validated http-level drop-in (180s). nginx -t gates the reload; on any failure the
           # drop-in is removed and the proxy is left untouched — this can never break nginx.
