@@ -11,6 +11,8 @@ import {
   handleProviderMessage,
   startOutboundCall,
   listCallsForLead,
+  listRecentCalls,
+  monthlyUsage,
   getCall,
   importTwilioNumber,
   placeTestCall,
@@ -65,9 +67,10 @@ export const createCall = asyncHandler(async (req, res) => {
 
 /** @route GET /api/voice/calls?leadId= */
 export const listCalls = asyncHandler(async (req, res) => {
-  const { leadId } = req.query;
-  if (!leadId) { res.status(400); throw new Error('leadId is required'); }
-  const data = await listCallsForLead(req.user.organization, leadId);
+  const { leadId, limit } = req.query;
+  const data = leadId
+    ? await listCallsForLead(req.user.organization, leadId)
+    : await listRecentCalls(req.user.organization, limit);
   res.json({ success: true, data });
 });
 
@@ -82,10 +85,13 @@ export const getCallById = asyncHandler(async (req, res) => {
 export const getSettings = asyncHandler(async (req, res) => {
   const org = await Organization.findById(req.user.organization).select('voiceAgent name');
   const va = org?.voiceAgent?.toObject?.() || org?.voiceAgent || {};
+  const usage = await monthlyUsage(org._id);
   res.json({
     success: true,
     data: {
       ...va,
+      usage,
+      assistantSynced: Boolean(va.vapiAssistantId),
       configured: vapiClient.isConfigured(),
       phoneNumber: va.phoneNumber || process.env.TWILIO_PHONE_NUMBER || null,
       phoneNumberSource: va.phoneNumberId ? 'org' : (process.env.VAPI_PHONE_NUMBER_ID ? 'env' : (process.env.TWILIO_ACCOUNT_SID ? 'env-twilio' : 'none')),

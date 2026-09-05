@@ -457,6 +457,26 @@ export async function listCallsForLead(orgId, leadId) {
     .lean();
 }
 
+/** Most recent calls across the org (settings page / mini dashboard). */
+export async function listRecentCalls(orgId, limit = 25) {
+  return CallSession.find({ organization: orgId })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(Number(limit) || 25, 100))
+    .select('lead status outcome trigger durationSec costUsd createdAt endedAt handoffRequested summary recordingUrl')
+    .populate('lead', 'firstName lastName phone')
+    .lean();
+}
+
+/** Calls / minutes / cost for the current calendar month (IST-agnostic, server month). */
+export async function monthlyUsage(orgId) {
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const [agg] = await CallSession.aggregate([
+    { $match: { organization: orgId, createdAt: { $gte: monthStart } } },
+    { $group: { _id: null, calls: { $sum: 1 }, sec: { $sum: '$durationSec' }, cost: { $sum: '$costUsd' } } },
+  ]);
+  return { calls: agg?.calls || 0, minutes: Math.round(((agg?.sec || 0) / 60) * 10) / 10, costUsd: Math.round((agg?.cost || 0) * 100) / 100 };
+}
+
 export async function getCall(orgId, id) {
   return CallSession.findOne({ _id: id, organization: orgId })
     .populate('lead', 'firstName lastName phone')
