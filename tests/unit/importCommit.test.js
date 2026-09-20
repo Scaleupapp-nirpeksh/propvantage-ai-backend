@@ -54,7 +54,7 @@ beforeAll(async () => {
   const un = await Unit.create({ organization: other.o._id, project: p._id, unitNumber: 'T1-101', type: '2BHK', floor: 1, areaSqft: 900, basePrice: 9000000, currentPrice: 9000000, status: 'sold' });
   const l = await Lead.create({ organization: other.o._id, project: p._id, firstName: 'Demo', lastName: 'Buyer', phone: '+919999999999', source: 'Direct', status: 'Booked' });
   await Sale.create({ organization: other.o._id, project: p._id, unit: un._id, lead: l._id, salesPerson: other.u._id, salePrice: 9000000, costSheetSnapshot: { a: 1 } });
-  files = [{ name: 'mis.xlsx', buffer: await misWorkbook() }, { name: 'stack.xlsx', buffer: await stackingWorkbook() }];
+  files = [{ name: 'stack.xlsx', buffer: await stackingWorkbook() }, { name: 'mis.xlsx', buffer: await misWorkbook() }];
 });
 
 afterAll(async () => { await mongoose.disconnect(); await mongod.stop(); });
@@ -142,7 +142,8 @@ describe('import · validate, import, re-import', () => {
     const rows = await ImportBatch.find({ organization: org._id }).sort({ createdAt: 1 }).lean();
     expect(rows.length).toBeGreaterThanOrEqual(5);
     expect(rows[0].mode).toBe('dry_run'); expect(rows[1].mode).toBe('commit');
-    expect(rows[1].files.map((f) => f.format).sort()).toEqual(['developer_mis', 'stacking_sheet']);
+    // files keep their own format even though registers are parsed before grids
+    expect(Object.fromEntries(rows[1].files.map((f) => [f.name, f.format]))).toEqual({ 'mis.xlsx': 'developer_mis', 'stack.xlsx': 'stacking_sheet' });
     expect(rows[1].files[0].sha256).toHaveLength(64);
   });
 });

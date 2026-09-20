@@ -43,7 +43,7 @@ function finishFields(canonical, result, startedAt) {
 export async function runImport({ files, mode, options = {}, organizationId, actor, background = true }) {
   const startedAt = Date.now();
   const { canonical, files: info } = await parseFiles(files, {});
-  const fileRows = files.map((f, i) => ({ name: f.name, sizeBytes: f.size ?? f.buffer.length, sha256: sha256(f.buffer), format: info[i]?.format || info.find((x) => x.name === f.name)?.format, sheets: info.find((x) => x.name === f.name)?.sheets }));
+  const fileRows = files.map((f) => ({ name: f.name, sizeBytes: f.size ?? f.buffer.length, sha256: sha256(f.buffer), format: info.find((x) => x.name === f.name)?.format, sheets: info.find((x) => x.name === f.name)?.sheets }));
   const unrecognised = info.filter((x) => x.format === 'unrecognised').map((x) => x.name);
   if (unrecognised.length === files.length) {
     return ImportBatch.create({ organization: organizationId, uploadedBy: actor._id, mode, status: 'failed', files: fileRows, formats: [], options: publicOptions(options), error: 'None of the uploaded workbooks match a supported layout (developer MIS, stacking sheet, or the PropVantage intake template).', issues: canonical.issues?.slice(0, 50) || [], finishedAt: new Date(), durationMs: Date.now() - startedAt });
