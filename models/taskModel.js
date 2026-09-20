@@ -358,6 +358,10 @@ const taskSchema = new mongoose.Schema(
       resolvedAt: { type: Date },
     },
 
+    // Set by the data importer: stable key used to guarantee insert-only, no-duplicate loads.
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
+
     // === AUDIT ===
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -384,6 +388,7 @@ taskSchema.index({ organization: 1, category: 1, status: 1 });
 taskSchema.index({ organization: 1, priority: 1, status: 1 });
 taskSchema.index({ organization: 1, dueDate: 1, status: 1 });
 taskSchema.index({ organization: 1, taskNumber: 1 }, { unique: true });
+taskSchema.index({ organization: 1, importKey: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' } } });
 taskSchema.index({ parentTask: 1 });
 taskSchema.index({
   'linkedEntity.entityType': 1,

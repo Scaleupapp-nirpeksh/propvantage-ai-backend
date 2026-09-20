@@ -120,6 +120,9 @@ const userSchema = new mongoose.Schema(
       ref: 'Role',
       index: true,
     },
+
+    // Set when the account was created by a data import (optional).
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     
     // =============================================================================
     // USER STATUS AND ACTIVITY

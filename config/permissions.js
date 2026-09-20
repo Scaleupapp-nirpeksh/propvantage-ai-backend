@@ -271,6 +271,10 @@ export const PERMISSIONS = {
   PORTFOLIO: {
     MANAGE: 'portfolio:manage',
   },
+  // ─── DATA ────────────────────────────────────────────
+  DATA: {
+    IMPORT: 'data:import',
+  },
   // ─── VOICE AGENT ─────────────────────────────────────
   VOICE: {
     MANAGE_PLAYBOOKS: 'voice:manage_playbooks',

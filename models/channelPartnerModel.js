@@ -55,6 +55,9 @@ const channelPartnerSchema = new mongoose.Schema(
       bankName: { type: String, trim: true, default: '' },
     },
     agreementNotes: { type: String, trim: true, default: '' },
+    // Set by the data importer: stable key used to guarantee insert-only, no-duplicate loads.
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     onboardedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // SP3: developer-initiated off-platform onboarding. When a developer invites
     // a channel partner that is not yet on the platform, this records the open
@@ -87,6 +90,7 @@ channelPartnerSchema.index({ organization: 1, category: 1 });
 channelPartnerSchema.index({ organization: 1, channelPartnerOrg: 1 });
 // SP3: off-platform invite links are resolved by token.
 channelPartnerSchema.index({ 'platformInvite.token': 1 }, { sparse: true });
+channelPartnerSchema.index({ organization: 1, importKey: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' } } });
 
 // Field-level encryption for the payout bank account number (PII).
 channelPartnerSchema.plugin(encryptionPlugin, {

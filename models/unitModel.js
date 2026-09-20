@@ -87,6 +87,37 @@ const unitSchema = new mongoose.Schema(
       parkingNumbers: [String]
     },
     // Possession details
+    // ── Optional detail (captured from developer stacking sheets / MIS) ──
+    habitableFloor: { type: Number },
+    typology: { type: String, trim: true },            // raw: '4', '5', 'Penthouse', 'Duplex', 'Refuge' …
+    isRefuge: { type: Boolean, default: false },
+    heightMeters: { type: Number },
+    areaBreakdown: {
+      totalSqm: { type: Number },
+      reraCarpetSqm: { type: Number },
+      deckSqm: { type: Number },
+      utilitySqm: { type: Number },
+      servantSqm: { type: Number },
+      dryingSqm: { type: Number },
+    },
+    parkingSplit: { single: { type: Number }, tandem: { type: Number } },
+    pricing: { agreementPsf: { type: Number }, allInPsf: { type: Number }, estimated: { type: Boolean } }, // estimated = no rate in the source files; priced at the median achieved rate
+    // A client holding the unit before it is a sale (EOI with token, or blocked by management).
+    hold: {
+      type: { type: String, trim: true },              // 'EOI' | 'Blocked'
+      lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
+      clientName: { type: String, trim: true },
+      since: { type: Date },
+      tokenAmount: { type: Number },
+      agreedValue: { type: Number },
+      closingManagerName: { type: String, trim: true },
+      remarks: { type: String, trim: true },
+    },
+    waitlist: [{ _id: false, name: { type: String, trim: true }, note: { type: String, trim: true } }],
+    remarks: { type: String, trim: true },
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
+
     possession: {
       plannedDate: Date,
       actualDate: Date,

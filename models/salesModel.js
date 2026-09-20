@@ -14,7 +14,8 @@ const saleSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       required: true,
       ref: 'Unit',
-      unique: true, // A unit can only be sold once
+      // Uniqueness is enforced by a partial index below: one ACTIVE sale per unit,
+      // so a cancelled booking can sit alongside a later resale.
     },
     lead: {
       type: mongoose.Schema.Types.ObjectId,
@@ -99,6 +100,44 @@ const saleSchema = new mongoose.Schema(
       ref: 'ApprovalRequest',
     },
     // Add discount tracking for frontend compatibility
+    // ── Optional deal detail (captured from developer MIS imports) ──
+    additionalUnits: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Unit' }], // "jodi": one booking over several apartments
+    sourcingManager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    sourcingManagerName: { type: String, trim: true },
+    closingManagerName: { type: String, trim: true },
+    tokenAmount: { type: Number },
+    allInValue: { type: Number },
+    agreementValuePsf: { type: Number },
+    allInValuePsf: { type: Number },
+    stampDuty: { type: Number },
+    sourceType: { type: String, trim: true },        // CP / Direct / MGMT / Ref
+    sourceName: { type: String, trim: true },        // broker person / management referrer
+    // Booking process tracker — the CRM desk's Y / N / NA checklist per booking.
+    processTracker: {
+      costSheet: { type: String, trim: true },
+      bookingForm: { type: String, trim: true },
+      kyc: { type: String, trim: true },
+      token: { type: String, trim: true },
+      gstOnToken: { type: String, trim: true },
+      bookingAmount: { type: String, trim: true },
+      gstOnBookingAmount: { type: String, trim: true },
+      reversePayment: { type: String, trim: true },
+      registration: { type: String, trim: true },
+      erpUpload: { type: String, trim: true },
+      systemLive: { type: String, trim: true },
+      dependency: { type: String, trim: true },       // Sales / CRM / MGMT
+      salesRemarks: { type: String, trim: true },
+      crmRemarks: { type: String, trim: true },
+    },
+    // Status as recorded by other parties (e.g. an auditor's file) for reconciliation.
+    externalStatus: {
+      sales: { type: String, trim: true },
+      audit: { type: String, trim: true },
+      auditRemarks: { type: String, trim: true },
+    },
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
+
     discountAmount: {
       type: Number,
       default: 0,
@@ -143,7 +182,12 @@ saleSchema.virtual('paymentPlanStatus').get(function() {
 
 // Index for better query performance
 saleSchema.index({ organization: 1, project: 1 });
-saleSchema.index({ unit: 1 }, { unique: true });
+export const ACTIVE_SALE_STATUSES = ['Pending Approval', 'Booked', 'Agreement Signed', 'Registered', 'Completed'];
+saleSchema.index(
+  { unit: 1 },
+  { name: 'unit_active_unique', unique: true, partialFilterExpression: { status: { $in: ACTIVE_SALE_STATUSES } } }
+);
+saleSchema.index({ organization: 1, importKey: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' } } });
 saleSchema.index({ lead: 1 });
 saleSchema.index({ salesPerson: 1 });
 saleSchema.index({ status: 1 });

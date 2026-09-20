@@ -56,6 +56,8 @@ import publicTicketRoutes from './routes/publicTicketRoutes.js';
 import workspaceRoutes from './routes/workspaceRoutes.js';
 import supportRoutes from './routes/supportRoutes.js';
 import voiceRoutes from './routes/voiceRoutes.js';
+import importRoutes from './routes/importRoutes.js';
+import { ensureIndexes } from './utils/ensureIndexes.js';
 import homeRoutes from './routes/homeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import projectAccessRoutes from './routes/projectAccessRoutes.js';
@@ -92,8 +94,8 @@ import { registerVoicePlaybookJobs } from './jobs/voicePlaybooks.js';
 // Load environment variables
 dotenv.config();
 
-// Connect to database
-connectDB();
+// Connect to database, then apply one-off index migrations (no-op once done)
+connectDB().then(() => ensureIndexes());
 
 const app = express();
 
@@ -208,6 +210,7 @@ app.use('/api/workspace', workspaceRoutes);
 app.use('/api/support', supportRoutes);
 // AI voice agent — provider webhook is unauthenticated (secret-verified) inside the router.
 app.use('/api/voice', voiceRoutes);
+app.use('/api/imports', importRoutes);
 // People & Performance — protect is applied inside peopleRoutes (router.use(protect))
 app.use('/api/people', peopleRoutes);
 app.use('/api/home', homeRoutes);

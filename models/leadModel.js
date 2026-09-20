@@ -4,6 +4,7 @@
 // Location: models/leadModel.js
 
 import mongoose from 'mongoose';
+import encryptionPlugin from '../utils/encryptionPlugin.js';
 import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 
 const leadSchema = new mongoose.Schema(
@@ -62,9 +63,46 @@ const leadSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      required: [true, 'Please add a phone number'],
+      // Optional at the schema level: historical / imported clients (e.g. a meeting
+      // register) often have no number. The create-lead API still requires it.
       trim: true,
     },
+    alternatePhone: { type: String, trim: true },
+    address: { type: String, trim: true },
+
+    // Buyer profile & KYC — all optional. PAN is field-level encrypted; Aadhaar is
+    // never stored in full (masked last four only).
+    profile: {
+      company: { type: String, trim: true },          // employer / business / designation
+      category: { type: String, trim: true },         // Corporate / Professional / Business …
+      dateOfBirth: { type: Date },
+      anniversaryDate: { type: Date },
+    },
+    kyc: {
+      pan: { type: String, trim: true },              // encrypted at rest
+      aadhaarLast4: { type: String, trim: true },
+      status: { type: String, trim: true },           // e.g. 'complete' / 'pending'
+    },
+    coApplicants: [
+      {
+        _id: false,
+        name: { type: String, trim: true },
+        relation: { type: String, trim: true },
+        dateOfBirth: { type: Date },
+        phone: { type: String, trim: true },
+        email: { type: String, trim: true, lowercase: true },
+        address: { type: String, trim: true },
+        pan: { type: String, trim: true },            // encrypted at rest
+        aadhaarLast4: { type: String, trim: true },
+      },
+    ],
+    // Units this client is interested in / waitlisted on (free-form, from stacking sheets).
+    unitInterest: [{ _id: false, unit: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit' }, note: { type: String, trim: true } }],
+    lostReason: { type: String, trim: true },
+
+    // Set by the data importer: stable key used to guarantee insert-only, no-duplicate loads.
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     source: {
       type: String,
       enum: [
@@ -643,6 +681,10 @@ leadSchema.post('save', function(doc) {
 // ====================================================================
 // CREATE AND EXPORT MODEL
 // ====================================================================
+
+
+leadSchema.index({ organization: 1, importKey: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' } } });
+leadSchema.plugin(encryptionPlugin, { fields: ['kyc.pan', 'coApplicants[].pan'] });
 
 const Lead = mongoose.model('Lead', leadSchema);
 

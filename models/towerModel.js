@@ -180,6 +180,7 @@ const towerSchema = new mongoose.Schema(
       type: Boolean,
       default: true
     },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     // Audit fields
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

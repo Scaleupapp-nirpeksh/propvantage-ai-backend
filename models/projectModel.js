@@ -402,6 +402,9 @@ const projectSchema = new mongoose.Schema(
       min: { type: Number, required: true },
       max: { type: Number, required: true },
     },
+    // Optional: sales targets per financial year (e.g. { fy: '2025-26', targetCr: 2482, achievedCr: 530 }).
+    fyTargets: [{ _id: false, fy: { type: String, trim: true }, targetCr: { type: Number }, achievedCr: { type: Number }, note: { type: String, trim: true } }],
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     targetRevenue: {
       type: Number,
       required: [true, 'Target revenue is required'],

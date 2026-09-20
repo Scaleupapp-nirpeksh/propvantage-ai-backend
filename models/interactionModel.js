@@ -23,7 +23,7 @@ const interactionSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ['Call', 'Email', 'SMS', 'Meeting', 'Site Visit', 'WhatsApp', 'Note'],
+      enum: ['Call', 'Email', 'SMS', 'Meeting', 'Site Visit', 'WhatsApp', 'Note', 'Video Call'],
     },
     direction: {
       type: String,
@@ -46,6 +46,14 @@ const interactionSchema = new mongoose.Schema(
       trim: true,
       // Description of the next planned action
     },
+    // Optional meeting detail (imports): when it really happened, where, who attended.
+    occurredAt: { type: Date },
+    meetingMode: { type: String, trim: true },        // e.g. IBM / OBM / VC
+    location: { type: String, trim: true },
+    attendedBy: { type: String, trim: true },
+    status: { type: String, trim: true },             // raw status from the source register
+    importKey: { type: String, trim: true },
+    importBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'ImportBatch' },
     // True for interactions written by the AI voice agent (excluded from 'human contact' checks).
     aiGenerated: { type: Boolean, default: false },
     scheduledAt: {
@@ -57,6 +65,9 @@ const interactionSchema = new mongoose.Schema(
     timestamps: true, // records when the interaction was logged
   }
 );
+
+interactionSchema.index({ organization: 1, importKey: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' } } });
+interactionSchema.index({ lead: 1, occurredAt: -1 });
 
 const Interaction = mongoose.model('Interaction', interactionSchema);
 

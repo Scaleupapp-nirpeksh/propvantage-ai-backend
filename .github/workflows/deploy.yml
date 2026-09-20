@@ -101,6 +101,13 @@ jobs:
           # drop-in is removed and the proxy is left untouched — this can never break nginx.
           echo "=== NGINX: before ==="; nginx -T 2>/dev/null | grep -iE "proxy_read_timeout" | head -3 || true
           printf 'proxy_read_timeout 180s;\nproxy_send_timeout 180s;\n' > /etc/nginx/conf.d/zz-agent-timeouts.conf
+          # Admin "Import data" uploads several Excel workbooks in one request; nginx's default body
+          # limit is 1 MB. Same guarded drop-in pattern: only kept if nginx -t passes on its own.
+          if ! nginx -T 2>/dev/null | grep -qiE "^\s*client_max_body_size"; then
+            printf 'client_max_body_size 60m;\n' > /etc/nginx/conf.d/zz-upload-size.conf
+            nginx -t 2>/dev/null || { rm -f /etc/nginx/conf.d/zz-upload-size.conf; echo "NGINX_UPLOAD_SIZE_REVERTED"; }
+          fi
+          nginx -T 2>/dev/null | grep -iE "client_max_body_size" | head -3 || true
           if nginx -t 2>/dev/null; then nginx -s reload && echo "NGINX_TIMEOUTS_APPLIED"; else rm -f /etc/nginx/conf.d/zz-agent-timeouts.conf; echo "NGINX_PATCH_REVERTED_INVALID"; fi
           echo "=== NGINX: after ==="; nginx -T 2>/dev/null | grep -iE "proxy_read_timeout" | head -3 || true
           BASH
