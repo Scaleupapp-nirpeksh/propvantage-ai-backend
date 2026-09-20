@@ -5,6 +5,7 @@
 import asyncHandler from 'express-async-handler';
 import ImportBatch from '../models/importBatchModel.js';
 import { runImport, expireStale } from '../services/import/importService.js';
+import { runIntelligencePass } from '../services/import/intelligence.js';
 
 const LIST_FIELDS = 'mode status files.name files.format files.sizeBytes formats counts issueTotals options project progress error createdAt finishedAt durationMs uploadedBy';
 const truthy = (v) => v === true || v === 'true' || v === '1' || v === 'on';
@@ -41,4 +42,13 @@ export const getImport = asyncHandler(async (req, res) => {
   const row = await ImportBatch.findOne({ _id: req.params.id, organization: req.user.organization }).populate('uploadedBy', 'firstName lastName').populate('project', 'name').lean();
   if (!row) { res.status(404); throw new Error('Import not found'); }
   res.json({ success: true, data: row });
+});
+
+// POST /api/imports/:id/intelligence — (re)run the post-import intelligence pass for one import.
+export const runImportIntelligence = asyncHandler(async (req, res) => {
+  const row = await ImportBatch.findOne({ _id: req.params.id, organization: req.user.organization }).select('mode status').lean();
+  if (!row) { res.status(404); throw new Error('Import not found'); }
+  if (row.mode !== 'commit' || row.status === 'importing') { res.status(400); throw new Error('Only a finished import can be processed'); }
+  setImmediate(() => runIntelligencePass({ organizationId: req.user.organization, batchId: row._id }).catch((e) => console.warn('⚠️ [import] intelligence pass failed:', e.message)));
+  res.status(202).json({ success: true, message: 'Intelligence pass started' });
 });

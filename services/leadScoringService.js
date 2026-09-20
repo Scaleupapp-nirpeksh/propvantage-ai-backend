@@ -9,6 +9,9 @@ import { derivePriorityFromTimeline } from '../utils/leadPriority.js';
 // FIXED: Use dynamic imports to avoid circular dependency issues
 let Lead, Interaction, Sale, Unit, Project;
 
+// Step-by-step scoring chatter includes client names — off unless LEAD_SCORING_DEBUG=true.
+const dbg = (...args) => { if (process.env.LEAD_SCORING_DEBUG === 'true') console.log(...args); };
+
 const initializeModels = async () => {
   if (!Lead) {
     try {
@@ -20,7 +23,7 @@ const initializeModels = async () => {
       Interaction = InteractionModel;
       Unit = UnitModel;
       
-      console.log('✅ Models initialized successfully');
+      dbg('✅ Models initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize models:', error.message);
       throw error;
@@ -100,11 +103,11 @@ const DEFAULT_SCORING_CONFIG = {
  */
 const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
   try {
-    console.log(`🔄 Calculating score for lead: ${lead.firstName} ${lead.lastName || ''} (ID: ${lead._id})`);
+    dbg(`🔄 Calculating score for lead: ${lead.firstName} ${lead.lastName || ''} (ID: ${lead._id})`);
     
     // CRITICAL FIX: Ensure config is never null/undefined
     if (!config || typeof config !== 'object') {
-      console.log('⚠️ Config is null/undefined, using DEFAULT_SCORING_CONFIG');
+      dbg('⚠️ Config is null/undefined, using DEFAULT_SCORING_CONFIG');
       config = DEFAULT_SCORING_CONFIG;
     }
     
@@ -115,7 +118,7 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     if (!config.sourceQuality) config.sourceQuality = DEFAULT_SCORING_CONFIG.sourceQuality;
     if (!config.recencyFactor) config.recencyFactor = DEFAULT_SCORING_CONFIG.recencyFactor;
     
-    console.log('🔧 Using config:', {
+    dbg('🔧 Using config:', {
       hasBudgetAlignment: !!config.budgetAlignment,
       hasEngagementLevel: !!config.engagementLevel,
       hasTimelineUrgency: !!config.timelineUrgency,
@@ -124,7 +127,7 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     });
     
     // DEBUGGING: Log lead structure
-    console.log('📋 Lead data structure:', {
+    dbg('📋 Lead data structure:', {
       id: lead._id,
       budget: lead.budget,
       requirements: lead.requirements,
@@ -148,9 +151,9 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     
     // 1. Budget Alignment Score with error handling
     try {
-      console.log('💰 Calculating budget alignment...');
+      dbg('💰 Calculating budget alignment...');
       const budgetScore = await calculateBudgetAlignmentScore(lead, config.budgetAlignment);
-      console.log('💰 Budget score result:', budgetScore);
+      dbg('💰 Budget score result:', budgetScore);
       scoreBreakdown.budgetAlignment = budgetScore;
       totalScore += budgetScore.weightedScore || 0;
     } catch (budgetError) {
@@ -166,9 +169,9 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     
     // 2. Engagement Level Score with error handling
     try {
-      console.log('📞 Calculating engagement level...');
+      dbg('📞 Calculating engagement level...');
       const engagementScore = await calculateEngagementScore(lead, config.engagementLevel);
-      console.log('📞 Engagement score result:', engagementScore);
+      dbg('📞 Engagement score result:', engagementScore);
       scoreBreakdown.engagementLevel = engagementScore;
       totalScore += engagementScore.weightedScore || 0;
     } catch (engagementError) {
@@ -184,9 +187,12 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     
     // 3. Timeline Urgency Score with error handling
     try {
-      console.log('⏰ Calculating timeline urgency...');
-      const timelineScore = calculateTimelineScore(lead, config.timelineUrgency);
-      console.log('⏰ Timeline score result:', timelineScore);
+      dbg('⏰ Calculating timeline urgency...');
+      const statedTimeline = lead.requirements?.timeline || lead.timeline || lead.purchaseTimeline;
+      const timelineScore = statedTimeline
+        ? calculateTimelineScore(lead, config.timelineUrgency)
+        : await inferTimelineFromBehaviour(lead, config.timelineUrgency);
+      dbg('⏰ Timeline score result:', timelineScore);
       scoreBreakdown.timelineUrgency = timelineScore;
       totalScore += timelineScore.weightedScore || 0;
     } catch (timelineError) {
@@ -202,9 +208,9 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     
     // 4. Source Quality Score with error handling
     try {
-      console.log('📍 Calculating source quality...');
+      dbg('📍 Calculating source quality...');
       const sourceScore = calculateSourceScore(lead, config.sourceQuality);
-      console.log('📍 Source score result:', sourceScore);
+      dbg('📍 Source score result:', sourceScore);
       scoreBreakdown.sourceQuality = sourceScore;
       totalScore += sourceScore.weightedScore || 0;
     } catch (sourceError) {
@@ -220,9 +226,9 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
     
     // 5. Recency Factor Score with error handling
     try {
-      console.log('📅 Calculating recency factor...');
+      dbg('📅 Calculating recency factor...');
       const recencyScore = calculateRecencyScore(lead, config.recencyFactor);
-      console.log('📅 Recency score result:', recencyScore);
+      dbg('📅 Recency score result:', recencyScore);
       scoreBreakdown.recencyFactor = recencyScore;
       totalScore += recencyScore.weightedScore || 0;
     } catch (recencyError) {
@@ -248,7 +254,7 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
       calculatedAt: new Date()
     };
     
-    console.log(`✅ Score calculated successfully: ${totalScore} (Grade: ${result.grade})`);
+    dbg(`✅ Score calculated successfully: ${totalScore} (Grade: ${result.grade})`);
     return result;
     
   } catch (error) {
@@ -279,11 +285,11 @@ const calculateLeadScore = async (lead, config = DEFAULT_SCORING_CONFIG) => {
  */
 const calculateBudgetAlignmentScore = async (lead, config) => {
   try {
-    console.log('💰 Budget data:', lead.budget);
+    dbg('💰 Budget data:', lead.budget);
     
     // Check if budget exists and has valid data
     if (!lead.budget || (typeof lead.budget !== 'object')) {
-      console.log('💰 No budget object found');
+      dbg('💰 No budget object found');
       return {
         rawScore: config.rules.noBudget,
         weightedScore: config.rules.noBudget * config.weight,
@@ -295,7 +301,7 @@ const calculateBudgetAlignmentScore = async (lead, config) => {
     const { min, max } = lead.budget;
     
     if (!min && !max) {
-      console.log('💰 No budget min/max values');
+      dbg('💰 No budget min/max values');
       return {
         rawScore: config.rules.noBudget,
         weightedScore: config.rules.noBudget * config.weight,
@@ -306,7 +312,7 @@ const calculateBudgetAlignmentScore = async (lead, config) => {
     
     // Get average unit price for comparison
     const avgUnitPrice = await getAverageUnitPrice(lead.project);
-    console.log('💰 Average unit price:', avgUnitPrice);
+    dbg('💰 Average unit price:', avgUnitPrice);
     
     if (!avgUnitPrice) {
       return {
@@ -373,7 +379,7 @@ const calculateEngagementScore = async (lead, config) => {
       createdAt: { $gte: thirtyDaysAgo }
     });
     
-    console.log('📞 Interaction count:', interactionCount);
+    dbg('📞 Interaction count:', interactionCount);
     
     let engagementScore;
     let reasoning;
@@ -388,8 +394,20 @@ const calculateEngagementScore = async (lead, config) => {
       engagementScore = config.rules.lowEngagement;
       reasoning = `Low engagement: ${interactionCount} interactions`;
     } else {
-      engagementScore = config.rules.noEngagement;
-      reasoning = 'No recent interactions';
+      // Nothing in the last 30 days: a long relationship still counts for something.
+      const history = await Interaction.find({ lead: lead._id }).select('occurredAt createdAt').lean();
+      const lastAt = history.length ? Math.max(...history.map((h) => new Date(h.occurredAt || h.createdAt).getTime())) : 0;
+      const daysSince = lastAt ? Math.floor((Date.now() - lastAt) / 86400000) : null;
+      if (history.length >= 3 && daysSince <= 180) {
+        engagementScore = config.rules.lowEngagement;
+        reasoning = `No recent interactions, but ${history.length} in total (last ${daysSince} days ago)`;
+      } else if (history.length >= 1 && daysSince <= 365) {
+        engagementScore = Math.round((config.rules.lowEngagement + config.rules.noEngagement) / 2);
+        reasoning = `No recent interactions — ${history.length} in the past year (last ${daysSince} days ago)`;
+      } else {
+        engagementScore = config.rules.noEngagement;
+        reasoning = 'No recent interactions';
+      }
     }
     
     return {
@@ -406,6 +424,30 @@ const calculateEngagementScore = async (lead, config) => {
 };
 
 /**
+ * No stated timeline: read urgency from what the buyer has actually done — an apartment on
+ * hold / in negotiation, coming back for another visit, how recently they were last met.
+ * A buyer with no history at all keeps the neutral "no timeline" score.
+ */
+const MEETING_TYPES = ['Site Visit', 'Meeting', 'Video Call'];
+const inferTimelineFromBehaviour = async (lead, config) => {
+  const out = (rawScore, reasoning, inferredFrom) => ({ rawScore, weightedScore: rawScore * config.weight, reasoning, timeline: 'Not specified', inferredFrom });
+  if (lead.status === 'Booked') return out(config.rules.immediate, 'No stated timeline — has booked', 'booked');
+  const onHold = Unit ? await Unit.exists({ 'hold.lead': lead._id }) : null;
+  if (onHold || lead.status === 'Negotiating') return out(config.rules.immediate, `No stated timeline — ${onHold ? 'has an apartment on hold' : 'in negotiation'}`, onHold ? 'hold' : 'negotiating');
+
+  const meetings = await Interaction.find({ lead: lead._id, type: { $in: MEETING_TYPES } }).select('occurredAt createdAt').lean();
+  if (!meetings.length) return out(config.rules.noTimeline, 'No timeline specified', 'none');
+  const last = Math.max(...meetings.map((m) => new Date(m.occurredAt || m.createdAt).getTime()));
+  const days = Math.floor((Date.now() - last) / 86400000);
+  const cameBack = meetings.length >= 2;
+  if (cameBack && days <= 90) return out(config.rules.within3Months, `No stated timeline — ${meetings.length} meetings, came back within the last 90 days`, 'revisit_recent');
+  if (days <= 90) return out(config.rules.within6Months, 'No stated timeline — met within the last 90 days', 'met_recent');
+  if (cameBack && days <= 180) return out(config.rules.within6Months, `No stated timeline — ${meetings.length} meetings, last met ${days} days ago`, 'revisit');
+  if (days <= 365) return out(config.rules.within12Months, `No stated timeline — last met ${days} days ago`, 'met_this_year');
+  return out(config.rules.longTerm, `No stated timeline — not met for ${days} days`, 'dormant');
+};
+
+/**
  * SIMPLIFIED: Timeline calculation
  */
 const calculateTimelineScore = (lead, config) => {
@@ -413,7 +455,7 @@ const calculateTimelineScore = (lead, config) => {
     // Check different possible timeline fields
     const timeline = lead.requirements?.timeline || lead.timeline || lead.purchaseTimeline;
     
-    console.log('⏰ Timeline data:', timeline);
+    dbg('⏰ Timeline data:', timeline);
     
     if (!timeline) {
       return {
@@ -465,7 +507,7 @@ const calculateTimelineScore = (lead, config) => {
 const calculateSourceScore = (lead, config) => {
   try {
     const source = lead.source || 'Other';
-    console.log('📍 Source data:', source);
+    dbg('📍 Source data:', source);
     
     const sourceLower = source.toLowerCase();
 
@@ -509,7 +551,7 @@ const calculateRecencyScore = (lead, config) => {
     const createdAt = lead.createdAt || new Date();
     const ageInDays = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24));
     
-    console.log('📅 Lead age in days:', ageInDays);
+    dbg('📅 Lead age in days:', ageInDays);
     
     let recencyScore;
     let reasoning;
@@ -550,7 +592,7 @@ const calculateRecencyScore = (lead, config) => {
 const getAverageUnitPrice = async (projectId) => {
   try {
     if (!projectId) {
-      console.log('💰 No project ID provided');
+      dbg('💰 No project ID provided');
       return 5000000; // Default fallback
     }
     
@@ -562,7 +604,7 @@ const getAverageUnitPrice = async (projectId) => {
     ]);
     
     const avgPrice = result[0]?.avgPrice || 5000000;
-    console.log('💰 Calculated average price:', avgPrice);
+    dbg('💰 Calculated average price:', avgPrice);
     return avgPrice;
     
   } catch (error) {
@@ -618,11 +660,11 @@ const updateLeadScore = async (leadId, config = null) => {
       throw new Error('Lead not found');
     }
     
-    console.log(`🎯 Starting score update for lead: ${lead.firstName} ${lead.lastName || ''}`);
+    dbg(`🎯 Starting score update for lead: ${lead.firstName} ${lead.lastName || ''}`);
     
     // CRITICAL FIX: Ensure we never pass null config
     const scoringConfig = config || DEFAULT_SCORING_CONFIG;
-    console.log('🔧 Using scoring config:', !!scoringConfig);
+    dbg('🔧 Using scoring config:', !!scoringConfig);
     
     const scoreResult = await calculateLeadScore(lead, scoringConfig);
     
@@ -647,7 +689,7 @@ const updateLeadScore = async (leadId, config = null) => {
     
     await lead.save();
 
-    console.log(`✅ Score updated: ${previousScore} → ${scoreResult.totalScore} (${scoreResult.grade})`);
+    dbg(`✅ Score updated: ${previousScore} → ${scoreResult.totalScore} (${scoreResult.grade})`);
 
     // SP4+ — if this Lead came from a CP-side Prospect, mirror the dev score
     // back onto that Prospect so the CP can see the developer's view.

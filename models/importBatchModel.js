@@ -49,6 +49,8 @@ const importBatchSchema = new mongoose.Schema(
     accounts: [{ _id: false, name: String, email: String, role: String, placeholder: Boolean }],
     // Short plain-language facts about the loaded data (totals by status, value booked…).
     summary: { type: mongoose.Schema.Types.Mixed },
+    // Result of the post-import intelligence pass (client scores, undated-record repair).
+    intelligence: { type: mongoose.Schema.Types.Mixed },
     error: { type: String },
     startedAt: { type: Date, default: Date.now },
     finishedAt: { type: Date },

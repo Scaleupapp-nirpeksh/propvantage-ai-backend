@@ -36,7 +36,7 @@ describe('import · developer MIS adapter', () => {
 
   test('meeting types map to interaction types', () => {
     const types = c.interactions.map((i) => i.type).sort();
-    expect(types).toEqual(['Meeting', 'Site Visit', 'Video Call']);
+    expect(types).toEqual(['Meeting', 'Site Visit', 'Site Visit', 'Video Call']);
   });
 
   test('channel partner and price-less unit handling', () => {

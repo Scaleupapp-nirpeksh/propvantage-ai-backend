@@ -6,7 +6,7 @@ import express from 'express';
 import multer from 'multer';
 import { protect, hasPermission } from '../middleware/authMiddleware.js';
 import { PERMISSIONS } from '../config/permissions.js';
-import { createImport, listImports, getImport } from '../controllers/importController.js';
+import { createImport, listImports, getImport, runImportIntelligence } from '../controllers/importController.js';
 
 const router = express.Router();
 
@@ -26,5 +26,6 @@ router.use(hasPermission(PERMISSIONS.DATA.IMPORT));
 router.post('/', upload.array('files', 12), createImport);
 router.get('/', listImports);
 router.get('/:id', getImport);
+router.post('/:id/intelligence', runImportIntelligence);
 
 export default router;

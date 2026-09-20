@@ -80,7 +80,7 @@ describe('import · validate, import, re-import', () => {
     expect(project.name).toBe('Alpha Residences');
     expect(await Unit.countDocuments({ organization: org._id })).toBe(5);
     expect(await Sale.countDocuments({ organization: org._id })).toBe(2);
-    expect(await Interaction.countDocuments({ organization: org._id })).toBe(3);
+    expect(await Interaction.countDocuments({ organization: org._id })).toBe(4);
     expect(await ChannelPartner.countDocuments({ organization: org._id })).toBe(1);
 
     const held = await Unit.findOne({ organization: org._id, 'hold.type': 'EOI' });
@@ -105,6 +105,24 @@ describe('import · validate, import, re-import', () => {
     expect(raw.kyc.pan).not.toBe('ABCDE1234F'); expect(raw.kyc.aadhaarLast4).toBe('9012');
     expect(JSON.stringify(raw)).not.toMatch(/123456789012/);
     expect((await Lead.findById(raw._id)).kyc.pan).toBe('ABCDE1234F');
+  });
+
+  test('records with no date in the files are dated at the earliest record — never "today"', async () => {
+    const l = await Lead.findOne({ organization: org._id, firstName: 'Farah' });
+    expect(l.createdAt.toISOString().slice(0, 10)).toBe('2024-04-20');
+    const it = await Interaction.findOne({ organization: org._id, lead: l._id });
+    expect(it.occurredAt).toBeUndefined(); expect(it.createdAt.toISOString().slice(0, 10)).toBe('2024-04-20');
+  });
+
+  test('the intelligence pass scores the imported clients and records what it did', async () => {
+    const b = await ImportBatch.findOne({ organization: org._id, mode: 'commit' }).sort({ createdAt: 1 }).lean();
+    expect(b.intelligence.clientsScored).toBe(await Lead.countDocuments({ organization: org._id }));
+    expect(b.intelligence.scoringFailed).toBe(0);
+    const scored = await Lead.find({ organization: org._id }).select('score scoreGrade lastScoreUpdate kyc').lean();
+    expect(scored.every((x) => x.score > 0 && x.scoreGrade && x.lastScoreUpdate)).toBe(true);
+    // scoring writes derived fields only — the encrypted PAN is untouched
+    const raw = await Lead.collection.findOne({ organization: org._id, 'kyc.pan': { $exists: true } });
+    expect(raw.kyc.pan).not.toBe('ABCDE1234F'); expect((await Lead.findById(raw._id)).kyc.pan).toBe('ABCDE1234F');
   });
 
   test('importing the same files again creates nothing and changes nothing', async () => {

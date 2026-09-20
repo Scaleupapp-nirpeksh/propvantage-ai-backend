@@ -80,6 +80,11 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
   const make = (t, n = 1) => { t.created += n; };
   const now = new Date();
   const accounts = [];
+  // Clients / meetings / bookings with no date anywhere in the files are dated at the earliest dated
+  // record, so they never show up as "new this month".
+  const knownDates = [...(c.leads || []).map((l) => l.createdAt), ...(c.sales || []).map((x) => x.bookingDate)].filter(Boolean).map((d) => new Date(d).getTime()).filter((t) => t > 0);
+  const undatedAt = knownDates.length ? new Date(Math.min(...knownDates)) : now;
+  const leadDate = new Map();
 
   // ── 0. Team accounts ─────────────────────────────────────────────────────────────────
   onProgress('Team', 0, 1);
@@ -242,6 +247,7 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
   const phoneOwner = new Map();
   for (const part of chunk(phones, 1000)) for (const e of await Lead.find({ organization: org, phone: { $in: part } }).select('phone').lean()) phoneOwner.set(e.phone, e._id);
   const toCreate = [];
+  for (const l of leads) leadDate.set(l.key, l.createdAt ? new Date(l.createdAt) : undatedAt);
   for (const l of leads) {
     if (leadIdByKey.has(l.key)) { tLead.duplicates += 1; continue; }
     if (l.phone && phoneOwner.has(l.phone)) { leadIdByKey.set(l.key, phoneOwner.get(l.phone)); tLead.duplicates += 1; continue; }
@@ -255,7 +261,7 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
     if (!dryRun) {
       const stats = byLeadInteractions.get(l.key);
       const partner = l.brokerKey ? brokerIdByKey.get(l.brokerKey) : null;
-      const created = l.createdAt ? new Date(l.createdAt) : now;
+      const created = l.createdAt ? new Date(l.createdAt) : undatedAt;
       const doc = clean({
         organization: org, project: projectId, assignedTo: userFor(l.assignedTo), firstName: l.firstName, lastName: l.lastName, email: l.email, phone: l.phone,
         alternatePhone: l.alternatePhone, address: l.address, lostReason: l.lostReason, source: l.source, status: l.status || 'New',
@@ -276,6 +282,8 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
     } else make(tLead);
     done += 1; if (done % 100 === 0) onProgress('Clients', done, toCreate.length);
   });
+  const undatedLeads = toCreate.filter((l) => !l.createdAt).length;
+  if (undatedLeads && knownDates.length) issue('info', 'Clients', null, 'Date', `${undatedLeads} clients have no date anywhere in the files — dated at the earliest record (${undatedAt.toISOString().slice(0, 10)}) so they do not appear as new enquiries`);
   const leadKnown = (key) => leadIdByKey.has(key) || (dryRun && newLeadKeys.has(key));
 
   // ── 5. Units (with holds) ───────────────────────────────────────────────────────────
@@ -329,7 +337,7 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
     const when = it.occurredAt ? new Date(it.occurredAt) : null;
     intDocs.push(clean({
       organization: org, lead: leadIdByKey.get(it.leadKey), user: userFor(it.by) || actor._id, type: it.type || 'Note', direction: it.direction, content: it.content || `${it.type || 'Interaction'} recorded in the source register`,
-      outcome: it.outcome, occurredAt: when, meetingMode: it.meetingMode, location: it.location, attendedBy: it.attendedBy, status: it.status, importKey: it.key, importBatch: batchId, createdAt: when || now,
+      outcome: it.outcome, occurredAt: when, meetingMode: it.meetingMode, location: it.location, attendedBy: it.attendedBy, status: it.status, importKey: it.key, importBatch: batchId, createdAt: when || leadDate.get(it.leadKey) || undatedAt,
     }));
   }
   if (!dryRun) await insertChunked(Interaction, intDocs, tInt, issue, 'Meetings & visits'); else make(tInt, intDocs.length);
@@ -360,14 +368,14 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
     const doc = clean({
       organization: org, project: projectId, unit: unitId, lead: leadIdByKey.get(s.leadKey), salesPerson: userFor(s.closing) || actor._id, salePrice: s.salePrice, status: s.status || 'Booked',
       sourcingManager: userFor(s.sourcing), sourcingManagerName: nameFor(s.sourcing), closingManagerName: nameFor(s.closing), tokenAmount: s.tokenAmount, allInValue: s.allInValue, agreementValuePsf: s.agreementValuePsf,
-      allInValuePsf: s.allInValuePsf, stampDuty: s.stampDuty, sourceType: s.sourceType, sourceName: s.sourceName, importKey: s.key, importBatch: batchId, createdAt: booked || now,
+      allInValuePsf: s.allInValuePsf, stampDuty: s.stampDuty, sourceType: s.sourceType, sourceName: s.sourceName, importKey: s.key, importBatch: batchId, createdAt: booked || leadDate.get(s.leadKey) || undatedAt,
     });
     doc.costSheetSnapshot = s.costSheet && Object.keys(s.costSheet).length ? s.costSheet : { agreementValue: s.salePrice, source: 'import' };
     doc.bookingDate = booked; // stays empty when the register has no date — never defaulted to today
     if (s.brokerRatePct > 0) doc.commission = clean({ rate: s.brokerRatePct, amount: Math.round((s.salePrice * s.brokerRatePct) / 100) });
     if (hasValues(s.processTracker)) doc.processTracker = clean({ ...s.processTracker });
     if (hasValues(s.externalStatus)) doc.externalStatus = clean({ ...s.externalStatus });
-    if (partner) doc.channelPartnerAttribution = { viaChannelPartner: true, partners: [{ channelPartner: partner, sharePct: 100 }], status: 'approved', taggedBy: actor._id, taggedAt: booked || now };
+    if (partner) doc.channelPartnerAttribution = { viaChannelPartner: true, partners: [{ channelPartner: partner, sharePct: 100 }], status: 'approved', taggedBy: actor._id, taggedAt: booked || leadDate.get(s.leadKey) || undatedAt };
     saleDocs.push(doc);
   }
   if (!dryRun) {

@@ -25,6 +25,7 @@ export async function misWorkbook() {
   mt.addRow(['Rahul Verma', 'Booked', 'Entrepreneur', new Date('2024-04-20'), 'IBM', 'Site office', 'Liked the sea view', 'Acme Realtors', 'Meera Shah', 'Kabir Rao', 'Alpha', '']);
   mt.addRow(['Vikram Nanda', 'Hot', 'Doctor', new Date('2024-07-02'), 'VC', '', 'Wants a higher floor', 'Direct', 'Meera Shah', '', 'Alpha', '']);
   mt.addRow(['Vikram Nanda', 'Revisit', 'Doctor', new Date('2024-07-20'), 'OBM', 'Client office', 'Second discussion', 'Direct', 'Meera Shah', '', 'Alpha', '']);
+  mt.addRow(['Farah Qureshi', 'Warm', 'Architect', null, 'IBM', 'Site office', 'Walk-in, date not recorded', 'Direct', 'Meera Shah', '', 'Alpha', '']);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

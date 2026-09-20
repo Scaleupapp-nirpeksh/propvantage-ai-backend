@@ -61,7 +61,13 @@ export async function runImport({ files, mode, options = {}, organizationId, act
       const result = await commitCanonical({ canonical, organizationId, actor, batchId: batch._id, options, dryRun: mode !== 'commit', onProgress });
       const fields = finishFields(canonical, result, startedAt);
       const status = mode !== 'commit' ? 'validated' : (fields.issueTotals.errors || result.counts.some((x) => x.rejected) ? 'completed_with_issues' : 'completed');
-      await ImportBatch.updateOne({ _id: batch._id }, { $set: { ...fields, status, progress: { stage: 'Done', done: 1, total: 1 } } });
+      if (mode === 'commit' && result.counts.some((x) => x.created)) {
+        // Make the platform's intelligence work on the new records straight away (scores etc.).
+        const { finishedAt: _f, durationMs: _d, ...soFar } = fields;
+        await ImportBatch.updateOne({ _id: batch._id }, { $set: soFar });
+        try { const { runIntelligencePass } = await import('./intelligence.js'); await runIntelligencePass({ organizationId, batchId: batch._id, onProgress }); } catch (e) { console.warn('⚠️ [import] intelligence pass skipped:', e.message); }
+      }
+      await ImportBatch.updateOne({ _id: batch._id }, { $set: { ...fields, finishedAt: new Date(), durationMs: Date.now() - startedAt, status, progress: { stage: 'Done', done: 1, total: 1 } } });
     } catch (err) {
       console.error('❌ [import] failed:', err.message);
       await ImportBatch.updateOne({ _id: batch._id }, { $set: { status: 'failed', error: String(err.message || err).slice(0, 500), finishedAt: new Date(), durationMs: Date.now() - startedAt } }).catch(() => {});
