@@ -114,8 +114,12 @@ const getUnits = asyncHandler(async (req, res) => {
     }
 
     // Regular query with pagination
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    // Project / tower screens ask for "the units of this project (or tower)" without a limit and
+    // build their grids and totals from the answer, so a scoped request returns the whole set.
+    // Only an unscoped, limit-less request falls back to a 20-row page.
+    const scoped = Boolean(projectId) || (towerId !== undefined && towerId !== null);
+    const pageNum = parseInt(page) || 1;
+    const limitNum = req.query.limit ? Math.min(Math.max(parseInt(limit) || 20, 1), 5000) : (scoped ? 5000 : 20);
     const skip = (pageNum - 1) * limitNum;
 
     // Build sort object

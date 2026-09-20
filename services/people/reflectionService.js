@@ -207,7 +207,9 @@ export async function currentStatus(user) {
     isoWeek: prevWeek,
   }).lean();
 
-  const overdue = !prior || prior.status !== 'submitted';
+  // Someone who joined during the current week had no prior week to reflect on.
+  const joinedBeforeThisWeek = !user.createdAt || new Date(user.createdAt) < weekStart;
+  const overdue = joinedBeforeThisWeek && (!prior || prior.status !== 'submitted');
 
   return { isoWeek, status, weekStart, weekEnd, overdue };
 }

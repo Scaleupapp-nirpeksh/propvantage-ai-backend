@@ -378,6 +378,7 @@ export async function commitCanonical({ canonical: c, organizationId: org, actor
 
   // ── 8. Tasks (checklists) ───────────────────────────────────────────────────────────
   const tasks = c.tasks || [];
+  onProgress('Tasks', 0, tasks.length);
   const tTask = tally('Tasks', tasks.length);
   const haveTask = new Set((await Task.find({ organization: org, importKey: { $in: tasks.map((t) => t.key) } }).select('importKey').lean()).map((t) => t.importKey));
   for (const t of tasks) {
