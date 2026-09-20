@@ -57,6 +57,7 @@ import workspaceRoutes from './routes/workspaceRoutes.js';
 import supportRoutes from './routes/supportRoutes.js';
 import voiceRoutes from './routes/voiceRoutes.js';
 import importRoutes from './routes/importRoutes.js';
+import salesIntelligenceRoutes from './routes/salesIntelligenceRoutes.js';
 import { ensureIndexes } from './utils/ensureIndexes.js';
 import homeRoutes from './routes/homeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
@@ -183,6 +184,7 @@ app.use('/api/pricing', pricingRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/ai/conversation', aiConversationRoutes); // NEW: AI Conversation intelligence
 app.use('/api/files', fileRoutes);
+app.use('/api/analytics/sales-intelligence', salesIntelligenceRoutes); // register + stacking + meeting-log intelligence
 app.use('/api/analytics', analyticsRoutes);
 // SP5 — dev-side analytics (Areas 6–8). Mounted on the same prefix as
 // analyticsRoutes; Express matches both routers in order, so the new
