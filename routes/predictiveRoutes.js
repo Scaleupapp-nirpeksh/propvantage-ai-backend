@@ -135,18 +135,31 @@ router.get(
       // Get quick forecasts for dashboard
       const organizationId = req.user?.organization || req.headers['x-organization']; // Fallback for testing
 
-      const [salesForecast, conversionData] = await Promise.all([
-        // Quick 3-month sales forecast
-        getSalesForecast({
-          query: { period: '3_months', format: 'summary' },
-          user: { organization: organizationId }
-        }),
-        // Lead conversion summary
-        getLeadConversionProbability({
-          query: { scoreThreshold: '70' },
-          user: { organization: organizationId }
-        })
+      // Call the services directly. (This used to invoke the Express handlers with a fake request
+      // and no response object, so it threw "Cannot read properties of undefined" for everyone.)
+      const { generateSalesForecast, calculateLeadConversionProbabilities } = await import('../services/predictiveAnalyticsService.js');
+      const [forecast, conversion] = await Promise.all([
+        generateSalesForecast({ organizationId, forecastPeriod: '3_months', includeScenarios: false }),
+        calculateLeadConversionProbabilities(organizationId, null, 70, '30_days')
       ]);
+      const salesForecast = {
+        data: {
+          totalForecastedSales: forecast.forecast.totalForecastedSales,
+          averageMonthlySales: forecast.forecast.averageMonthlySales,
+          confidence: forecast.confidence?.confidence80 || null,
+          keyInsights: forecast.insights.slice(0, 3),
+          dataQuality: forecast.metadata.dataQuality,
+          period: '3_months'
+        }
+      };
+      const conversionData = {
+        data: conversion ? {
+          totalLeads: conversion.totalLeads,
+          highProbabilityLeads: conversion.highProbabilityLeads,
+          averageProbability: conversion.averageProbability,
+          leadBreakdown: conversion.leadBreakdown
+        } : null
+      };
 
       res.json({
         success: true,

@@ -63,6 +63,9 @@ const generateSalesForecast = async (options = {}) => {
     // Apply AI-enhanced adjustments
     const enhancedForecast = await applyAIEnhancements(baselineForecast, pipelineData, historicalData, organizationId, projectId);
     
+    // You cannot sell more apartments than exist: cap the cumulative forecast at sellable inventory.
+    const inventory = await applyInventoryCap(enhancedForecast, organizationId, projectId);
+    
     // Generate different scenarios if requested
     const scenarios = includeScenarios ? await generateForecastScenarios(enhancedForecast, historicalData) : null;
     
@@ -77,12 +80,16 @@ const generateSalesForecast = async (options = {}) => {
         forecastPeriod,
         generatedAt: new Date(),
         dataQuality: assessDataQuality(historicalData, pipelineData),
-        methodology: 'AI-Enhanced Trend Analysis with Pipeline Weighting'
+        methodology: 'AI-Enhanced Trend Analysis with Pipeline Weighting',
+        conversionBasis: pipelineData.conversionBasis,
+        observedLeadToBookingRate: pipelineData.observedLeadToBookingRate,
+        sellableInventory: inventory.sellable,
+        cappedByInventory: inventory.capped
       },
       forecast: enhancedForecast,
       scenarios: scenarios,
       confidence: confidenceData,
-      insights: generateForecastInsights(enhancedForecast, pipelineData, historicalData),
+      insights: generateForecastInsights(enhancedForecast, pipelineData, historicalData, inventory),
       recommendations: generateForecastRecommendations(enhancedForecast, pipelineData, historicalData)
     };
     
@@ -109,11 +116,13 @@ const getHistoricalSalesData = async (organizationId, projectId) => {
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     
+    const now = new Date();
     const salesData = await Sale.aggregate([
       {
         $match: {
           ...matchQuery,
-          bookingDate: { $gte: twelveMonthsAgo }
+          status: { $ne: 'Cancelled' },
+          bookingDate: { $gte: twelveMonthsAgo, $lte: now }
         }
       },
       {
@@ -130,17 +139,32 @@ const getHistoricalSalesData = async (organizationId, projectId) => {
       { $sort: { '_id.year': 1, '_id.month': 1 } }
     ]);
     
+    // A month with no bookings is a real data point (zero), not a gap: averaging only the months
+    // that had a sale overstates the run-rate. The window starts at the first booking ever made
+    // (so a young organisation is not diluted by months before it started selling), capped at 12.
+    const firstSale = await Sale.findOne({ ...matchQuery, status: { $ne: 'Cancelled' }, bookingDate: { $ne: null, $lte: now } }).sort({ bookingDate: 1 }).select('bookingDate').lean();
+    const windowStart = firstSale && firstSale.bookingDate > twelveMonthsAgo ? new Date(firstSale.bookingDate) : twelveMonthsAgo;
+    const byKey = new Map(salesData.map((m) => [`${m._id.year}-${m._id.month}`, m]));
+    const calendarSeries = [];
+    const cursor = new Date(windowStart.getFullYear(), windowStart.getMonth(), 1);
+    while (cursor <= now) {
+      const hit = byKey.get(`${cursor.getFullYear()}-${cursor.getMonth() + 1}`);
+      calendarSeries.push(hit || { _id: { year: cursor.getFullYear(), month: cursor.getMonth() + 1 }, salesCount: 0, totalRevenue: 0, averagePrice: 0 });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    const totalHistoricalSales = salesData.reduce((sum, month) => sum + month.salesCount, 0);
+
     // Calculate trends and seasonality
-    const trends = calculateSalesTrends(salesData);
+    const trends = calculateSalesTrends(calendarSeries);
     const seasonality = calculateSeasonalityPattern(salesData);
     
     return {
       monthlySales: salesData,
+      calendarSeries,
       trends: trends,
       seasonality: seasonality,
-      totalHistoricalSales: salesData.reduce((sum, month) => sum + month.salesCount, 0),
-      averageMonthlySales: salesData.length > 0 ? 
-        salesData.reduce((sum, month) => sum + month.salesCount, 0) / salesData.length : 0
+      totalHistoricalSales,
+      averageMonthlySales: firstSale ? totalHistoricalSales / Math.max(1, calendarSeries.length) : 0
     };
     
   } catch (error) {
@@ -162,13 +186,42 @@ const getCurrentPipelineData = async (organizationId, projectId) => {
       matchQuery.project = new mongoose.Types.ObjectId(projectId);
     }
     
-    // Get leads by status with conversion probabilities
+    // Get leads by status. A lead nobody has been in touch with for a year is not the same pipeline
+    // as one met last week, so each lead carries a recency weight.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const nowDate = new Date();
     const pipelineData = await Lead.aggregate([
       { $match: matchQuery },
+      {
+        $addFields: {
+          _daysSinceTouch: {
+            $divide: [
+              { $subtract: [nowDate, { $ifNull: ['$engagementMetrics.lastInteractionDate', { $ifNull: ['$statusChangedAt', '$createdAt'] }] }] },
+              DAY_MS
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          _recencyWeight: {
+            $switch: {
+              branches: [
+                { case: { $lte: ['$_daysSinceTouch', 90] }, then: 1 },
+                { case: { $lte: ['$_daysSinceTouch', 180] }, then: 0.4 },
+                { case: { $lte: ['$_daysSinceTouch', 365] }, then: 0.1 }
+              ],
+              default: 0.02
+            }
+          }
+        }
+      },
       {
         $group: {
           _id: '$status',
           count: { $sum: 1 },
+          activeWeight: { $sum: '$_recencyWeight' },
+          staleCount: { $sum: { $cond: [{ $gt: ['$_daysSinceTouch', 180] }, 1, 0] } },
           averageScore: { $avg: '$score' },
           totalValue: { 
             $sum: { 
@@ -179,15 +232,23 @@ const getCurrentPipelineData = async (organizationId, projectId) => {
       }
     ]);
     
-    // Calculate conversion probabilities based on historical data
-    const conversionRates = await calculateConversionRates(organizationId, projectId);
+    // Conversion probabilities: this organisation's own history where there is enough of it
+    const conversion = await calculateConversionRates(organizationId, projectId);
+    const conversionRates = conversion.rates;
+    const TERMINAL = ['Booked', 'Lost', 'Unqualified', 'pending'];
     
-    // Add conversion probabilities to pipeline data
-    const enhancedPipeline = pipelineData.map(stage => ({
-      ...stage,
-      conversionProbability: conversionRates[stage._id] || 0,
-      projectedSales: Math.round(stage.count * (conversionRates[stage._id] || 0) / 100)
-    }));
+    // Only open leads can still convert — someone who has already booked is not pipeline.
+    const enhancedPipeline = pipelineData.map(stage => {
+      const open = !TERMINAL.includes(stage._id);
+      return {
+        ...stage,
+        activeWeight: Math.round((stage.activeWeight || 0) * 10) / 10,
+        conversionProbability: conversionRates[stage._id] || 0,
+        projectedSales: open ? Math.round((stage.activeWeight || 0) * (conversionRates[stage._id] || 0)) / 100 : 0
+      };
+    });
+    const openStages = pipelineData.filter(stage => !TERMINAL.includes(stage._id));
+    const ADVANCED = ['Site Visit Completed', 'Negotiating'];
     
     return {
       pipeline: enhancedPipeline,
@@ -198,7 +259,13 @@ const getCurrentPipelineData = async (organizationId, projectId) => {
       hotLeads: pipelineData
         .filter(stage => ['Site Visit Completed', 'Negotiating'].includes(stage._id))
         .reduce((sum, stage) => sum + stage.count, 0),
-      conversionRates: conversionRates
+      openLeads: openStages.reduce((sum, stage) => sum + stage.count, 0),
+      staleOpenLeads: openStages.reduce((sum, stage) => sum + (stage.staleCount || 0), 0),
+      activeAdvancedLeads: Math.round(openStages.filter(stage => ADVANCED.includes(stage._id)).reduce((sum, stage) => sum + (stage.activeWeight || 0), 0)),
+      expectedConversions: Math.round(enhancedPipeline.reduce((sum, stage) => sum + stage.projectedSales, 0) * 10) / 10,
+      conversionRates: conversionRates,
+      conversionBasis: conversion.basis,
+      observedLeadToBookingRate: conversion.observedRate
     };
     
   } catch (error) {
@@ -220,7 +287,8 @@ const calculateBaselineForecast = async (historicalData, pipelineData, forecastP
     const monthlyForecasts = [];
     
     // Calculate trend-based forecast
-    const trendGrowthRate = historicalData.trends.growthRate || 0;
+    // A half-on-half swing is a signal, not a law of nature: carry at most ±50% of it over a year
+    const trendGrowthRate = Math.max(-0.5, Math.min(0.5, historicalData.trends.growthRate || 0));
     const averageMonthlySales = historicalData.averageMonthlySales || 0;
     const seasonalityMultipliers = historicalData.seasonality || {};
     
@@ -239,9 +307,11 @@ const calculateBaselineForecast = async (historicalData, pipelineData, forecastP
       // Pipeline-based adjustment
       const pipelineContribution = calculatePipelineContribution(pipelineData, i);
       
-      // Combined forecast
+      // Combined forecast. Today's pipeline only speaks for the next few months; beyond that window
+      // the run-rate stands on its own (halving it against an empty pipeline understated far months).
+      const withinPipelineWindow = i <= PIPELINE_CONVERSION_WINDOW_MONTHS;
       const forecastedSales = Math.max(
-        Math.round((seasonalAdjustedSales + pipelineContribution) / 2),
+        Math.round(withinPipelineWindow ? (seasonalAdjustedSales + pipelineContribution) / 2 : seasonalAdjustedSales),
         0
       );
       
@@ -266,6 +336,33 @@ const calculateBaselineForecast = async (historicalData, pipelineData, forecastP
   } catch (error) {
     console.error('📊 Baseline forecast calculation failed:', error);
     throw error;
+  }
+};
+
+/**
+ * Cap the cumulative forecast at the inventory that can still be sold (available + on hold).
+ * Organisations with no inventory loaded are left uncapped. Mutates and returns cap details.
+ */
+const applyInventoryCap = async (forecast, organizationId, projectId) => {
+  try {
+    const q = { organization: new mongoose.Types.ObjectId(organizationId) };
+    if (projectId) q.project = new mongoose.Types.ObjectId(projectId);
+    const [total, sellable] = await Promise.all([Unit.countDocuments(q), Unit.countDocuments({ ...q, status: { $in: ['available', 'blocked'] } })]);
+    if (!total) return { sellable: null, capped: false };
+    let remaining = sellable; let capped = false;
+    forecast.monthlyBreakdown = forecast.monthlyBreakdown.map((month) => {
+      const key = month.aiAdjustedSales !== undefined ? 'aiAdjustedSales' : 'forecastedSales';
+      const allowed = Math.max(0, Math.min(month[key], remaining));
+      if (allowed < month[key]) capped = true;
+      remaining -= allowed;
+      return { ...month, [key]: allowed, ...(key === 'aiAdjustedSales' ? { forecastedSales: Math.min(month.forecastedSales, allowed) } : {}) };
+    });
+    forecast.totalForecastedSales = forecast.monthlyBreakdown.reduce((sum, m) => sum + (m.aiAdjustedSales ?? m.forecastedSales), 0);
+    forecast.averageMonthlySales = forecast.totalForecastedSales / Math.max(1, forecast.monthlyBreakdown.length);
+    return { sellable, capped };
+  } catch (error) {
+    console.error('🏢 Inventory cap skipped:', error.message);
+    return { sellable: null, capped: false };
   }
 };
 
@@ -380,11 +477,12 @@ const calculateSeasonalityPattern = (salesData) => {
  * Calculate conversion rates by lead status
  */
 const calculateConversionRates = async (organizationId, projectId) => {
-  // Default conversion rates based on real estate industry standards
+  // Stage ladder (relative likelihood by stage) — used as-is only when there is no history to learn from.
   const defaultRates = {
     'New': 15,
     'Contacted': 25,
     'Qualified': 35,
+    'Revived': 35,
     'Site Visit Scheduled': 45,
     'Site Visit Completed': 60,
     'Negotiating': 75,
@@ -392,25 +490,49 @@ const calculateConversionRates = async (organizationId, projectId) => {
     'Lost': 0,
     'Unqualified': 0
   };
-  
-  // TODO: Calculate actual conversion rates from historical data
-  // This would involve analyzing lead status transitions over time
-  
-  return defaultRates;
+
+  try {
+    const matchQuery = { organization: new mongoose.Types.ObjectId(organizationId) };
+    if (projectId) matchQuery.project = new mongoose.Types.ObjectId(projectId);
+    const byStatus = await Lead.aggregate([{ $match: matchQuery }, { $group: { _id: '$status', n: { $sum: 1 } } }]);
+    const total = byStatus.reduce((sum, r) => sum + r.n, 0);
+    const booked = byStatus.find((r) => r._id === 'Booked')?.n || 0;
+
+    // Enough history: keep the SHAPE of the ladder but anchor it to what actually happens here.
+    // Anchor = of the leads that got as far as a completed site visit (including those since lost),
+    // how many booked. That observed rate becomes the "Site Visit Completed" rung and every other
+    // rung moves in proportion. Never scaled above the ladder, so a small lucky sample cannot
+    // inflate a forecast.
+    const n = (status) => byStatus.find((r) => r._id === status)?.n || 0;
+    const reachedVisit = n('Site Visit Completed') + n('Negotiating') + booked + n('Lost');
+    if (total >= 50 && booked >= 5 && reachedVisit > 0) {
+      const observedRate = (booked / reachedVisit) * 100;
+      const scale = Math.min(1, observedRate / defaultRates['Site Visit Completed']);
+      const rates = {};
+      for (const [stage, rate] of Object.entries(defaultRates)) rates[stage] = stage === 'Booked' || rate === 0 ? rate : Math.round(rate * scale * 10) / 10;
+      return { rates, basis: 'organisation_history', observedRate: Math.round(observedRate * 10) / 10 };
+    }
+  } catch (error) {
+    console.error('📈 Conversion-rate calculation failed, using defaults:', error.message);
+  }
+  return { rates: defaultRates, basis: 'industry_defaults', observedRate: null };
 };
 
 /**
  * Calculate pipeline contribution for a specific month
  */
+const PIPELINE_CONVERSION_WINDOW_MONTHS = 6;
 const calculatePipelineContribution = (pipelineData, monthOffset) => {
-  // Weight pipeline contribution based on how far in the future we're forecasting
-  const timeDecayFactor = Math.exp(-monthOffset * 0.1); // Exponential decay
-  
-  const totalPipelineValue = pipelineData.pipeline.reduce((sum, stage) => 
+  // `projectedSales` is how many of today's open leads are expected to convert AT ALL. They do
+  // so over the coming months (front-loaded), not all of them again every month.
+  const expectedConversions = pipelineData.pipeline.reduce((sum, stage) => 
     sum + stage.projectedSales, 0
   );
+  if (monthOffset > PIPELINE_CONVERSION_WINDOW_MONTHS) return 0;
+  const weights = Array.from({ length: PIPELINE_CONVERSION_WINDOW_MONTHS }, (_, i) => Math.exp(-i * 0.25));
+  const share = weights[monthOffset - 1] / weights.reduce((a, b) => a + b, 0);
   
-  return totalPipelineValue * timeDecayFactor;
+  return expectedConversions * share;
 };
 
 /**
@@ -568,15 +690,18 @@ const generateForecastScenarios = async (baseForecast, historicalData) => {
  */
 const calculateConfidenceIntervals = async (forecast, historicalData) => {
   const variance = calculateHistoricalVariance(historicalData);
-  const standardDeviation = Math.sqrt(variance);
+  // Monthly spread, carried over the number of months being forecast
+  const months = Math.max(1, forecast.monthlyBreakdown?.length || 1);
+  const standardDeviation = Math.sqrt(variance * months);
+  const floor0 = (n) => Math.max(0, Math.round(n));
   
   return {
     confidence95: {
-      lower: Math.round(forecast.totalForecastedSales - (1.96 * standardDeviation)),
+      lower: floor0(forecast.totalForecastedSales - (1.96 * standardDeviation)),
       upper: Math.round(forecast.totalForecastedSales + (1.96 * standardDeviation))
     },
     confidence80: {
-      lower: Math.round(forecast.totalForecastedSales - (1.28 * standardDeviation)),
+      lower: floor0(forecast.totalForecastedSales - (1.28 * standardDeviation)),
       upper: Math.round(forecast.totalForecastedSales + (1.28 * standardDeviation))
     }
   };
@@ -586,7 +711,9 @@ const calculateConfidenceIntervals = async (forecast, historicalData) => {
  * Calculate historical variance
  */
 const calculateHistoricalVariance = (historicalData) => {
-  const salesCounts = historicalData.monthlySales.map(month => month.salesCount);
+  const series = historicalData.calendarSeries?.length ? historicalData.calendarSeries : historicalData.monthlySales;
+  if (!series.length) return 0;
+  const salesCounts = series.map(month => month.salesCount);
   const mean = salesCounts.reduce((sum, count) => sum + count, 0) / salesCounts.length;
   
   const squaredDifferences = salesCounts.map(count => Math.pow(count - mean, 2));
@@ -596,7 +723,7 @@ const calculateHistoricalVariance = (historicalData) => {
 /**
  * Generate forecast insights
  */
-const generateForecastInsights = (forecast, pipelineData, historicalData) => {
+const generateForecastInsights = (forecast, pipelineData, historicalData, inventory = {}) => {
   const insights = [];
   
   // Trend insights
@@ -616,14 +743,40 @@ const generateForecastInsights = (forecast, pipelineData, historicalData) => {
     });
   }
   
-  // Pipeline insights
-  const hotLeadsRatio = pipelineData.hotLeads / pipelineData.totalLeads;
-  if (hotLeadsRatio > 0.3) {
+  // Pipeline insights — judged on leads that are actually live, not on everyone ever met
+  const openLeads = pipelineData.openLeads || 0;
+  const activeAdvancedRatio = openLeads > 0 ? (pipelineData.activeAdvancedLeads || 0) / openLeads : 0;
+  const staleRatio = openLeads > 0 ? (pipelineData.staleOpenLeads || 0) / openLeads : 0;
+  if (activeAdvancedRatio > 0.3) {
     insights.push({
       type: 'positive',
       category: 'pipeline',
-      message: `Strong pipeline: ${(hotLeadsRatio * 100).toFixed(1)}% of leads are in advanced stages`,
+      message: `Strong pipeline: ${(activeAdvancedRatio * 100).toFixed(1)}% of open leads are in advanced stages and recently in touch`,
       impact: 'medium'
+    });
+  }
+  if (staleRatio > 0.5) {
+    insights.push({
+      type: 'warning',
+      category: 'pipeline',
+      message: `${(staleRatio * 100).toFixed(0)}% of open leads (${pipelineData.staleOpenLeads}) have had no contact for over six months — they add little to the forecast until re-engaged`,
+      impact: 'high'
+    });
+  }
+  if (pipelineData.conversionBasis === 'organisation_history') {
+    insights.push({
+      type: 'info',
+      category: 'conversion',
+      message: `Conversion rates are anchored to your own history: ${pipelineData.observedLeadToBookingRate}% of leads that reached a site visit went on to book`,
+      impact: 'medium'
+    });
+  }
+  if (inventory.capped) {
+    insights.push({
+      type: 'warning',
+      category: 'inventory',
+      message: `Forecast limited by inventory: only ${inventory.sellable} apartments are left to sell`,
+      impact: 'high'
     });
   }
   
@@ -700,8 +853,10 @@ const calculateRevenueProjection = async (salesForecast, organizationId, project
       matchQuery.project = projectId;
     }
 
+    const yearAgo = new Date(); yearAgo.setMonth(yearAgo.getMonth() - 12);
+    const recent = await Sale.countDocuments({ ...matchQuery, status: { $ne: 'Cancelled' }, bookingDate: { $gte: yearAgo } });
     const priceData = await Sale.aggregate([
-      { $match: matchQuery },
+      { $match: { ...matchQuery, status: { $ne: 'Cancelled' }, ...(recent >= 5 ? { bookingDate: { $gte: yearAgo } } : {}) } },
       {
         $group: {
           _id: null,
@@ -747,7 +902,7 @@ const calculateRevenueProjection = async (salesForecast, organizationId, project
       confidence: salesForecast.confidence,
       averageUnitPrice: averageUnitPrice,
       assumptions: [
-        `Average unit price: ₹${(averageUnitPrice / 100000).toFixed(1)} Lakhs`,
+        `Average unit price: ${averageUnitPrice >= 10000000 ? `₹${(averageUnitPrice / 10000000).toFixed(2)} Cr` : `₹${(averageUnitPrice / 100000).toFixed(1)} Lakhs`}${recent >= 5 ? ' (bookings of the last 12 months)' : ''}`,
         'Pricing remains consistent with historical averages',
         'No major market disruptions',
         'Current sales process efficiency maintained'
@@ -772,6 +927,10 @@ const calculateLeadConversionProbabilities = async (organizationId, leadId, scor
     const matchQuery = { organization: organizationId };
     if (leadId) {
       matchQuery._id = leadId;
+    } else {
+      // Someone who has already booked (or been lost) is not a conversion prospect — leaving them
+      // in filled the "most likely to convert" list with clients who had already bought.
+      matchQuery.status = { $nin: ['Booked', 'Lost', 'Unqualified', 'pending'] };
     }
 
     // Get leads with their scores and interaction counts
@@ -794,7 +953,7 @@ const calculateLeadConversionProbabilities = async (organizationId, leadId, scor
               1000 * 60 * 60 * 24
             ]
           },
-          lastInteractionDate: { $max: '$interactions.createdAt' }
+          lastInteractionDate: { $max: { $map: { input: '$interactions', as: 'i', in: { $ifNull: ['$$i.occurredAt', '$$i.createdAt'] } } } }
         }
       },
       {
@@ -836,8 +995,8 @@ const calculateLeadConversionProbabilities = async (organizationId, leadId, scor
       return {
         totalLeads: leadsWithProbability.length,
         highProbabilityLeads: highProbabilityLeads.length,
-        averageProbability: leadsWithProbability.reduce((sum, lead) =>
-          sum + lead.conversionProbability, 0) / leadsWithProbability.length,
+        averageProbability: leadsWithProbability.length ? leadsWithProbability.reduce((sum, lead) =>
+          sum + lead.conversionProbability, 0) / leadsWithProbability.length : 0,
         leadBreakdown: {
           hot: leadsWithProbability.filter(lead => lead.conversionProbability >= 80).length,
           warm: leadsWithProbability.filter(lead =>
@@ -884,7 +1043,15 @@ const calculateIndividualConversionProbability = (lead, timeframe) => {
   if (lead.daysSinceCreated < 7) probability *= 1.1;  // Fresh leads
   if (lead.daysSinceCreated > 30) probability *= 0.9; // Older leads
 
-  return Math.min(Math.max(Math.round(probability), 0), 100);
+  // Long silence: a lead nobody has been in touch with for months is unlikely to convert in the timeframe
+  if (lead.lastInteractionDate) {
+    const silentDays = (Date.now() - new Date(lead.lastInteractionDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (silentDays > 365) probability *= 0.5;
+    else if (silentDays > 180) probability *= 0.7;
+  }
+
+  // Nothing is certain until it is booked
+  return Math.min(Math.max(Math.round(probability), 0), 95);
 };
 
 const getRiskLevel = (probability) => {
@@ -919,8 +1086,9 @@ const getLeadRecommendations = (lead, probability) => {
 // ================================
 
 export {
-  generateSalesForecast,
+  initializeModels as initializePredictiveModels,
   getHistoricalSalesData,
+  generateSalesForecast,
   getCurrentPipelineData,
   calculateBaselineForecast,
   calculateRevenueProjection,

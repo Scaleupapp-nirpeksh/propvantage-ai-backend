@@ -269,25 +269,13 @@ const calculateInventoryTurnover = async (organizationId, projectId, period, uni
       }
     ]);
 
-    // Get historical turnover rates
-    const historicalTurnover = await Sale.aggregate([
-      { $match: { organization: organizationId } },
-      {
-        $group: {
-          _id: {
-            year: { $year: '$bookingDate' },
-            month: { $month: '$bookingDate' }
-          },
-          salesCount: { $sum: 1 }
-        }
-      },
-      { $sort: { '_id.year': -1, '_id.month': -1 } },
-      { $limit: 12 }
-    ]);
-
+    // Real run-rate: the last 12 CALENDAR months (months without a booking count as zero), this
+    // project only, cancelled and undated bookings left out — the same basis the sales forecast uses.
+    const { getHistoricalSalesData, initializePredictiveModels } = await import('../services/predictiveAnalyticsService.js');
+    await initializePredictiveModels();
+    const history = await getHistoricalSalesData(organizationId, projectId);
     const availableUnits = inventoryData.find(item => item._id === 'available')?.count || 0;
-    const averageMonthlySales = historicalTurnover.reduce((sum, month) => 
-      sum + month.salesCount, 0) / Math.max(historicalTurnover.length, 1);
+    const averageMonthlySales = history.averageMonthlySales || 0;
 
     const months = period === '3_months' ? 3 : period === '6_months' ? 6 : 12;
     const projectedSales = averageMonthlySales * months;
@@ -297,14 +285,17 @@ const calculateInventoryTurnover = async (organizationId, projectId, period, uni
       currentInventory: {
         available: availableUnits,
         sold: inventoryData.find(item => item._id === 'sold')?.count || 0,
+        booked: inventoryData.find(item => item._id === 'booked')?.count || 0,
+        blocked: inventoryData.find(item => item._id === 'blocked')?.count || 0,
         total: inventoryData.reduce((sum, item) => sum + item.count, 0)
       },
       turnoverPrediction: {
         period: period,
         projectedSales: Math.round(projectedSales),
         turnoverRate: Math.round(turnoverRate * 100) / 100,
-        monthsToSellOut: availableUnits > 0 ? 
-          Math.round((availableUnits / averageMonthlySales) * 10) / 10 : 0
+        averageMonthlySales: Math.round(averageMonthlySales * 10) / 10,
+        monthsToSellOut: availableUnits > 0 && averageMonthlySales > 0 ? 
+          Math.round((availableUnits / averageMonthlySales) * 10) / 10 : null
       },
       insights: generateInventoryInsights(availableUnits, averageMonthlySales, turnoverRate)
     };
@@ -336,8 +327,8 @@ const generateInventoryInsights = (availableUnits, averageMonthlySales, turnover
     });
   }
   
-  const monthsToSellOut = availableUnits / averageMonthlySales;
-  if (monthsToSellOut < 6) {
+  const monthsToSellOut = averageMonthlySales > 0 ? availableUnits / averageMonthlySales : Infinity;
+  if (availableUnits > 0 && monthsToSellOut < 6) {
     insights.push({
       type: 'alert',
       message: 'Inventory may run out soon',
